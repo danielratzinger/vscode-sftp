@@ -26,7 +26,7 @@ const result: any = {
   connect: {},
 };
 
-async function tryConnect(protocol: string, port: number) {
+async function tryConnect(protocol: string, port: number, over: object = {}) {
   try {
     await createRemoteIfNoneExist({
       protocol,
@@ -37,6 +37,7 @@ async function tryConnect(protocol: string, port: number) {
       remotePath: '/',
       connectTimeout: 1000,
       debug: () => undefined,
+      ...over,
     } as any);
     return 'connected';
   } catch (error) {
@@ -48,7 +49,15 @@ async function tryConnect(protocol: string, port: number) {
 
 async function main() {
   result.connect.sftp = await tryConnect('sftp', 1);
-  result.connect.ftp = await tryConnect('ftp', 2);
+  // FTPS, so the cleartext check has nothing to say and the attempt reaches
+  // the socket.
+  result.connect.ftp = await tryConnect('ftp', 2, {
+    secure: true,
+    secureOptions: { rejectUnauthorized: false },
+  });
+  // Plain FTP, where it should stop before the socket. Nothing answers the
+  // prompt here, which stands for someone declining it.
+  result.connect.cleartextFtp = await tryConnect('ftp', 3, { host: '127.0.0.2' });
 
   // tslint:disable-next-line:no-console
   console.log(`__RESULT__${JSON.stringify(result)}`);

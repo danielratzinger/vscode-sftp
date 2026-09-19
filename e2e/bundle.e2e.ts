@@ -75,4 +75,11 @@ describe('the packaged bundle', () => {
     expect(report.connect.ftp).toContain('ECONNREFUSED');
     expect(report.connect.ftp).not.toContain('not a constructor');
   });
+
+  it('stops a cleartext password before the socket', () => {
+    // Plain FTP with nobody answering the warning: the connection must not
+    // happen, and the reason must be the password rather than the network.
+    expect(report.connect.cleartextFtp).toContain('cleartext');
+    expect(report.connect.cleartextFtp).not.toContain('ECONNREFUSED');
+  });
 });

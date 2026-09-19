@@ -5,6 +5,7 @@ import {
   createCredentialResolver,
 } from './credentialResolver';
 import app from '../app';
+import { confirmExposure } from '../modules/passwordExposure';
 import { ConnectOption } from './remote-client/remoteClient';
 import FileSystem from './fs/fileSystem';
 import RemoteFileSystem from './fs/remoteFileSystem';
@@ -107,6 +108,15 @@ class KeepAliveRemoteFs {
       passwordManager: option.passwordManager,
       passphraseManager: option.passphraseManager,
     });
+
+    // Before the socket, not after: a password sent in the clear cannot be
+    // taken back once it has gone.
+    if (!(await confirmExposure(option))) {
+      this.invalid('cancelled');
+      throw new Error(
+        'Cancelled: the password would have been sent in cleartext.'
+      );
+    }
 
     app.sftpBarItem.showMsg('connecting...', connectOption.connectTimeout);
     // Assigned in the same tick, so a second caller waits on this attempt

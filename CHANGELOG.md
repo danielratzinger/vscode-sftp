@@ -45,6 +45,10 @@ now diverges from upstream's.
 - `operationTimeout`: a command must answer within it, and a transfer must
   not go silent for longer than it.
 - Hidden files in FTP listings, via `LIST -a` with a fallback.
+- A check before connecting to a server that would receive the password as
+  readable text: plain FTP sends `USER` and `PASS` unencrypted, and the
+  connection now waits for an answer rather than sending it. SFTP and FTPS are
+  never warned about. Off with `sftp.warnOnCleartextPassword`.
 - A warning at startup when another SFTP extension is enabled alongside this
   one, since both answer the same commands and the same `uploadOnSave`.
   Nothing needs importing from it: every setting either extension reads is

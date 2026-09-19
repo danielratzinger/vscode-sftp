@@ -120,6 +120,11 @@
           "default": "ask",
           "markdownDescription": "What to do when downloading a single file would replace a local copy whose timestamp is newer than the server’s. `Download` in the Alt menu always downloads, whatever this says."
         },
+        "sftp.warnOnCleartextPassword": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Ask before connecting to a server that would receive the password as readable text. Plain FTP sends `USER` and `PASS` unencrypted; SFTP and FTPS (`secure`) do not, and are never warned about. The answer can be kept per server."
+        },
         "sftp.keepReplacedFiles": {
           "type": "boolean",
           "default": true,

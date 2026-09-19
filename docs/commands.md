@@ -277,6 +277,21 @@ that long is abandoned and retried rather than left hanging. A whole tool call
 is capped by `sftp.mcp.callTimeout` (two minutes) on top of that — a search or a
 tree walk that reaches it returns what it found so far and says it was cut
 short, rather than failing or running on.
+### Before a password goes out in the clear
+
+Plain FTP sends `USER` and `PASS` as readable text. Before connecting to a
+server that would receive a password that way, the extension says so and waits
+— once per server, with the option to allow it for good on that server.
+
+SFTP is never warned about: it authenticates inside the SSH transport. Neither
+is FTPS (`"secure": true`), which negotiates TLS before sending anything, and
+whose client errors out rather than continuing unprotected if the server refuses.
+Adding `"secureOptions": { "rejectUnauthorized": false }` is noted in the log
+rather than warned about: the password cannot be read off the network, but the
+certificate is accepted from whoever presents it.
+
+Turn the question off with `sftp.warnOnCleartextPassword`.
+
 ### Credentials are withheld
 
 `.env` files, `wp-config.php`, `.htpasswd`, private keys and similar are never
