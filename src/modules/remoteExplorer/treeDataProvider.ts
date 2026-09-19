@@ -143,9 +143,11 @@ export default class RemoteTreeData
     const remotefs = await root.explorerContext.fileService.getRemoteFileSystem(config);
     const fileEntries = await remotefs.list(item.resource.fsPath);
 
+    // An explicit `filesExclude` replaces the defaults, so `[]` is the way to
+    // see everything the server reports.
     const filesExcludeList: string[] =
       config.remoteExplorer && config.remoteExplorer.filesExclude
-        ? config.remoteExplorer.filesExclude.concat(DEFAULT_FILES_EXCLUDE)
+        ? config.remoteExplorer.filesExclude
         : DEFAULT_FILES_EXCLUDE;
 
     const ignore = new Ignore(filesExcludeList);

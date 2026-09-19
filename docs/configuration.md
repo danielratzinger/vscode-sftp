@@ -503,6 +503,15 @@ The number of hours difference between the local machine and the remote server (
 }
 ```
 
+
+| 💡 Note |
+| :--- |
+| *Leave it out on FTP and it is measured for you on the first listing. A `LIST` line carries no timezone — it is the server's wall clock — while `MDTM` returns the same moment in UTC, so comparing the two for one file gives the difference. Nothing is written to the server, and it costs one extra command per connection. The result is rounded to the nearest quarter hour and written to the SFTP output channel. Setting this yourself turns the measurement off.* | 
+
+| 💡 Note |
+| :--- |
+| *SFTP needs no offset: its timestamps are an absolute point in time, not a wall clock reading. A difference there means the server's clock is genuinely wrong, which this setting can still correct by hand.* | 
+
 ### remoteExplorer
 Configure the behavior of the `remoteExplorer` command.
 
@@ -512,7 +521,8 @@ Configure the behavior of the `remoteExplorer` command.
  
 #### remoteExplorer.filesExclude
 Configure that patterns for excluding files and folders. <br>
-The Remote Explorer decides which files and folders to show or hide based on this setting..
+The Remote Explorer decides which files and folders to show or hide based on this setting. <br>
+Setting this replaces the built-in defaults (`.git`, `.svn`, `.hg`, `CVS`, `.DS_Store`), so use an empty array to show everything.
 
 | Key | Value |
 | --- | --- |

@@ -69,6 +69,12 @@ const configScheme = {
   },
   remoteTimeOffsetInHours: Joi.number(),
 
+  mcp: {
+    exposed: Joi.boolean(),
+    materialize: Joi.boolean(),
+    excludeFolders: Joi.array().items(Joi.string()),
+  },
+
   remoteExplorer: {
     filesExclude: Joi.array()
       .min(0)

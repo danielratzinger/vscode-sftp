@@ -116,7 +116,7 @@
         "properties": {
           "filesExclude": {
             "type": "array",
-            "description": "Configure patterns for excluding files and folders. The Remote Explorer decides which files and folders to show or hide based on this setting.",
+            "description": "Configure patterns for excluding files and folders. The Remote Explorer decides which files and folders to show or hide based on this setting. Setting this replaces the built-in defaults (.git, .svn, .hg, CVS, .DS_Store), so use an empty array to show everything.",
             "items": {
               "type": "string",
               "description": "Exclude pattern."
