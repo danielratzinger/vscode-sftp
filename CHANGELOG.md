@@ -45,6 +45,11 @@ now diverges from upstream's.
 - `operationTimeout`: a command must answer within it, and a transfer must
   not go silent for longer than it.
 - Hidden files in FTP listings, via `LIST -a` with a fallback.
+- A warning at startup when another SFTP extension is enabled alongside this
+  one, since both answer the same commands and the same `uploadOnSave`.
+  Nothing needs importing from it: every setting either extension reads is
+  `sftp.*` or `.vscode/sftp.json`, so an existing configuration is already in
+  use here.
 - An end-to-end test suite (`npm run e2e`) against a real SFTP server started
   inside the test process.
 

@@ -7,6 +7,7 @@ import initCommands from './initCommands';
 import initCredentials from './modules/credentials';
 import { initMcp } from './mcp';
 import { initReplacedFiles } from './modules/replacedFiles';
+import { checkForOtherSftpExtensions } from './modules/otherSftpExtensions';
 import { reportError } from './helper';
 import fileActivityMonitor from './modules/fileActivityMonitor';
 import { tryLoadConfigs } from './modules/config';
@@ -45,6 +46,12 @@ export async function activate(context: vscode.ExtensionContext) {
     initReplacedFiles(context);
   } catch (error) {
     reportError(error, 'initReplacedFiles');
+  }
+
+  try {
+    checkForOtherSftpExtensions(context);
+  } catch (error) {
+    reportError(error, 'checkForOtherSftpExtensions');
   }
 
   try {

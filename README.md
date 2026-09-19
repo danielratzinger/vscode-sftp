@@ -76,8 +76,12 @@ npx vsce package
 Then in VS Code: **Extensions → ⋯ → Install from VSIX…** and pick the file.
 
 The extension id is `danielratzinger.sftp`, so it installs beside the
-marketplace SFTP extension rather than replacing it. Uninstall the other one
-first — two copies would both claim the same commands.
+marketplace SFTP extension rather than replacing it. **Disable the other one**
+— disabling is enough, and there is nothing to migrate: both read the same
+`sftp.*` settings and the same `.vscode/sftp.json`, so every server you have
+configured already works here. Leaving both enabled means two extensions
+answering the same commands and the same `uploadOnSave`, which uploads twice;
+this extension says so at startup if it finds one.
 
 ## Getting started
 
