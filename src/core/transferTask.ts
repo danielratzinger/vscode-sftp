@@ -72,6 +72,15 @@ export interface TransferOption {
   perserveTargetMode: boolean;
   useTempFile?: boolean;
   openSsh?: boolean;
+  /**
+   * Called once before a download writes, with the local file it is about to
+   * replace. Where the copy goes, and whether one is worth keeping at all, is
+   * not this layer's business - it only knows the moment.
+   */
+  keepReplaced?(
+    localPath: string,
+    incoming: { size?: number; mtime: number }
+  ): Promise<void>;
 }
 
 export default class TransferTask implements Task {
@@ -158,7 +167,245 @@ export default class TransferTask implements Task {
     return this._cancelled;
   }
 
+  private async _transferFileWithRetry() {
+    // Before the first attempt, not inside the loop: a retry is the same
+    // transfer, and the file it would copy has already been half replaced.
+    await this._keepWhatIsThere();
+
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        await this._transferFile();
+        return;
+      } catch (error) {
+        // A half-read source stream can be holding a connection open, and the
+        // next attempt opens its own.
+        this._disposeHandle();
+
+        if (
+          attempt >= MAX_TRANSFER_ATTEMPTS ||
+          this._cancelled ||
+          !isRetriable(error)
+        ) {
+          throw error;
+        }
+
+        logger.warn(
+          `${this._transferDirection} ${this._srcFsPath} failed ` +
+            `(${error.message}), attempt ${attempt + 1} of ${MAX_TRANSFER_ATTEMPTS}`
+        );
+        await delay(this._retryDelay(attempt));
+      }
+    }
+  }
+
+  /**
+   * Keeps whatever a download is about to write over.
+   *
+   * Downloads only: the same code uploads, and keeping the remote file would
+   * mean fetching it first - a transfer for every transfer.
+   */
+  private async _keepWhatIsThere(): Promise<void> {
+    const { keepReplaced, size, mtime } = this._TransferOption;
+
+    if (
+      !keepReplaced ||
+      this._transferDirection !== TransferDirection.REMOTE_TO_LOCAL
+    ) {
+      return;
+    }
+
+    try {
+      await keepReplaced(this._targetFsPath, { size, mtime });
+    } catch (error) {
+      // A copy that cannot be kept is not a reason to refuse the download the
+      // user asked for; it is a safety net, not the floor.
+      logger.warn(
+        `could not keep a copy of ${this._targetFsPath}: ${error.message}`
+      );
+    }
+  }
+
+  /**
+   * Backs off a little between attempts, to give a server that is briefly
+   * refusing a chance to recover. Overridable so tests needn't wait it out.
+   */
+  protected _retryDelay(attempt: number): number {
+    return RETRY_DELAY * attempt;
+  }
+
   private async _transferFile() {
+    const uploadTarget =
+      this._targetFsPath + (this._TransferOption.useTempFile ? '.new' : '');
+
+    const route = this._directRoute();
+    if (route) {
+      await this._writeDirectly(route, uploadTarget);
+    } else {
+      await this._writeByStream(uploadTarget);
+    }
+
+    // Before the temp file is promoted, so a short transfer can't replace a
+    // good file with a broken one.
+    await this._verifyWritten(uploadTarget);
+    await this._promoteTempFile(uploadTarget);
+  }
+
+  /**
+   * Whether one side is local and the other can move the file by itself. Those
+   * implementations pipeline, while the generic stream route below is stuck
+   * with a single request in flight.
+   */
+  private _directRoute(): DirectRoute | null {
+    if (
+      this._srcFs instanceof LocalFileSystem &&
+      supportsDirectTransfer(this._targetFs)
+    ) {
+      return { fileSystem: this._targetFs, isUpload: true };
+    }
+
+    if (
+      this._targetFs instanceof LocalFileSystem &&
+      supportsDirectTransfer(this._srcFs)
+    ) {
+      return { fileSystem: this._srcFs, isUpload: false };
+    }
+
+    return null;
+  }
+
+  private async _writeDirectly(route: DirectRoute, uploadTarget: string) {
+    const { atime, mtime, useTempFile } = this._TransferOption;
+    const mode = await this._resolveMode();
+
+    if (useTempFile) {
+      logger.info('uploading temp file: ' + uploadTarget);
+    }
+
+    if (route.isUpload) {
+      await route.fileSystem.uploadFromLocal(this._srcFsPath, uploadTarget, {
+        mode,
+      });
+    } else {
+      await route.fileSystem.downloadToLocal(this._srcFsPath, uploadTarget, {
+        mode,
+      });
+    }
+
+    if (atime && mtime) {
+      try {
+        await this._targetFs.utimes(
+          uploadTarget,
+          Math.floor(atime / 1000),
+          Math.floor(mtime / 1000)
+        );
+      } catch (error) {
+        this._warnAboutModifiedTime(error);
+      }
+    }
+  }
+
+  /**
+   * The mode the written file should end up with, matching what the stream
+   * route below arrives at.
+   */
+  private async _resolveMode(): Promise<number | undefined> {
+    const {
+      perserveTargetMode,
+      fallbackMode,
+      filePerm,
+      useTempFile,
+    } = this._TransferOption;
+
+    const configured = filePerm
+      ? parseInt(String(filePerm), 8)
+      : this._TransferOption.mode;
+    if (configured !== undefined || !perserveTargetMode) {
+      return configured;
+    }
+
+    // Writing straight to the target keeps the mode it already has, since
+    // opening a file for writing doesn't touch its permissions, and a file
+    // that isn't there yet is the server's to set up.
+    if (!useTempFile) {
+      return undefined;
+    }
+
+    // A temp file is a new file, so the mode has to be carried over the rename.
+    try {
+      const stat = await this._targetFs.lstat(this._targetFsPath);
+      return stat.mode;
+    } catch (error) {
+      return fallbackMode;
+    }
+  }
+
+  private async _verifyWritten(uploadTarget: string) {
+    const expected = this._TransferOption.size;
+    if (this._TransferOption.verify === false || expected === undefined) {
+      return;
+    }
+
+    let actual: number | undefined;
+    try {
+      actual = await this._targetFs.size(uploadTarget);
+    } catch (error) {
+      // Not being able to check is not the same as being wrong.
+      logger.debug(
+        `can't check the size of ${uploadTarget}: ${error.message}`
+      );
+      return;
+    }
+
+    if (actual === undefined || actual === expected) {
+      return;
+    }
+
+    throw new TransferIntegrityError(
+      `${this._targetFsPath} arrived incomplete: expected ${expected} bytes, got ${actual}`
+    );
+  }
+
+  private async _promoteTempFile(uploadTarget: string) {
+    const { useTempFile, openSsh } = this._TransferOption;
+    if (!useTempFile) {
+      return;
+    }
+
+    const target = this._targetFsPath;
+    const targetFs = this._targetFs;
+
+    logger.info('moving from: ' + uploadTarget + ' to: ' + target);
+    if (openSsh) {
+      await targetFs.renameAtomic(uploadTarget, target);
+    } else {
+      try {
+        await targetFs.unlink(target);
+      } catch (error) {
+        // Just ignore
+      }
+      await targetFs.rename(uploadTarget, target);
+    }
+  }
+
+  private _disposeHandle() {
+    const handle = this._handle as any;
+    this._handle = undefined as any;
+
+    if (handle && typeof handle.destroy === 'function' && !handle.destroyed) {
+      handle.destroy();
+    }
+  }
+
+  private _warnAboutModifiedTime(error: Error) {
+    if (hasWarnedModifedTimePermission) {
+      return;
+    }
+
+    hasWarnedModifedTimePermission = true;
+    logger.warn(`Can't set modified time to the file because ${error.message}`);
+  }
+
+  private async _writeByStream(uploadTarget: string) {
     const src = this._srcFsPath;
     const target = this._targetFsPath;
     const srcFs = this._srcFs;

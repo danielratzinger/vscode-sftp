@@ -4,6 +4,9 @@
 import * as vscode from 'vscode';
 import app from './app';
 import initCommands from './initCommands';
+import initCredentials from './modules/credentials';
+import { initMcp } from './mcp';
+import { initReplacedFiles } from './modules/replacedFiles';
 import { reportError } from './helper';
 import fileActivityMonitor from './modules/fileActivityMonitor';
 import { tryLoadConfigs } from './modules/config';
@@ -28,10 +31,26 @@ function setup(workspaceFolders: vscode.WorkspaceFolder[]) {
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
 export async function activate(context: vscode.ExtensionContext) {
+  // Before anything can connect, so a stored password is available on the
+  // first attempt rather than after a stray prompt.
+  initCredentials(context);
+
   try {
     initCommands(context);
   } catch (error) {
     reportError(error, 'initCommands');
+  }
+
+  try {
+    initReplacedFiles(context);
+  } catch (error) {
+    reportError(error, 'initReplacedFiles');
+  }
+
+  try {
+    initMcp(context);
+  } catch (error) {
+    reportError(error, 'initMcp');
   }
 
   const workspaceFolders = getWorkspaceFolders();

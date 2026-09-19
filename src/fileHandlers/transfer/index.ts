@@ -102,6 +102,8 @@ export const sync2Remote = createFileHandler<SyncOption>({
       skipCreate: syncOption.skipCreate,
       ignoreExisting: syncOption.ignoreExisting,
       update: syncOption.update,
+      // Only used when the sync is writing locally; an upload ignores it.
+      keepReplaced: keepReplacedOption(this),
     };
   },
   afterHandle() {
@@ -140,6 +142,8 @@ export const sync2Local = createFileHandler<SyncOption>({
       skipCreate: syncOption.skipCreate,
       ignoreExisting: syncOption.ignoreExisting,
       update: syncOption.update,
+      // Only used when the sync is writing locally; an upload ignores it.
+      keepReplaced: keepReplacedOption(this),
     };
   },
 });
