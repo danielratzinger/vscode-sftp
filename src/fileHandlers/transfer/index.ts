@@ -204,22 +204,81 @@ export const download = createFileHandler<TransferOption>({
   transformOption() {
     const config = this.config;
     return {
+      verify: config.verifyTransfer !== false,
       perserveTargetMode: false,
       // remoteTimeOffsetInHours: config.remoteTimeOffsetInHours,
       ignore: config.ignore,
+      keepReplaced: keepReplacedOption(this),
     };
   },
 });
 
+type OnLocalNewer = 'ask' | 'download' | 'skip';
+
+/**
+ * Whether to go ahead with a download that would write over a local file
+ * holding newer work than the server's copy.
+ *
+ * Only reached when the local file is actually newer, so it never interrupts
+ * the ordinary case of pulling down a file someone else changed.
+ */
+async function confirmOverwrite(ctx: FileHandlerContext): Promise<boolean> {
+  const behaviour = getUserSetting('sftp').get<OnLocalNewer>(
+    'downloadWhenLocalIsNewer',
+    'ask'
+  );
+
+  if (behaviour === 'download') {
+    return true;
+  }
+
+  const comparison = await compareLocalWithRemote(ctx);
+  if (comparison.state !== LocalCopy.Newer) {
+    return true;
+  }
+
+  const name = path.basename(ctx.target.localFsPath);
+
+  if (behaviour === 'skip') {
+    logger.warn(
+      `Not downloading ${name}: the local copy is newer than the one on the server.`
+    );
+    return false;
+  }
+
+  const answer = await showModalWarning(
+    `Your local ${name} is newer than the copy on the server.`,
+    `Downloading replaces it, and the changes that are only on disk are lost.\n\n${describeAge(
+      comparison
+    )}`,
+    'Overwrite',
+    'Compare'
+  );
+
+  if (answer === 'Compare') {
+    await diff(ctx);
+  }
+
+  return answer === 'Overwrite';
+}
+
 export const downloadFile = createFileHandler<TransferOption>({
   name: 'download file',
-  handle: downloadHandle,
+  async handle(option) {
+    if (!(await confirmOverwrite(this))) {
+      return;
+    }
+
+    await downloadHandle.call(this, option);
+  },
   transformOption() {
     const config = this.config;
     return {
+      verify: config.verifyTransfer !== false,
       perserveTargetMode: false,
       // remoteTimeOffsetInHours: config.remoteTimeOffsetInHours,
       ignore: config.ignore,
+      keepReplaced: keepReplacedOption(this),
     };
   },
 });

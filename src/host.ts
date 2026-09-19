@@ -83,6 +83,25 @@ export function showWarningMessage(message: string, ...items: string[]) {
   return vscode.window.showWarningMessage(message, ...items);
 }
 
+/**
+ * A warning the user has to answer before anything else happens. `detail` is
+ * the smaller second line, which only modal dialogs show.
+ */
+export function showModalWarning(
+  message: string,
+  detail: string,
+  ...items: string[]
+): Thenable<string | undefined> {
+  // `detail` reached MessageOptions after the @types/vscode this project
+  // pins, which is older than the engine it declares.
+  const option: vscode.MessageOptions = { modal: true } as any;
+  (option as any).detail = detail;
+
+  return vscode.window.showWarningMessage(message, option, ...items) as Thenable<
+    string | undefined
+  >;
+}
+
 export async function showConfirmMessage(
   message: string,
   confirmLabel: string = 'Yes',
