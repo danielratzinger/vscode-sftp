@@ -6,7 +6,27 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything under *Unreleased* is this fork; everything under 1.16.3 and
 earlier is theirs.
 
-## Unreleased
+## 2.0.0 - 2026-09-19
+
+The first release of this fork. Major rather than minor because four things
+behave differently on the same configuration, and because the version line
+now diverges from upstream's.
+
+### Breaking
+
+- FTP listings ask for hidden files (`showHiddenFiles`, on by default), so
+  dotfiles that were previously invisible now appear in the explorer and are
+  included by anything that walks a directory. Set it to `false` for the old
+  behaviour.
+- `remoteExplorer.filesExclude` replaces the built-in defaults instead of
+  adding to them, which makes `[]` a way to see everything. A configuration
+  relying on the old additive behaviour will now hide less.
+- Operations no longer wait indefinitely: `operationTimeout` (60s) bounds a
+  command, and a transfer that makes no progress for that long is abandoned
+  and retried. Set it to `0` to wait forever as before.
+- Transfers are verified by size on every path, not only the direct one, so a
+  transfer that previously reported success on a short write now fails.
+  Disable per connection with `verifyTransfer: false`.
 
 ### Added
 
