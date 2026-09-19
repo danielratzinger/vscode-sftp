@@ -93,6 +93,7 @@ export const sync2Remote = createFileHandler<SyncOption>({
     const config = this.config;
     const syncOption = config.syncOption || {};
     return {
+      verify: config.verifyTransfer !== false,
       perserveTargetMode: config.protocol === 'sftp' && !config.filePerm && !config.dirPerm,
       useTempFile: config.useTempFile,
       openSsh: config.openSsh,
@@ -135,6 +136,7 @@ export const sync2Local = createFileHandler<SyncOption>({
     const config = this.config;
     const syncOption = config.syncOption || {};
     return {
+      verify: config.verifyTransfer !== false,
       perserveTargetMode: false,
       // remoteTimeOffsetInHours: config.remoteTimeOffsetInHours,
       ignore: config.ignore,
@@ -154,6 +156,7 @@ export const upload = createFileHandler<TransferOption>({
   transformOption() {
     const config = this.config;
     return {
+      verify: config.verifyTransfer !== false,
       perserveTargetMode: config.protocol === 'sftp' && !config.filePerm && !config.dirPerm,
       useTempFile: config.useTempFile,
       openSsh: config.openSsh,
@@ -172,6 +175,7 @@ export const uploadFile = createFileHandler<TransferOption>({
   transformOption() {
     const config = this.config;
     return {
+      verify: config.verifyTransfer !== false,
       perserveTargetMode: config.protocol === 'sftp' && !config.filePerm,
       useTempFile: config.useTempFile,
       openSsh: config.openSsh,
@@ -190,6 +194,7 @@ export const uploadFolder = createFileHandler<TransferOption>({
   transformOption() {
     const config = this.config;
     return {
+      verify: config.verifyTransfer !== false,
       perserveTargetMode: config.protocol === 'sftp' && !config.dirPerm,
       useTempFile: config.useTempFile,
       openSsh: config.openSsh,

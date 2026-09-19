@@ -204,6 +204,9 @@ export function newConfig(basePath) {
             protocol: 'sftp',
             port: 22,
             username: 'username',
+            // Asked for once, then kept in the OS credential store rather
+            // than in this file.
+            password: true,
             remotePath: '/',
             uploadOnSave: false,
             useTempFile: false,
