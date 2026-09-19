@@ -1,6 +1,9 @@
 import upath from './upath';
-import { promptForPassword } from '../host';
 import logger from '../logger';
+import {
+  CredentialResolver,
+  createCredentialResolver,
+} from './credentialResolver';
 import app from '../app';
 import { ConnectOption } from './remote-client/remoteClient';
 import {
@@ -27,7 +30,14 @@ class KeepAliveRemoteFs {
   async getFs(
     option: ConnectOption & {
       protocol: string;
-      remoteTimeOffsetInHours: number;
+      remoteTimeOffsetInHours?: number;
+      showHiddenFiles?: boolean;
+      connectionLimit?: number;
+      operationTimeout?: number;
+      privateKeyPath?: string;
+      passphrase?: string | boolean;
+      passwordManager?: string | boolean;
+      passphraseManager?: string | boolean;
     }
   ): Promise<RemoteFileSystem> {
     if (this.isValid) {
@@ -71,31 +81,85 @@ class KeepAliveRemoteFs {
       throw new Error(`unsupported protocol ${option.protocol}`);
     }
 
-    this.fs = new FsConstructor(upath, {
+    // Not an object literal: `showHiddenFiles` and `connectionLimit` are only
+    // meaningful to FTP.
+    const fsOption = {
       clientOption: connectOption,
       remoteTimeOffsetInHours: option.remoteTimeOffsetInHours,
-    });
+      showHiddenFiles: option.showHiddenFiles,
+      connectionLimit: option.connectionLimit,
+      operationTimeout: option.operationTimeout,
+    };
+    this.fs = new FsConstructor(upath, fsOption);
     this.fs.onDisconnected(this.invalid.bind(this));
 
+    const credentials = createCredentialResolver({
+      protocol: option.protocol,
+      host: option.host,
+      port: option.port,
+      username: option.username,
+      privateKeyPath: option.privateKeyPath,
+      password: option.password,
+      passphrase: option.passphrase,
+      passwordCommand: option.passwordCommand,
+      passphraseCommand: option.passphraseCommand,
+      passwordManager: option.passwordManager,
+      passphraseManager: option.passphraseManager,
+    });
+
     app.sftpBarItem.showMsg('connecting...', connectOption.connectTimeout);
-    this.pendingPromise = this.fs
-      .connect(connectOption, {
-        askForPasswd: promptForPassword,
-      })
-      .then(
-        () => {
-          app.sftpBarItem.reset();
-          this.isValid = true;
-          return this.fs;
-        },
-        err => {
-          this.fs.end();
-          this.invalid('error');
-          throw err;
-        }
-      );
+    // Assigned in the same tick, so a second caller waits on this attempt
+    // instead of starting its own.
+    this.pendingPromise = this._connect(credentials, connectOption).then(
+      () => {
+        app.sftpBarItem.reset();
+        this.isValid = true;
+        return this.fs;
+      },
+      err => {
+        this.fs.end();
+        this.invalid('error');
+        throw err;
+      }
+    );
 
     return this.pendingPromise;
+  }
+
+  private async _connect(
+    credentials: CredentialResolver,
+    connectOption: any
+  ): Promise<void> {
+    const resolved = await credentials.resolve();
+
+    if (resolved.password !== undefined) {
+      connectOption.password = resolved.password;
+    } else if (connectOption.password === true) {
+      // Nothing stored yet. Dropping it makes the client ask, and the answer
+      // is kept once the server has accepted it.
+      delete connectOption.password;
+    }
+
+    if (resolved.passphrase !== undefined) {
+      connectOption.passphrase = resolved.passphrase;
+    }
+
+    // The clients have no use for these, and they shouldn't reach a debug log.
+    delete connectOption.passwordCommand;
+    delete connectOption.passphraseCommand;
+    delete connectOption.passwordManager;
+    delete connectOption.passphraseManager;
+
+    try {
+      await this.fs.connect(connectOption, {
+        askForPasswd: (message, context) => credentials.ask(message, context),
+      });
+    } catch (error) {
+      await credentials.discard(error);
+      throw error;
+    }
+
+    await credentials.commit();
   }
 
   invalid(reason: string) {

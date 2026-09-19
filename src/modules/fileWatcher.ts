@@ -7,6 +7,7 @@ import { WatcherService, TransferDirection } from '../core';
 import app from '../app';
 import StatusBarItem from '../ui/statusBarItem';
 import { getRunningTransformTasks } from './serviceManager';
+import { wasWrittenByUs } from './writeSuppression';
 
 const watchers: {
   [x: string]: vscode.FileSystemWatcher;
@@ -29,6 +30,14 @@ function doUpload() {
   files.forEach(async uri => {
     // current target is still in downloading, so don't upload it.
     if (currentDownloadTasks.find(task => task.localFsPath === uri.fsPath)) {
+      return;
+    }
+
+    // ...and the same for one this extension wrote and has already finished
+    // with, which the check above misses because the task is long gone by the
+    // time this debounce fires.
+    if (wasWrittenByUs(uri.fsPath)) {
+      logger.info(`[watcher/ours] ${uri.fsPath}`);
       return;
     }
 

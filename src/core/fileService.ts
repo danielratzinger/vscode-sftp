@@ -6,11 +6,17 @@ import app from '../app';
 import logger from '../logger';
 import { getUserSetting } from '../host';
 import { replaceHomePath, resolvePath } from '../helper';
-import { SETTING_KEY_REMOTE } from '../constants';
+import { CONFIG_PATH, SETTING_KEY_REMOTE } from '../constants';
+import {
+  migrateLiteralSecrets,
+  needsMigration,
+} from './credentialMigration';
+import { createCredentialResolver } from './credentialResolver';
 import upath from './upath';
 import Ignore from './ignore';
 import { FileSystem } from './fs';
 import Scheduler from './scheduler';
+import { DEFAULT_CONNECTION_LIMIT } from './fs/ftpFileSystem';
 import { createRemoteIfNoneExist, removeRemoteFs } from './remoteFs';
 import TransferTask from './transferTask';
 import localFs from './localFs';
@@ -28,7 +34,12 @@ interface Host {
   host: string;
   port: number;
   username: string;
-  password: string;
+  /** A string is the password itself; `true` keeps it in secret storage. */
+  password: string | boolean;
+  /** Shell command whose output is the password. */
+  passwordCommand?: string;
+  /** Where the password lives: true for the built-in store, or a manager name. */
+  passwordManager?: string | boolean;
   remotePath: string;
   connectTimeout: number;
 }
@@ -54,8 +65,10 @@ interface ServiceOption {
     filesExclude?: string[];
     order: number;
   };
-  remoteTimeOffsetInHours: number;
+  /** Left out, an FTP connection measures it for itself. */
+  remoteTimeOffsetInHours?: number;
   limitOpenFilesOnRemote: number | true;
+  verifyTransfer: boolean;
 }
 
 interface WatcherConfig {
@@ -69,6 +82,10 @@ interface SftpOption {
   agent?: string;
   privateKeyPath?: string;
   passphrase: string | true;
+  /** Shell command whose output is the private key passphrase. */
+  passphraseCommand?: string;
+  /** Where the passphrase lives. Same form as passwordManager. */
+  passphraseManager?: string | boolean;
   interactiveAuth: boolean | string[];
   algorithms: any;
   sshConfigPath?: string;
@@ -80,6 +97,8 @@ interface SftpOption {
 interface FtpOption {
   secure: boolean | 'control' | 'implicit';
   secureOptions: any;
+  showHiddenFiles: boolean;
+  connectionLimit: number;
 }
 
 export interface FileServiceConfig
@@ -374,6 +393,7 @@ export default class FileService {
   private _profiles: string[];
   private _pendingTransferTasks: Set<TransferTask> = new Set();
   private _transferSchedulers: TransferScheduler[] = [];
+  private _migratedConfigs: Set<ServiceConfig> = new Set();
   private _config: FileServiceConfig;
   private _configValidator: ConfigValidator;
   private _watcherService: WatcherService = {
@@ -515,8 +535,37 @@ export default class FileService {
     return localFs;
   }
 
-  getRemoteFileSystem(config: ServiceConfig): Promise<FileSystem> {
-    return createRemoteIfNoneExist(getHostInfo(config));
+  async getRemoteFileSystem(config: ServiceConfig): Promise<FileSystem> {
+    const fileSystem = await createRemoteIfNoneExist(getHostInfo(config));
+
+    // Only once the connection is up, so a password that doesn't work is
+    // never the one that gets saved.
+    await this._migrateCredentialsOnce(config);
+
+    return fileSystem;
+  }
+
+  /**
+   * `getRemoteFileSystem` runs on every operation, so this has to cost nothing
+   * in the normal case, and must not run twice for the same config: the second
+   * pass would find the file already rewritten.
+   */
+  private async _migrateCredentialsOnce(config: ServiceConfig): Promise<void> {
+    if (this._migratedConfigs.has(config) || !needsMigration(config)) {
+      return;
+    }
+
+    this._migratedConfigs.add(config);
+
+    try {
+      await migrateLiteralSecrets(
+        config as any,
+        path.join(this.workspace, CONFIG_PATH),
+        createCredentialResolver(config as any)
+      );
+    } catch (error) {
+      logger.error(error, 'failed to migrate credentials');
+    }
   }
 
   getConfig(useProfile = app.state.profile): ServiceConfig {
@@ -570,7 +619,14 @@ export default class FileService {
       serviceConfig.port = chooseDefaultPort(serviceConfig.protocol);
     }
     if (serviceConfig.protocol === 'ftp') {
-      serviceConfig.concurrency = 1;
+      // FTP carries one transfer per connection, so the number of connections
+      // the pool may open is also the number of files that can be in flight.
+      serviceConfig.concurrency = Math.max(
+        1,
+        serviceConfig.connectionLimit === undefined
+          ? DEFAULT_CONNECTION_LIMIT
+          : serviceConfig.connectionLimit
+      );
     }
     serviceConfig.ignore = this._createIgnoreFn(fileServiceConfig);
 

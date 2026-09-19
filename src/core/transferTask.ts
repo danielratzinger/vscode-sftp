@@ -1,10 +1,52 @@
 import { Readable } from 'stream';
 import * as fileOperations from './fileBaseOperations';
-import { FileSystem, FileType } from './fs';
+import {
+  DirectTransfer,
+  FileSystem,
+  FileType,
+  LocalFileSystem,
+  isTransientError,
+  supportsDirectTransfer,
+} from './fs';
 import { Task } from './scheduler';
 import logger from '../logger';
 
 let hasWarnedModifedTimePermission = false;
+
+// A dropped connection says nothing about the file, so give it another go
+// rather than leaving a hole in the transfer.
+const MAX_TRANSFER_ATTEMPTS = 3;
+const RETRY_DELAY = 200;
+
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * The bytes that arrived don't match the bytes we were told to send.
+ */
+export class TransferIntegrityError extends Error {
+  readonly isIntegrityError = true;
+
+  constructor(message: string) {
+    super(message);
+    // Restore the prototype chain, which breaks when targeting ES5.
+    Object.setPrototypeOf(this, TransferIntegrityError.prototype);
+  }
+}
+
+function isRetriable(error: any): boolean {
+  if (!error || FileSystem.isAbortedError(error)) {
+    return false;
+  }
+
+  return isTransientError(error) || error.isIntegrityError === true;
+}
+
+interface DirectRoute {
+  fileSystem: FileSystem & DirectTransfer;
+  isUpload: boolean;
+}
 
 export enum TransferDirection {
   LOCAL_TO_REMOTE = 'local ➞ remote',
@@ -19,6 +61,10 @@ interface FileHandle {
 export interface TransferOption {
   atime: number;
   mtime: number;
+  /** Size of the source file, used to check the transfer arrived whole. */
+  size?: number;
+  /** Defaults to on; set false to skip the post-transfer size check. */
+  verify?: boolean;
   mode?: number;
   filePerm?: number;
   dirPerm?: number;
@@ -85,7 +131,7 @@ export default class TransferTask implements Task {
     const targetFs = this._targetFs;
     switch (this.fileType) {
       case FileType.File:
-        await this._transferFile();
+        await this._transferFileWithRetry();
         break;
       case FileType.SymbolicLink:
         await fileOperations.transferSymlink(
@@ -120,7 +166,6 @@ export default class TransferTask implements Task {
     const {
       perserveTargetMode,
       useTempFile,
-      openSsh,
       fallbackMode,
       atime,
       mtime,
@@ -130,7 +175,6 @@ export default class TransferTask implements Task {
     let mode = filePerm ? parseInt(String(filePerm), 8) : this._TransferOption.mode;
     let targetFd; // Destination file
     let uploadFd; // Temp file or destination file when no temp file is used
-    const uploadTarget = target + (useTempFile ? ".new" : "");
 
     // Use mode first.
     // Then check perserveTargetMode and fallback to fallbackMode if fail to get mode of target
@@ -187,29 +231,9 @@ export default class TransferTask implements Task {
             Math.floor(mtime / 1000)
           );
         } catch (error) {
-          if (!hasWarnedModifedTimePermission) {
-            hasWarnedModifedTimePermission = true;
-            logger.warn(
-              `Can't set modified time to the file because ${error.message}`
-            );
-          }
+          this._warnAboutModifiedTime(error);
         }
       }
-
-      if (useTempFile) {
-        logger.info("moving from: " + target + ".new" + " to: " + target);
-        if(openSsh) {
-          await targetFs.renameAtomic(uploadTarget, target);
-        } else {
-          try {
-            await targetFs.unlink(target);
-          } catch(error) {
-            // Just ignore
-          }
-          await targetFs.rename(uploadTarget, target);
-        }
-      }
-
     } finally {
       await targetFs.close(uploadFd);
     }

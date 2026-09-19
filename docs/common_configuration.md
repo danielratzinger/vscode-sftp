@@ -381,6 +381,49 @@ The maximum connection time.
 }
 ```
 
+### operationTimeout
+How long (in milliseconds) any one operation may take before it is abandoned.
+
+A command — a listing, a rename, a stat — must answer within this time. A
+transfer is not given a deadline, because a large file on a slow line
+legitimately takes as long as it takes; instead it must keep making progress,
+and this is how long it may go completely silent before it is abandoned.
+
+A connection that misses the deadline is closed rather than reused: nothing can
+be sent down it again while a command is still stuck on it. The transfer is then
+retried on a fresh connection, with the same verification as any other, so a file
+still arrives whole or not at all.
+
+Set it to `0` to wait forever, which is what happened before this setting existed.
+
+| Key | Value | Default |
+| --- | --- | --- |
+| *operationTimeout* | *number* | `60000` |
+
+```json
+{
+  "operationTimeout": 120000
+}
+```
+
+### verifyTransfer
+After each file is written, compare its size on the destination against the source and fail the file if they differ. <br>
+On a transfer that uses a temp file the check runs before the temp file replaces the target, so a short transfer can never overwrite a good file.
+
+| 💡 Note |
+| :--- |
+| *Costs one round trip per file. The check is skipped, not failed, when the server won't report a size — an FTP server without the `SIZE` command, for instance.* | 
+
+| Key | Value | Default |
+| --- | --- | --- |
+| *verifyTransfer* | *boolean* | `true` |
+
+```json
+{
+  "verifyTransfer": false
+}
+```
+
 ### limitOpenFilesOnRemote
 Limit open file descriptors to the specific number in a remote server. <br>
 Set to true for using default `limit(222)`.

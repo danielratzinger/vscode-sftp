@@ -1,11 +1,14 @@
 import FileSystem, { FileOption } from './fileSystem';
 import { RemoteClient, ConnectOption, RemoteClientConfig } from '../remote-client';
+import { DEFAULT_OPERATION_TIMEOUT, watchForStall } from './operationTimeout';
 
 interface RFSOptionDefaults {
   remoteTimeOffsetInHours: number;
+  /** How long one command may take, and how long a transfer may go silent. */
+  operationTimeout: number;
 }
 
-type RFSOption = Partial<RFSOptionDefaults> & {
+export type RFSOption = Partial<RFSOptionDefaults> & {
   client?: RemoteClient;
   clientOption?: ConnectOption;
 };
@@ -15,10 +18,14 @@ const MILLISECONDS_PER_HOUR = SECONDS_PER_HOUR * 1000;
 
 const defaultOption: RFSOptionDefaults = {
   remoteTimeOffsetInHours: 0,
+  operationTimeout: DEFAULT_OPERATION_TIMEOUT,
 };
 
 export default abstract class RemoteFileSystem extends FileSystem {
   protected client: RemoteClient;
+  /** False when the option left it to us, which is what allows measuring it. */
+  protected readonly hasConfiguredTimeOffset: boolean;
+  protected _operationTimeout: number;
   private _remoteTimeOffsetInMilliseconds: number = 0;
   private _remoteTimeOffsetInSeconds: number = 0;
 
@@ -30,6 +37,12 @@ export default abstract class RemoteFileSystem extends FileSystem {
       ...option,
     };
     const { client, clientOption, remoteTimeOffsetInHours } = _option;
+    this._operationTimeout =
+      _option.operationTimeout === undefined
+        ? DEFAULT_OPERATION_TIMEOUT
+        : _option.operationTimeout;
+    this.hasConfiguredTimeOffset = option.remoteTimeOffsetInHours !== undefined;
+
     if (client) {
       this.client = client;
     } else if (clientOption) {
@@ -86,10 +99,27 @@ export default abstract class RemoteFileSystem extends FileSystem {
       }
 
       const arr: Buffer[] = [];
+
+      // Reading a stream is the one place we hold the `data` handler
+      // ourselves, so progress costs nothing to observe and a file that stops
+      // arriving does not leave the caller waiting for the rest of it.
+      const watchdog = watchForStall(
+        this._operationTimeout,
+        `read ${path}`,
+        error => {
+          if (typeof stream.destroy === 'function') {
+            stream.destroy(error);
+          }
+          reject(error);
+        }
+      );
+
       const onData = chunk => {
+        watchdog.progress();
         arr.push(chunk);
       };
       const onEnd = err => {
+        watchdog.stop();
         if (err) {
           return reject(err);
         }

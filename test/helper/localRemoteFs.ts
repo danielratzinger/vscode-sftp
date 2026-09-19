@@ -41,6 +41,7 @@ export default class LocalRemoteFileSystem extends RemoteFileSystem {
   'ensureDir',
   'list',
   'lstat',
+  'utimes',
   'readlink',
   'symlink',
   'unlink',

@@ -39,6 +39,40 @@ export type FileEntry = FileStats & {
   name: string;
 };
 
+export interface DirectTransferOption {
+  mode?: number;
+}
+
+/**
+ * A remote file system that can move a file to or from a local path on its
+ * own, instead of going through the generic `get()` -> pipe -> `put()` route.
+ *
+ * Worth implementing when the protocol can keep several requests in flight:
+ * the generic route is limited to whatever a single stream manages, which on
+ * SFTP means one chunk per round trip.
+ */
+export interface DirectTransfer {
+  downloadToLocal(
+    remotePath: string,
+    localPath: string,
+    option?: DirectTransferOption
+  ): Promise<void>;
+  uploadFromLocal(
+    localPath: string,
+    remotePath: string,
+    option?: DirectTransferOption
+  ): Promise<void>;
+}
+
+export function supportsDirectTransfer(
+  fileSystem: FileSystem
+): fileSystem is FileSystem & DirectTransfer {
+  return (
+    typeof (fileSystem as any).downloadToLocal === 'function' &&
+    typeof (fileSystem as any).uploadFromLocal === 'function'
+  );
+}
+
 export default abstract class FileSystem {
   static getFileTypecharacter(stat: fs.Stats): FileType {
     if (stat.isDirectory()) {
@@ -80,12 +114,26 @@ export default abstract class FileSystem {
   abstract chmod(path: string, mode: number): Promise<void>;
   abstract list(dir: string, option?): Promise<FileEntry[]>;
   abstract lstat(path: string): Promise<FileStats>;
+  /**
+   * Set the access and modification times of a file by path, in seconds.
+   */
+  abstract utimes(path: string, atime: number, mtime: number): Promise<void>;
   abstract readlink(path: string): Promise<string>;
   abstract symlink(targetPath: string, path: string): Promise<void>;
   abstract unlink(path: string): Promise<void>;
   abstract rmdir(path: string, recursive: boolean): Promise<void>;
   abstract rename(srcPath: string, destPath: string): Promise<void>;
   abstract renameAtomic(srcPath: string, destPath: string): Promise<void>;
+
+  /**
+   * Size of a file in bytes, or `undefined` when the file system can't say.
+   * Used to check that a transfer arrived whole, so an implementation should
+   * answer as cheaply as it can and never guess.
+   */
+  async size(path: string): Promise<number | undefined> {
+    const stat = await this.lstat(path);
+    return stat.size;
+  }
 
   static abortReadableStream(stream: Readable) {
     const err = new Error('Transfer Aborted') as FileSystemError;

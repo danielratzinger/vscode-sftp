@@ -42,6 +42,28 @@ Set to 'true' for enable passphrase dialog. This will prevent from using clearte
 }
 ```
 
+### passphraseManager
+Where the private key passphrase lives. Same form as [passwordManager](#passwordmanager).
+
+```json
+{
+  "passphraseManager": "keychain"
+}
+```
+
+### passphraseCommand
+A shell command whose output is used as the private key passphrase. The counterpart to [passwordCommand](#passwordcommand), with the same trusted-workspace rule.
+
+| Key | Value |
+| --- | --- |
+| *passphraseCommand* | *string* |
+
+```json
+{
+  "passphraseCommand": "security find-generic-password -w -s my-ssh-key"
+}
+```
+
 ### interactiveAuth
 Enable keyboard interaction authentication mechanism. Set to 'true' to enable `verifyCode` dialog. <br>
 For example using Google Authentication (multi-factor). Or pass array of predefined phrases to automatically enter them without user prompting.

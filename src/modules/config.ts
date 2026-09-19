@@ -35,6 +35,10 @@ const configScheme = {
   secure: Joi.any().valid(true, false, 'control', 'implicit'),
   secureOptions: nullable(Joi.object()),
   passive: Joi.boolean(),
+  showHiddenFiles: Joi.boolean(),
+  connectionLimit: Joi.number().min(1),
+  operationTimeout: Joi.number().min(0),
+  verifyTransfer: Joi.boolean(),
 
   remotePath: Joi.string().required(),
   uploadOnSave: Joi.boolean(),
@@ -85,6 +89,7 @@ const defaultConfig = {
   //   autoDelete: false,
   // },
   concurrency: 4,
+  verifyTransfer: true,
   // limitOpenFilesOnRemote: false
 
   protocol: 'sftp',
@@ -107,7 +112,10 @@ const defaultConfig = {
   secure: false,
   // secureOptions,
   // passive: false,
-  remoteTimeOffsetInHours: 0,
+  showHiddenFiles: true,
+  connectionLimit: 4,
+
+  operationTimeout: 60000,
 
   remoteExplorer: {
     order: 0,

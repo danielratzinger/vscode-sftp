@@ -1,4 +1,10 @@
-import FileSystem, { FileEntry, FileType } from './fileSystem';
+import FileSystem, {
+  FileEntry,
+  FileType,
+  DirectTransfer,
+  supportsDirectTransfer,
+} from './fileSystem';
+import { isTransientError } from './transientError';
 import LocalFileSystem from './localFileSystem';
 import RemoteFileSystem from './remoteFileSystem';
 import FTPFileSystem from './ftpFileSystem';
@@ -8,6 +14,9 @@ export {
   FileSystem,
   FileEntry,
   FileType,
+  DirectTransfer,
+  supportsDirectTransfer,
+  isTransientError,
   LocalFileSystem,
   RemoteFileSystem,
   FTPFileSystem,

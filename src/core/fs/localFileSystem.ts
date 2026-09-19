@@ -58,6 +58,10 @@ export default class LocalFileSystem extends FileSystem {
     return fse.futimes(fd, atime, mtime);
   }
 
+  utimes(path: string, atime: number, mtime: number): Promise<void> {
+    return fse.utimes(path, atime, mtime);
+  }
+
   get(path, option?): Promise<fs.ReadStream> {
     return new Promise((resolve, reject) => {
       try {

@@ -130,9 +130,36 @@
           }
         }
       },
+      "verifyTransfer": {
+        "type": "boolean",
+        "description": "After writing a file, compare its size on the destination against the source and fail the file if they differ. Skipped, not failed, when the server won't report a size.",
+        "default": true
+      },
+      "mcp": {
+        "type": "object",
+        "description": "How this connection is offered to MCP clients.",
+        "properties": {
+          "exposed": {
+            "type": "boolean",
+            "description": "Whether an MCP client may read this connection. Left out, the sftp.mcp.exposed setting decides. Set it inside a profile to hide, say, production while that profile is active.",
+            "default": true
+          },
+          "materialize": {
+            "type": "boolean",
+            "description": "Whether files an MCP client reads may be written into this project's folder when they are not already there. False keeps everything in a separate cache, so the server never touches your working tree.",
+            "default": true
+          },
+          "excludeFolders": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Folders an MCP search does not walk into, by name at any depth. Overrides the sftp.mcp.excludeFolders setting for this connection.",
+            "default": []
+          }
+        }
+      },
       "remoteTimeOffsetInHours": {
         "type": "number",
-        "description": "The number of hours difference between the local machine and remote/server. (remote minus local)"
+        "description": "The number of hours difference between the local machine and remote/server. (remote minus local) Leave it out on FTP and the offset is measured on the first listing, by comparing a file's LIST timestamp against its MDTM one. SFTP reports timestamps as an absolute time, so it needs no offset unless the server's clock is wrong."
       },
       "limitOpenFilesOnRemote": {
         "enum": ["number", true],
@@ -172,6 +199,12 @@
         "type": "number",
         "description": "How long (in milliseconds) to wait for the connect to complete.",
         "default": 10000
+      },
+      "operationTimeout": {
+        "type": "number",
+        "minimum": 0,
+        "description": "How long (in milliseconds) any one operation may take. A command must answer within it; a transfer must not go silent for longer than it. A connection that misses it is closed rather than reused, and the work is retried on a fresh one. 0 waits forever.",
+        "default": 60000
       }
     }
   },
@@ -310,6 +343,17 @@
   "ftp": {
     "type": "object",
     "properties": {
+      "connectionLimit": {
+        "type": "number",
+        "minimum": 1,
+        "description": "How many FTP connections may be open at once, and so how many files transfer in parallel. Replaces `concurrency` for FTP. Lower it if the server refuses or throttles extra connections.",
+        "default": 4
+      },
+      "showHiddenFiles": {
+        "type": "boolean",
+        "description": "Ask the server for hidden files by sending `LIST -a`. Falls back to a plain `LIST` when the server doesn't understand the flag. Set to false if your server mishandles it.",
+        "default": true
+      },
       "secure": {
         "type": ["string", "boolean"],
         "description": "Set to true for both control and data connection encryption, 'control' for control connection encryption only, or 'implicit' for\nimplicitly encrypted control connection (this mode is deprecated in modern times, but usually uses port 990).",

@@ -30,12 +30,16 @@ The configuration file can always be accessed with `CTRL` + `Shift` + `P`, and s
 - [remoteExplorer](#remoteexplorer)
 - [concurrency](#concurrency)
 - [connectTimeout](#connecttimeout)
+- [operationTimeout](#operationtimeout)
+- [verifyTransfer](#verifytransfer)
 - [limitOpenFilesOnRemote](#limitopenfilesonremote)
 
 ### SFTP only configuration
 - [agent](#agent)
 - [privateKeyPath](#privatekeypath)
 - [passphrase](#passphrase)
+- [passphraseManager](#passphrasemanager)
+- [passphraseCommand](#passphrasecommand)
 - [interactiveAuth](#interactiveauth)
 - [algorithms](#algorithms)
 - [sshConfigPath](#sshconfigpath)
@@ -44,6 +48,8 @@ The configuration file can always be accessed with `CTRL` + `Shift` + `P`, and s
 ### FTP(s) only configuration
 - [secure](#secure)
 - [secureOptions](#secureoptions)
+- [showHiddenFiles](#showhiddenfiles)
+- [connectionLimit](#connectionlimit)
 
 
 
@@ -443,6 +449,49 @@ The maximum connection time.
 }
 ```
 
+### operationTimeout
+How long (in milliseconds) any one operation may take before it is abandoned.
+
+A command — a listing, a rename, a stat — must answer within this time. A
+transfer is not given a deadline, because a large file on a slow line
+legitimately takes as long as it takes; instead it must keep making progress,
+and this is how long it may go completely silent before it is abandoned.
+
+A connection that misses the deadline is closed rather than reused: nothing can
+be sent down it again while a command is still stuck on it. The transfer is then
+retried on a fresh connection, with the same verification as any other, so a file
+still arrives whole or not at all.
+
+Set it to `0` to wait forever, which is what happened before this setting existed.
+
+| Key | Value | Default |
+| --- | --- | --- |
+| *operationTimeout* | *number* | `60000` |
+
+```json
+{
+  "operationTimeout": 120000
+}
+```
+
+### verifyTransfer
+After each file is written, compare its size on the destination against the source and fail the file if they differ. <br>
+On a transfer that uses a temp file the check runs before the temp file replaces the target, so a short transfer can never overwrite a good file.
+
+| 💡 Note |
+| :--- |
+| *Costs one round trip per file. The check is skipped, not failed, when the server won't report a size — an FTP server without the `SIZE` command, for instance.* | 
+
+| Key | Value | Default |
+| --- | --- | --- |
+| *verifyTransfer* | *boolean* | `true` |
+
+```json
+{
+  "verifyTransfer": false
+}
+```
+
 ### limitOpenFilesOnRemote
 Limit open file descriptors to the specific number in a remote server. <br>
 Set to true for using default `limit(222)`.
@@ -626,5 +675,40 @@ Additional options to be passed to `tls.connect()`.
   "secureOptions": {
     "enableTrace": true
   }
+}
+```
+
+### showHiddenFiles
+Ask the server for hidden files (dotfiles) by sending `LIST -a` instead of a bare `LIST`. <br>
+Most FTP servers omit dotfiles from a bare `LIST`, which is why they don't show up in the Remote Explorer.
+
+| 💡 Note |
+| :--- |
+| *When the server doesn't understand the flag, SFTP detects it and falls back to a plain `LIST` for the rest of the session, so you only need to set this to `false` if a server mishandles the flag without reporting an error.* | 
+
+| Key | Value | Default |
+| --- | --- | --- |
+| *showHiddenFiles* | *boolean* | `true` |
+
+```json
+{
+  "showHiddenFiles": false
+}
+```
+
+### connectionLimit
+How many FTP connections may be open at once. Since a connection carries one transfer at a time, this is also how many files transfer in parallel, and it replaces `concurrency` for FTP.
+
+| ⚠️ Warning |
+| :--- |
+| *Servers cap how many connections they accept, and some treat a burst of them as abuse. SFTP grows the pool only while transfers are waiting and stops for good the first time the server refuses, falling back to the connections it already has — but if your host is strict, set this to `1`.* | 
+
+| Key | Value | Default |
+| --- | --- | --- |
+| *connectionLimit* | *number* | `4` |
+
+```json
+{
+  "connectionLimit": 2
 }
 ```

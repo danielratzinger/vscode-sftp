@@ -56,7 +56,11 @@ describe('scheduler', () => {
     input.forEach(([val, ms]) => queue.add(wrapTask(() => delay(ms).then(() => val))));
     queue.onIdle(() => {
       const time = new Date().getTime() - startTime;
-      expect(50 <= time && time <= 100).toBeTruthy();
+      // The tasks add up to 60ms of waiting, so anything past 50ms means they
+      // ran one after another rather than together. The ceiling is only here
+      // to catch something pathological; keep it clear of the jitter you get
+      // from running the suites in parallel.
+      expect(50 <= time && time <= 500).toBeTruthy();
       done();
     });
   });

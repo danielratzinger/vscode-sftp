@@ -4,8 +4,14 @@ import FileSystem, {
   FileType,
   FileStats,
   FileOption,
+  DirectTransfer,
+  DirectTransferOption,
 } from './fileSystem';
 import RemoteFileSystem from './remoteFileSystem';
+import {
+  OperationTimeoutError,
+  watchForStall,
+} from './operationTimeout';
 import { SSHClient } from '../remote-client';
 
 type FileHandle = Buffer;
@@ -28,9 +34,218 @@ function toSimpleFileMode(mode: number) {
   return mode & parseInt('777', 8); // tslint:disable-line:no-bitwise
 }
 
-export default class SFTPFileSystem extends RemoteFileSystem {
+/**
+ * ssh2's SFTP streams keep exactly one request in flight, which caps a
+ * transfer at one chunk per round trip no matter how much bandwidth is going
+ * spare. `fastGet`/`fastPut` pipeline instead; these are their defaults,
+ * repeated here so the numbers are visible where they matter.
+ */
+const TRANSFER_CONCURRENCY = 64;
+const TRANSFER_CHUNK_SIZE = 32768;
+
+/** Transfers are watched for silence, not given a deadline. */
+const TRANSFERS = [
+  'fastGet',
+  'fastPut',
+  'createReadStream',
+  'createWriteStream',
+];
+
+export default class SFTPFileSystem extends RemoteFileSystem
+  implements DirectTransfer {
+  private _guarded: { raw: any; guarded: any } | null = null;
+
+  /**
+   * The ssh2 client, with every command given a deadline.
+   *
+   * SSH keepalives notice a peer that has gone away, but not one that is still
+   * answering and has stopped replying to this particular request - a server
+   * whose own storage has hung, most often. The callback would simply never
+   * come, and each of the methods below is a promise waiting for it.
+   *
+   * Wrapping the client rather than the seventeen methods means a call added
+   * later is covered without anyone remembering to cover it.
+   */
   get sftp() {
-    return this.getClient().getFsClient();
+    const raw = this.getClient().getFsClient();
+
+    if (!this._guarded || this._guarded.raw !== raw) {
+      this._guarded = { raw, guarded: this._guard(raw) };
+    }
+
+    return this._guarded.guarded;
+  }
+
+  setOperationTimeout(ms: number): void {
+    this._operationTimeout = ms;
+    // The guard closes over the timeout, so it has to be built again.
+    this._guarded = null;
+  }
+
+  private _guard(raw: any): any {
+    const ms = this._operationTimeout;
+    if (!raw || !(ms > 0)) {
+      return raw;
+    }
+
+    return new Proxy(raw, {
+      get: (target: any, property: PropertyKey) => {
+        const value = target[property];
+
+        if (
+          typeof value !== 'function' ||
+          TRANSFERS.indexOf(String(property)) !== -1
+        ) {
+          return typeof value === 'function' ? value.bind(target) : value;
+        }
+
+        return (...args: any[]) => {
+          const callback = args[args.length - 1];
+          if (typeof callback !== 'function') {
+            return value.apply(target, args);
+          }
+
+          let answered = false;
+          const timer = setTimeout(() => {
+            if (answered) {
+              return;
+            }
+            answered = true;
+            // The request is abandoned, not cancelled: SFTP has no way to
+            // recall one. A late reply arrives to a callback that ignores it.
+            callback(
+              new OperationTimeoutError(
+                `${String(property)} ${args[0]}`,
+                ms,
+                false
+              )
+            );
+          }, ms);
+
+          if (typeof (timer as any).unref === 'function') {
+            (timer as any).unref();
+          }
+
+          const guarded = (...result: any[]) => {
+            if (answered) {
+              return;
+            }
+            answered = true;
+            clearTimeout(timer);
+            callback(...result);
+          };
+
+          return value.apply(target, args.slice(0, -1).concat([guarded]));
+        };
+      },
+    });
+  }
+
+  /**
+   * Stops a transfer that has gone quiet.
+   *
+   * Rejecting on its own would leave ssh2 still writing to the file the caller
+   * is about to retry, which is the one way this could damage a download.
+   * Ending the connection is decisive: in-flight transfers fail, the retry
+   * layer reconnects and repeats them, and nothing is left writing behind our
+   * back.
+   */
+  private _watchTransfer(
+    operation: string,
+    onStall: (error: OperationTimeoutError) => void
+  ) {
+    return watchForStall(this._operationTimeout, operation, error => {
+      try {
+        this.getClient().end();
+      } catch (endError) {
+        // Already gone.
+      }
+
+      onStall(error);
+    });
+  }
+
+  /**
+   * Pipelined download straight to a local path, bypassing the single-request
+   * read stream. Writes the whole file or fails; it never reports success on a
+   * short read.
+   */
+  downloadToLocal(
+    remotePath: string,
+    localPath: string,
+    option: DirectTransferOption = {}
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const watchdog = this._watchTransfer(
+        `download ${remotePath}`,
+        reject
+      );
+
+      this.sftp.fastGet(
+        remotePath,
+        localPath,
+        {
+          concurrency: TRANSFER_CONCURRENCY,
+          chunkSize: TRANSFER_CHUNK_SIZE,
+          mode: option.mode,
+          step: () => watchdog.progress(),
+        },
+        err => {
+          watchdog.stop();
+          if (err) {
+            reject(err);
+            return;
+          }
+
+          resolve();
+        }
+      );
+    });
+  }
+
+  /**
+   * Pipelined upload from a local path. See `downloadToLocal`.
+   */
+  uploadFromLocal(
+    localPath: string,
+    remotePath: string,
+    option: DirectTransferOption = {}
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const watchdog = this._watchTransfer(`upload ${remotePath}`, reject);
+
+      this.sftp.fastPut(
+        localPath,
+        remotePath,
+        {
+          concurrency: TRANSFER_CONCURRENCY,
+          chunkSize: TRANSFER_CHUNK_SIZE,
+          mode: option.mode,
+          step: () => watchdog.progress(),
+        },
+        err => {
+          watchdog.stop();
+          if (err) {
+            reject(err);
+            return;
+          }
+
+          resolve();
+        }
+      );
+    });
+  }
+
+  /**
+   * `lstat` would report the link itself; a transfer target is the file the
+   * link points at, which is what got written.
+   */
+  async size(path: string): Promise<number | undefined> {
+    return new Promise<number | undefined>(resolve => {
+      this.sftp.stat(path, (err, stat) => {
+        resolve(err ? undefined : stat.size);
+      });
+    });
   }
 
   toFileStat(stat): FileStats {
@@ -127,6 +342,24 @@ export default class SFTPFileSystem extends RemoteFileSystem {
     return new Promise((resolve, reject) => {
       this.sftp.futimes(
         fd.handle,
+        this.toRemoteTimeInSecnonds(atime),
+        this.toRemoteTimeInSecnonds(mtime),
+        err => {
+          if (err) {
+            reject(err);
+            return;
+          }
+
+          resolve();
+        }
+      );
+    });
+  }
+
+  utimes(path: string, atime: number, mtime: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.sftp.utimes(
+        path,
         this.toRemoteTimeInSecnonds(atime),
         this.toRemoteTimeInSecnonds(mtime),
         err => {
@@ -314,7 +547,7 @@ export default class SFTPFileSystem extends RemoteFileSystem {
     }
   }
 
-  list(dir: string, { showHiddenFiles = true } = {}): Promise<FileEntry[]> {
+  list(dir: string): Promise<FileEntry[]> {
     return new Promise((resolve, reject) => {
       this.sftp.readdir(dir, (err, result) => {
         if (err) {
