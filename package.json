@@ -325,6 +325,11 @@
         }
       },
       {
+        "command": "sftp.download.scripts",
+        "title": "Download Scripts",
+        "category": "SFTP"
+      },
+      {
         "command": "sftp.download.activeFolder",
         "title": "Download Active Folder",
         "category": "SFTP"
@@ -593,6 +598,14 @@
         {
           "command": "sftp.remoteExplorer.refresh",
           "when": "false"
+        },
+        {
+          "command": "sftp.download.scripts",
+          "when": "false"
+        },
+        {
+          "command": "sftp.showMcpDetails",
+          "when": "sftp.enabled"
         }
       ],
       "explorer/context": [
@@ -652,6 +665,11 @@
           "command": "sftp.download.folder",
           "group": "sftp.trans@2",
           "alt": "sftp.forceDownload",
+          "when": "sftp.enabled && explorerResourceIsFolder"
+        },
+        {
+          "command": "sftp.download.scripts",
+          "group": "sftp.trans@3",
           "when": "sftp.enabled && explorerResourceIsFolder"
         }
       ],
@@ -755,6 +773,11 @@
           "command": "sftp.download.folder",
           "group": "3_trans@2",
           "alt": "sftp.forceDownload",
+          "when": "sftp.enabled && viewItem != file"
+        },
+        {
+          "command": "sftp.download.scripts",
+          "group": "3_trans@3",
           "when": "sftp.enabled && viewItem != file"
         },
         {
