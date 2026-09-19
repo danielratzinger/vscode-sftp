@@ -25,7 +25,7 @@ Change `remotePath` to the actual path if it's a symlink.
 
 The problem could be that your server runs out of file descriptors.
 You should try to increase the file descriptors limit.
-If you don't have the permission to do this, set [limitOpenFilesOnRemote](https://github.com/Natizyskunk/vscode-sftp/wiki/Configuration#limitopenfilesonremote) option in your config.
+If you don't have the permission to do this, set [limitOpenFilesOnRemote](./docs/sftp_configuration.md#limitopenfilesonremote) option in your config.
 
 ## Error: Connection closed
 

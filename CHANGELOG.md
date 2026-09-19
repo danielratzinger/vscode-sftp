@@ -1,3 +1,56 @@
+# Changelog
+
+This fork continues the changelog below, which is the history of the
+extension as written by [liximomo](https://github.com/liximomo/vscode-sftp)
+and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
+Everything under *Unreleased* is this fork; everything under 1.16.3 and
+earlier is theirs.
+
+## Unreleased
+
+### Added
+
+- An MCP server inside the editor, offering the configured connections to
+  local AI clients as twelve read-only tools: listings, file reads, text and
+  path search, a tree annotated with what each file is for, earlier versions,
+  and diffs between any two of the server, the working copy, an earlier
+  version, or another connection. Off by default (`sftp.mcp.enabled`).
+- `passwordManager` / `passphraseManager`: keep a password in the editor's
+  secret store, the macOS keychain, or behind a command, and migrate one out
+  of `sftp.json`.
+- `SFTP: Download Scripts` — the text of a project without the media.
+- A check before a download overwrites newer local work, with a diff, and a
+  copy of whatever a download replaced (`SFTP: Restore File Replaced by a
+  Download`).
+- `operationTimeout`: a command must answer within it, and a transfer must
+  not go silent for longer than it.
+- Hidden files in FTP listings, via `LIST -a` with a fallback.
+- An end-to-end test suite (`npm run e2e`) against a real SFTP server started
+  inside the test process.
+
+### Changed
+
+- FTP transfers use a pool of control connections, and SFTP transfers are
+  pipelined, instead of moving one file at a time with one request in flight.
+- A server whose clock disagrees with this machine is measured once and
+  corrected for.
+- Every transfer is verified by size before a temp file replaces a real one,
+  on every code path rather than only the direct one.
+
+### Fixed
+
+- SSH connections failed outright: an event handler was registered by calling
+  the function rather than passing it.
+- The webpack build failed on two constants used without being imported.
+- `getFileSystemPath` took a URI while its callers pass a path string.
+
+---
+
+## Upstream releases
+
+Everything below is the work of liximomo and Natizyskunk, kept as they wrote
+it.
+
 ## 1.16.3 - 2023-06-16
 * [#356] New Feature : Upload to all profiles (Pull request [#313](https://github.com/Natizyskunk/vscode-sftp/pull/313) from @wewawa vscode-sftp:create_multi_command).
 * [#357] Fix : Correcting Typo 'avaliable' => 'available' (Pull request [#343](https://github.com/Natizyskunk/vscode-sftp/pull/343) from @kjo-sdds vscode-sftp:develop).

@@ -1,129 +1,136 @@
-# sftp sync extension for VS Code
+# SFTP for VS Code
 
-New maintained and updated version by [@Natizyskunk](https://github.com/Natizyskunk/) 😀 <!-- and [@satiromarra](https://github.com/satiromarra) --> <br>
-(Forked from the no longer maintained [liximomo's SFTP plugin](https://github.com/liximomo/vscode-sftp.git))
+Edit a project locally and keep it in step with a remote server over SFTP or
+FTP — upload on save, download a whole project, browse the remote tree in the
+sidebar, diff local against remote — and, since this fork, let a local AI
+client read those servers directly through an MCP server that runs inside the
+editor.
 
-- VS Code marketplace : https://marketplace.visualstudio.com/items?itemName=Natizyskunk.sftp <br>
-- VSIX release : https://github.com/Natizyskunk/vscode-sftp/releases/
+## Where this comes from
 
-✳ I would be more than happy to have you participate in one way or another to this project. You can do so by simply following the [templates](https://github.com/Natizyskunk/vscode-sftp/issues/new/choose) when you open a new issue or a new pull request.
+The extension was written by [@liximomo](https://github.com/liximomo/vscode-sftp),
+and kept alive for years afterwards by
+[@Natizyskunk](https://github.com/Natizyskunk/vscode-sftp), whose fork is the
+one most people have installed and the one this is built on. Almost everything
+below the changes listed here is their work. If the extension has saved you
+time, that is who to thank — and Natizyskunk accepts
+[support](https://www.buymeacoffee.com/Natizyskunk) for the years of
+maintenance.
 
-## ℹ INFOS - 2025/03/13
-I've tried to keep this extension up-to-date as much as I can and added a lot of new relevant features. Saddly, for the last year and a half I wasn't really able to work on the project because of personal reasons and I'm really not sure if and when I'll be able to get more time to work on it again. So for now consider the [v1.16.3](https://github.com/Natizyskunk/vscode-sftp/releases/tag/v1.16.3) as the latest official stable release available.
+This fork exists because a particular set of problems needed solving —
+transfers that were slower than they should be, passwords sitting in a file in
+the repository, and an agent that could not see the server it was working on.
+It is developed for its own use and published nowhere; there is no marketplace
+listing and no release channel.
 
-## ℹ INFOS - 2023/06/23
-This is the main repository for the SFTP extension since [@liximomo](https://github.com/liximomo) has set his own to deprecated in favor of this one in the VSCode marketplace.
-There are also other forks that are available. Feel free to try them.
+## What is different here
 
-A lot of work as been brought to fix bugs, add new features and more than 50 updates have been released with a lot of improvements and stability fixes for almost two years now. 😎
+**An MCP server inside the editor.** The connections already configured in
+`sftp.json` are offered to any MCP client on the machine — Claude Desktop and
+anything else that speaks the protocol — as twelve read-only tools: list a
+directory, read a file, search the server's text, walk the tree with a note
+about what each file is for, compare versions, and so on. Every path is
+bounded by the connection's own root, credentials are removed before anything
+is returned, and connections are exposed only if you say so. See
+[docs/commands.md](./docs/commands.md#mcp-for-ai-clients).
 
-I've been working hard to fix a lot of things and I've updated more than 50 new releases with a lot of improvements and stability fixes and I've brought new features for almost three years now. 
+**Transfers that use the bandwidth.** FTP opens a pool of control connections
+rather than moving one file at a time; SFTP uses pipelined transfers instead
+of one request in flight. Every transfer is retried on a transient failure and
+checked by size before a temp file replaces a real one.
 
----
+**Nothing waits forever.** A command must answer within `operationTimeout`; a
+transfer is watched for silence rather than given a deadline, because a large
+file on a slow line legitimately takes as long as it takes. A connection that
+stalls is retired rather than handed to the next caller.
 
-VSCode-SFTP enables you to add, edit or delete files within a local directory and have it sync to a remote server directory using different transfer protocols like FTP or SSH. The most basic setup requires only a few lines of configuration with a wide array of specific settings also available to meet the needs of any user. Both powerful and fast, it helps developers save time by allowing the use of a familiar editor and environment.
+**Passwords out of `sftp.json`.** A password or passphrase can live in the
+editor's secret store, in the macOS keychain, or behind a command such as
+`op read`, and a literal password already in the file can be migrated into any
+of them. See [passwordManager](./docs/common_configuration.md#passwordmanager).
 
-- Features
-  - [Browser remote with Remote Explorer](#remote-explorer)
-  - Diff local and remote
-  - Sync directory
-  - Upload/Download
-  - Upload on save
-  - File Watcher
-  - Multiple configurations
-  - Switchable profiles
-  - Temp File support
-- [Commands](https://github.com/Natizyskunk/vscode-sftp/wiki/Commands)
-- [Debug](#debug)
-- [FAQ](#FAQ)
+**Care around downloads.** A download that would overwrite newer local work
+asks first and offers a diff; whatever it replaces is kept and can be restored
+from the command palette, because VS Code's own local history does not record
+what an extension writes.
 
-## Installation
+**Files worth reading.** `SFTP: Download Scripts` fetches the text of a
+project — source, JSON, Markdown, templates, configuration — and leaves the
+media and archives behind.
 
-### Method 1 (Recommended : Auto update)
-1. Select Extensions (Ctrl + Shift + X).
-2. Uninstall current sftp extension from @liximomo.
-3. Install new extension directly from VS Code Marketplace : https://marketplace.visualstudio.com/items?itemName=Natizyskunk.sftp.
-4. Voilà!
+**Hidden files and server clocks.** FTP listings ask for hidden files and fall
+back gracefully when the server does not understand the flag; a server whose
+clock disagrees with this machine is measured once and corrected for, so
+timestamp comparisons mean something.
 
-### Method 2 (Manual update)
-To install just follow these steps from within VSCode:
-1. Select Extensions (Ctrl + Shift + X).
-2. Uninstall current sftp extension from @liximomo.
-3. Open "More Action" menu(ellipsis on the top) and click "Install from VSIX…".
-4. Locate VSIX file and select.
-5. Reload VSCode.
-6. Voilà!
+## Installing
 
-## Documentation
-- [Home](https://github.com/Natizyskunk/vscode-sftp/wiki)
-- [Settings](https://github.com/Natizyskunk/vscode-sftp/wiki/Setting)
-- [Common configuration](https://github.com/Natizyskunk/vscode-sftp/wiki/Common-Configuration)
-- [SFTP configuration](https://github.com/Natizyskunk/vscode-sftp/wiki/SFTP-only-Configuration)
-- [FTP confriguration](https://github.com/Natizyskunk/vscode-sftp/wiki/FTP(s)-only-Configuration)
-- [Commands](https://github.com/Natizyskunk/vscode-sftp/wiki/Commands)
+There is no marketplace listing. Build it:
 
-## Usage
-If the latest files are already on a remote server, you can start with an empty local folder,
-then download your project, and from that point sync.
+```bash
+npm install
+npm run compile
+npx vsce package
+```
 
-1. In `VS Code`, open a local directory you wish to sync to the remote server (or create an empty directory
-that you wish to first download the contents of a remote server folder in order to edit locally).
-2. `Ctrl+Shift+P` on Windows/Linux or `Cmd+Shift+P` on Mac open command palette, run `SFTP: config` command.
-3. A basic configuration file will appear named `sftp.json` under the `.vscode` directory, open and edit the configuration parameters with your remote server information.
+Then in VS Code: **Extensions → ⋯ → Install from VSIX…** and pick the file.
 
-For instance:
+The extension id is `danielratzinger.sftp`, so it installs beside the
+marketplace SFTP extension rather than replacing it. Uninstall the other one
+first — two copies would both claim the same commands.
+
+## Getting started
+
+1. Open the folder you want to sync.
+2. Run **SFTP: Config** from the command palette. A `sftp.json` appears under
+   `.vscode`.
+3. Fill in the server:
+
 ```json
 {
-    "name": "Profile Name",
-    "host": "name_of_remote_host",
-    "protocol": "ftp",
-    "port": 21,
-    "secure": true,
-    "username": "username",
-    "remotePath": "/public_html/project", // <--- This is the path which will be downloaded if you "Download Project"
-    "password": "password",
-    "uploadOnSave": false
+  "name": "Staging",
+  "host": "staging.example.com",
+  "protocol": "sftp",
+  "port": 22,
+  "username": "deploy",
+  "passwordManager": "keychain",
+  "remotePath": "/srv/app",
+  "uploadOnSave": false
 }
 ```
-The password parameter in `sftp.json` is optional, if left out you will be prompted for a password on sync.
-_Note：_ backslashes and other special characters must be escaped with a backslash.
 
-4. Save and close the `sftp.json` file.
-5. `Ctrl+Shift+P` on Windows/Linux or `Cmd+Shift+P` on Mac open command palette.
-6. Type `sftp` and you'll now see a number of other commands. You can also access many of the commands from the project's file explorer context menus.
-7. A good one to start with if you want to sync with a remote folder is `SFTP: Download Project`.  This will download the directory shown in the `remotePath` setting in `sftp.json` to your local open directory.
-8. Done - you can now edit locally and after each save it will upload to sync your remote file with the local copy.
-9. Enjoy!
+4. Run **SFTP: Download Project** to pull the remote directory down, or start
+   editing and let `uploadOnSave` push changes up.
 
-For detailed explanations please go to [wiki](https://github.com/Natizyskunk/vscode-sftp/wiki).
+Leave the password out and you will be asked for it; name a
+[passwordManager](./docs/common_configuration.md#passwordmanager) and the
+answer is kept somewhere better than a file in your repository.
+
+## Documentation
+
+- [Settings](./docs/setting.md)
+- [Configuration](./docs/configuration.md) — every option in one place
+  - [Common](./docs/common_configuration.md)
+  - [SFTP only](./docs/sftp_configuration.md)
+  - [FTP only](./docs/ftp_configuration.md)
+- [Commands](./docs/commands.md) — including the MCP tools, what they refuse,
+  and how to connect a client
+- [FAQ](./FAQ.md)
+- [MCP-DESIGN.md](./MCP-DESIGN.md) — why the MCP server is built the way it is
+
+## Remote Explorer
+
+![remote-explorer-preview](https://raw.githubusercontent.com/Natizyskunk/vscode-sftp/master/assets/showcase/remote-explorer.png)
+
+Browse the server without downloading it: run **View: Show SFTP**, or click
+SFTP in the activity bar. Files open read-only; **SFTP: Edit in Local** brings
+one down to edit. Multiple selection works with Ctrl or Shift, and
+`remoteExplorer.order` sets where a connection appears.
 
 ## Example configurations
-You can see the full list of configuration options [here](https://github.com/Natizyskunk/vscode-sftp/wiki/configuration).
-
-- [sftp sync extension for VS Code](#sftp-sync-extension-for-vs-code)
-  - [Installation](#installation)
-    - [Method 1 (Recommended : Auto update)](#method-1-recommended--auto-update)
-    - [Method 2 (Manual update)](#method-2-manual-update)
-  - [Documentation](#documentation)
-  - [Usage](#usage)
-  - [Example configurations](#example-configurations)
-    - [Simple](#simple)
-    - [Profiles](#profiles)
-    - [Multiple Context](#multiple-context)
-    - [Connection Hopping](#connection-hopping)
-      - [Single Hop](#single-hop)
-      - [Multiple Hop](#multiple-hop)
-    - [Configuration in User Setting](#configuration-in-user-setting)
-  - [Remote Explorer](#remote-explorer)
-    - [Multiple Select](#multiple-select)
-    - [Order](#order)
-  - [Debug](#debug)
-  - [FAQ](#faq)
-  - [Donation](#donation)
-    - [Buy Me a Coffee](#buy-me-a-coffee)
-    - [PayPal](#paypal)
 
 ### Simple
+
 ```json
 {
   "host": "host",
@@ -133,6 +140,7 @@ You can see the full list of configuration options [here](https://github.com/Nat
 ```
 
 ### Profiles
+
 ```json
 {
   "username": "username",
@@ -146,8 +154,7 @@ You can see the full list of configuration options [here](https://github.com/Nat
   "profiles": {
     "dev": {
       "host": "dev-host",
-      "remotePath": "/dev",
-      "uploadOnSave": true
+      "remotePath": "/dev"
     },
     "prod": {
       "host": "prod-host",
@@ -158,12 +165,10 @@ You can see the full list of configuration options [here](https://github.com/Nat
 }
 ```
 
-_Note：_ `context` and `watcher` are only available at root level.
+Switch with **SFTP: Set Profile**.
 
-Use `SFTP: Set Profile` to switch profile.
+### Multiple contexts
 
-### Multiple Context
-The context must **not be same**.
 ```json
 [
   {
@@ -172,7 +177,7 @@ The context must **not be same**.
     "host": "host",
     "username": "username",
     "password": "password",
-    "remotePath": "/remote/project/build"
+    "remotePath": "/remote/workspace/build"
   },
   {
     "name": "server2",
@@ -180,145 +185,48 @@ The context must **not be same**.
     "host": "host",
     "username": "username",
     "password": "password",
-    "remotePath": "/remote/project/src"
+    "remotePath": "/remote/workspace/src"
   }
 ]
 ```
 
-_Note：_ `name` is required in this mode.
+### Connection hopping
 
-### Connection Hopping
-You can connect to a target server through a proxy with ssh protocol.
-
-_Note：_ Variable substitution is not working in a hop configuration.
-
-#### Single Hop
-local -> hop -> target
 ```json
 {
-  "name": "target",
-  "remotePath": "/path/in/target",
-
-  // hop
-  "host": "hopHost",
-  "username": "hopUsername",
-  "privateKeyPath": "/Users/localUser/.ssh/id_rsa", // <-- The key file is assumed on the local.
-
+  "host": "targetHost",
+  "username": "targetUser",
+  "privateKeyPath": "/Users/targetUser/.ssh/id_rsa",
+  "remotePath": "/path/to/remote/directory",
   "hop": {
-    // target
-    "host": "targetHost",
-    "username": "targetUsername",
-    "privateKeyPath": "/Users/hopUser/.ssh/id_rsa", // <-- The key file is assumed on the hop.
+    "host": "hopHost",
+    "username": "hopUser",
+    "privateKeyPath": "/Users/hopUser/.ssh/id_rsa"
   }
 }
 ```
 
-#### Multiple Hop
-local -> hopa -> hopb -> target
-```json
-{
-  "name": "target",
-  "remotePath": "/path/in/target",
+`hop` also takes an array, applied in order, for more than one jump.
 
-  // hopa
-  "host": "hopAHost",
-  "username": "hopAUsername",
-  "privateKeyPath": "/Users/hopAUsername/.ssh/id_rsa" // <-- The key file is assumed on the local.
+## Debugging
 
-  "hop": [
-    // hopb
-    {
-      "host": "hopBHost",
-      "username": "hopBUsername",
-      "privateKeyPath": "/Users/hopaUser/.ssh/id_rsa" // <-- The key file is assumed on the hopa.
-    },
+Set `sftp.debug` to `true` in your settings and reload. The log is in
+**View → Output → sftp**, and every MCP tool call is logged there too — which
+is how you see what an agent actually read, rather than what it says it read.
 
-    // target
-    {
-      "host": "targetHost",
-      "username": "targetUsername",
-      "privateKeyPath": "/Users/hopbUser/.ssh/id_rsa", // <-- The key file is assumed on the hopb.
-    }
-  ]
-}
+## Testing
+
+```bash
+npm test      # unit suites
+npm run e2e   # a real SFTP server, in-process, driven end to end
 ```
 
-### Configuration in User Setting
-You can use `remote` to tell sftp to get the configuration from [remote-fs](https://github.com/liximomo/vscode-remote-fs).
+The second one exists because the first stops at the network: it starts a real
+SFTP server inside the test process and drives the whole stack against it,
+including a command that never answers and a transfer that goes quiet halfway
+through a file.
 
-In User Setting:
-```json
-"remotefs.remote": {
-  "dev": {
-    "scheme": "sftp",
-    "host": "host",
-    "username": "username",
-    "rootPath": "/path/to/somewhere"
-  },
-  "projectX": {
-    "scheme": "sftp",
-    "host": "host",
-    "username": "username",
-    "privateKeyPath": "/Users/xx/.ssh/id_rsa",
-    "rootPath": "/home/foo/some/projectx"
-  }
-}
-```
+## License
 
-In sftp.json:
-```json
-{
-  "remote": "dev",
-  "remotePath": "/home/xx/",
-  "uploadOnSave": false,
-  "ignore": [".vscode", ".git", ".DS_Store"]
-}
-```
-
-## Remote Explorer
-![remote-explorer-preview](https://raw.githubusercontent.com/Natizyskunk/vscode-sftp/master/assets/showcase/remote-explorer.png)
-
-Remote Explorer lets you explore files in remote. You can open Remote Explorer by:
-
-1. Run Command `View: Show SFTP`.
-2. Click SFTP view in Activity Bar.
-
-You can only view a files content with Remote Explorer. Run command `SFTP: Edit in Local` to edit it in local.
-
-### Multiple Select
-You are able to select multiple files/folders at once on the remote server to download and upload. You can do it simply by holding down Ctrl or Shift while selecting all desired files, just like on the regular explorer view.
-
-_Note：_ You need to manually refresh the parent folder after you **delete** a file if the explorer isn't correctly updated.
-
-### Order
-You can order the remote Explorer by adding the `remoteExplorer.order` parameter inside your `sftp.json` config file.
-
-In sftp.json:
-```json
-{
-  "remoteExplorer": {
-    "order": 1 // <-- Default value is 0.
-  }
-}
-```
-
-## Debug
-1. Open User Settings.
-  - On Windows/Linux - `File > Preferences > Settings`
-  - On macOS - `Code > Preferences > Settings`
-2. Set `sftp.debug` to `true` and reload vscode.
-3. View the logs in `View > Output > sftp`.
-
-## FAQ
-You can see all the Frequently Asked Questions [here](./FAQ.md).
-
-## Donation
-If this project helped you reduce development time and you wish to contribute financially
-
-### Buy Me a Coffee
-[![Buy Me A Coffee](https://bmc-cdn.nyc3.digitaloceanspaces.com/BMC-button-images/custom_images/orange_img.png)](https://www.buymeacoffee.com/Natizyskunk)
-
-### PayPal
-<!-- [![PayPal](https://www.paypalobjects.com/en_US/i/btn/btn_donate_SM.gif)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=BY89QD47D7MPS&source=url) -->
-[![PayPal](https://www.paypalobjects.com/en_US/i/btn/btn_donate_SM.gif)](https://www.paypal.com/donate?business=DELD7APHHM3BC&no_recurring=0&currency_code=EUR)
-[![PayPal Me](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://paypal.me/natanfourie)
+MIT, as it has been since liximomo wrote it. See [LICENSE](./LICENSE), which
+carries the copyright of everyone whose work is in here.

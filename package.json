@@ -1,21 +1,21 @@
 {
   "name": "sftp",
   "displayName": "SFTP",
-  "description": "SFTP/FTP sync",
+  "description": "SFTP/FTP sync, with an MCP server that lets local AI clients read your servers",
   "version": "1.16.3",
-  "publisher": "Natizyskunk",
-  "author": "Natizyskunk <natan.fourie@hotmail.fr> (https://github.com/Natizyskunk)",
+  "publisher": "danielratzinger",
+  "author": "Daniel Ratzinger (https://github.com/danielratzinger)",
   "engines": {
     "vscode": "^1.64.2"
   },
   "bugs": {
-    "url": "https://github.com/Natizyskunk/vscode-sftp/issues",
-    "email": "natan.fourie@hotmail.fr"
+    "url": "https://github.com/danielratzinger/vscode-sftp/issues",
+    "email": "dr@profuturum.at"
   },
-  "homepage": "https://github.com/Natizyskunk/vscode-sftp/blob/master/README.md",
+  "homepage": "https://github.com/danielratzinger/vscode-sftp/blob/develop/README.md",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Natizyskunk/vscode-sftp.git"
+    "url": "https://github.com/danielratzinger/vscode-sftp.git"
   },
   "license": "MIT",
   "categories": [
@@ -25,7 +25,9 @@
     "ftp",
     "sftp",
     "sync",
-    "remote"
+    "remote",
+    "mcp",
+    "ai"
   ],
   "activationEvents": [
     "onCommand:sftp.config",

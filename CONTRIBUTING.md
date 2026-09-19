@@ -1,51 +1,43 @@
-# Contributing to vscode-sftp
+# Contributing
 
-After you've created a branch on your fork with your changes, [open a pull request][pr-link]. 
+This is a personal fork, developed for its own use. Issues and pull requests
+are welcome but may sit for a while.
 
-*Please follow the guidelines given below while making a Pull Request to the vscode-sftp*
+**If your change is a fix to the original extension** rather than to anything
+added here, it is worth more upstream at
+[Natizyskunk/vscode-sftp](https://github.com/Natizyskunk/vscode-sftp), where
+everyone else running this code will get it.
 
-## Pull Request Guidelines
+## Working on it
 
-* The Description should not exceed 100 characters.
-* Make sure the PR title is in the format of `Add/Remove/Fix <feature>` *for e.g.*: `Add OpenSSH`
-* Use a short descriptive commit message. *for e.g.*: ❌`Update Readme.md`  ✔ `Add OpenSSH connection Method`
-* Search previous Pull Requests or Issues before making a new one, as yours may be a duplicate.
-* Please make sure the feature has proper documentation.
-* Please make sure you squash all commits together before opening a pull request. If your pull request requires changes upon review, please be sure to squash all additional commits as well. [This wiki page][squash-link] outlines the squash process.
-* Target your Pull Request to the `master` branch of the `vscode-sftp`
+```bash
+npm install
+npm run dev     # webpack, watching
+npm test        # unit suites
+npm run e2e     # the whole stack against a real SFTP server
+```
 
-Once you've submitted a pull request, the collaborators can review your proposed changes and decide whether or not to incorporate (pull in) your changes.
+Press F5 in VS Code to launch an Extension Development Host with the extension
+loaded.
 
-### Pull Request Pro Tips
+Before opening a pull request:
 
-* [Fork][fork-link] the repository and [clone][clone-link] it locally.
-Connect your local repository to the original `upstream` repository by adding it as a [remote][remote-link].
-Pull in changes from `upstream` often so that you stay up to date and so when you submit your pull request,
-merge conflicts will be less likely. See more detailed instructions [here][syncing-link].
-* Create a [branch][branch-link] for your edits.
-* Contribute in the style of the project as outlined above. This makes it easier for the collaborators to merge
-and for others to understand and maintain in the future.
+- `npm test` and `npm run e2e` both pass
+- `npx webpack --mode development` compiles with no errors
+- `npx tslint -c tslint.json 'src/**/*.ts'` is clean for the files you touched
 
-### Open Pull Requests
+## What the tests are for
 
-Once you've opened a pull request, a discussion will start around your proposed changes.
+The unit suites stop at the file system interface and hand the code a fake
+server, which is why `npm run e2e` exists: it starts a real SFTP server inside
+the test process and drives the whole stack against it, including the cases
+that cannot be produced by hand — a command that never answers, and a transfer
+that goes quiet halfway through a file. A change to the transfer or connection
+layer should come with a test there, not only in the unit suites.
 
-Other contributors and users may chime in, but ultimately the decision is made by the collaborators.
+## Style
 
-During the discussion, you may be asked to make some changes to your pull request.
-
-If so, add more commits to your branch and push them – they will automatically go into the existing pull request. But don't forget to squash them.
-
-Opening a pull request will trigger a build to check the validity of all links in the project. After the build completes, **please ensure that the build has passed**. If the build did not pass, please view the build logs and correct any errors that were found in your contribution. 
-
-*Thanks for being a part of this project, and we look forward to hearing from you soon!*
-
-[branch-link]: <http://guides.github.com/introduction/flow/>
-[clone-link]: <https://help.github.com/articles/cloning-a-repository/>
-[fork-link]: <http://guides.github.com/activities/forking/>
-[oauth-link]: <https://en.wikipedia.org/wiki/OAuth>
-[pr-link]: <https://help.github.com/articles/creating-a-pull-request/>
-[remote-link]: <https://help.github.com/articles/configuring-a-remote-for-a-fork/>
-[syncing-link]: <https://help.github.com/articles/syncing-a-fork>
-[squash-link]: <https://github.com/todotxt/todo.txt-android/wiki/Squash-All-Commits-Related-to-a-Single-Issue-into-a-Single-Commit>
-
+Follow what is already in the file you are editing. Comments explain why
+something is the way it is, especially where the obvious approach was tried
+and did not work — those notes are the ones that stop the next person undoing
+a fix by accident.
