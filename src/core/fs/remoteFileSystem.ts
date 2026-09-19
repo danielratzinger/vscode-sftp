@@ -116,7 +116,10 @@ export default abstract class RemoteFileSystem extends FileSystem {
 
       const onData = chunk => {
         watchdog.progress();
-        arr.push(chunk);
+        // An encoding in the option makes the stream emit strings, and
+        // `Buffer.concat` throws on the first one. Found by reading a file
+        // with `{ encoding: 'utf8' }` against a real server.
+        arr.push(typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : chunk);
       };
       const onEnd = err => {
         watchdog.stop();
