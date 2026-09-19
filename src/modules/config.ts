@@ -18,11 +18,15 @@ const configScheme = {
   port: Joi.number().integer(),
   connectTimeout: Joi.number().integer(),
   username: Joi.string().required(),
-  password: nullable(Joi.string()),
+  password: nullable(Joi.string().allow(true)),
+  passwordCommand: nullable(Joi.string()),
+  passwordManager: nullable(Joi.string().allow(true)),
 
   agent: nullable(Joi.string()),
   privateKeyPath: nullable(Joi.string()),
   passphrase: nullable(Joi.string().allow(true)),
+  passphraseCommand: nullable(Joi.string()),
+  passphraseManager: nullable(Joi.string().allow(true)),
   interactiveAuth: Joi.alternatives([
     Joi.boolean(),
     Joi.array()

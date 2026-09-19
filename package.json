@@ -66,10 +66,133 @@
           "default": false,
           "description": "print debug log on sftp output channel.(reload vscode when change this)"
         },
+        "sftp.passwordManager": {
+          "type": [
+            "string",
+            "boolean"
+          ],
+          "default": true,
+          "markdownDescription": "Where passwords live, for connections that set no `passwordManager` of their own. Takes the same values: `true` for the OS credential store (the Keychain on macOS), `false` to be asked every time, or a manager name such as `keychain`, `vscode`, `secret-tool`, `1password`, `pass`, `gopass` or `bitwarden`.(reload vscode when change this)"
+        },
+        "sftp.passphraseManager": {
+          "type": [
+            "string",
+            "boolean"
+          ],
+          "default": true,
+          "markdownDescription": "Where private key passphrases live, for connections that set no `passphraseManager` of their own. Same values as `#sftp.passwordManager#`.(reload vscode when change this)"
+        },
         "sftp.downloadWhenOpenInRemoteExplorer": {
           "type": "boolean",
           "default": false,
           "description": "\"Download\" instead of \"View Content\" when open file in Remote Explorer"
+        },
+        "sftp.downloadScripts.excludeExtensions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "`Download Scripts` takes every file except these. An entry is an extension (`png`, `.png` and `*.png` all work) or a whole file name (`Thumbs.db`). Leave empty for the built-in list, which covers images, media, fonts, archives, binaries and office documents."
+        },
+        "sftp.downloadScripts.excludeFolders": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Folders `Download Scripts` does not go into, matched by name at any depth. Empty by default, so every folder is walked. A common list is `[\"node_modules\", \"vendor\", \".git\", \"dist\", \"build\", \"__pycache__\"]`. The folder you ask for directly is always downloaded, even if it is named here."
+        },
+        "sftp.downloadWhenLocalIsNewer": {
+          "type": "string",
+          "enum": [
+            "ask",
+            "download",
+            "skip"
+          ],
+          "enumDescriptions": [
+            "Ask before replacing a local file that is newer than the one on the server.",
+            "Download anyway, without checking. This is how downloads behaved before.",
+            "Leave the local file alone and note it in the SFTP output channel."
+          ],
+          "default": "ask",
+          "markdownDescription": "What to do when downloading a single file would replace a local copy whose timestamp is newer than the server’s. `Download` in the Alt menu always downloads, whatever this says."
+        },
+        "sftp.keepReplacedFiles": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Keep a copy of a local file before a download writes over it, when it differs from what is arriving. VS Code's own local history does not record downloads, so this is the only trace of what was there. Restore one with `SFTP: Restore File Replaced by a Download`."
+        },
+        "sftp.keepReplacedFilesPerFile": {
+          "type": "number",
+          "default": 5,
+          "markdownDescription": "How many replaced copies of one file to keep."
+        },
+        "sftp.keepReplacedFilesDays": {
+          "type": "number",
+          "default": 30,
+          "markdownDescription": "How long to keep a replaced copy, in days."
+        },
+        "sftp.mcp.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Run a local MCP server so an AI client (Claude Desktop and others) can read the files on your configured servers. Listens on loopback only. Read-only with respect to the remote — it never writes to your servers, though it does write to disk locally. Run `SFTP: Show MCP Connection Details` to connect a client."
+        },
+        "sftp.mcp.exposed": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Whether connections are offered to MCP clients when they do not set `mcp.exposed` themselves. Only connections open in the editor are ever offered."
+        },
+        "sftp.mcp.port": {
+          "type": "number",
+          "default": 7391,
+          "markdownDescription": "Port for the MCP server. The first VS Code window to take it serves; the rest stand by and take over if it closes. If another program already has it, a free port is used instead — stdio clients do not care, since the bridge discovers it."
+        },
+        "sftp.mcp.deniedFiles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Extra file names never served to an MCP client, on top of the built-in list (`.env*`, `wp-config.php`, `.htpasswd`, private keys and similar). A denied file is reported as existing, with its contents withheld."
+        },
+        "sftp.mcp.redactAssignments": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Also replace credentials assigned to a name, such as `define('DB_PASSWORD', '…')` or `$cfg['pw'] = '…'`, on top of the recognisable key formats. References such as `env('DB_PASSWORD')` and validation rules are left alone. Turn this off if it takes out code you need."
+        },
+        "sftp.mcp.excludeFolders": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Folders `sftp_search` does not walk into, by name at any depth. Empty by default. A common list is `[\"node_modules\", \"vendor\", \".git\", \"dist\"]`."
+        },
+        "sftp.mcp.exposeHistory": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Let MCP clients read VS Code's local history for files in the project, through `sftp_history` and `sftp_diff`. It is the only record of how your working copy got to its current state. Read only, and already off when `workbench.localHistory.enabled` is false."
+        },
+        "sftp.mcp.callTimeout": {
+          "type": "number",
+          "default": 120000,
+          "markdownDescription": "The ceiling on one MCP tool call, in milliseconds. A search or a tree walk that runs out of time stops and returns what it found, saying it was cut short; anything else is stopped with an error telling the model to ask for less. Set to 0 to let a call take as long as it takes."
+        },
+        "sftp.mcp.maxFileBytes": {
+          "type": "number",
+          "default": 2097152,
+          "markdownDescription": "The largest file an MCP client may read, in bytes. Two megabytes by default. Bigger files are refused before they are fetched, and skipped during a search: they are almost always logs, dumps or media rather than code."
+        },
+        "sftp.mcp.maxFiles": {
+          "type": "number",
+          "default": 2000,
+          "markdownDescription": "How many files one search may gather before it stops and says so."
+        },
+        "sftp.mcp.maxDepth": {
+          "type": "number",
+          "default": 8,
+          "markdownDescription": "How deep below the search root to descend. Each directory is one round trip."
         }
       }
     },
@@ -82,6 +205,21 @@
       {
         "command": "sftp.setProfile",
         "title": "Set Profile",
+        "category": "SFTP"
+      },
+      {
+        "command": "sftp.forgetPassword",
+        "title": "Forget Stored Password",
+        "category": "SFTP"
+      },
+      {
+        "command": "sftp.restoreReplaced",
+        "title": "Restore File Replaced by a Download",
+        "category": "SFTP"
+      },
+      {
+        "command": "sftp.showMcpDetails",
+        "title": "Show MCP Connection Details",
         "category": "SFTP"
       },
       {
@@ -298,6 +436,14 @@
       "commandPalette": [
         {
           "command": "sftp.setProfile",
+          "when": "sftp.enabled"
+        },
+        {
+          "command": "sftp.forgetPassword",
+          "when": "sftp.enabled"
+        },
+        {
+          "command": "sftp.restoreReplaced",
           "when": "sftp.enabled"
         },
         {

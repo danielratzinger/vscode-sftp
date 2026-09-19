@@ -186,8 +186,18 @@
         "description": "Username for authentication."
       },
       "password": {
+        "type": ["string", "boolean"],
+        "description": "Password for password-based user authentication. A string is stored in this file as plain text. Set it to true, or leave it out, to be asked once and have it kept in the OS credential store (the Keychain on macOS).",
+        "default": true
+      },
+      "passwordManager": {
+        "type": ["string", "boolean"],
+        "description": "Where the password lives. true is the OS credential store (the Keychain on macOS). false is nowhere: you are asked on every connection, and anything already stored for this server is deleted. A name picks a manager: \"keychain\", \"vscode\", \"secret-tool\", \"1password\", \"pass\", \"gopass\" or \"bitwarden\"; add \":<reference>\" to point at an item you already have. Left out, the sftp.passwordManager setting decides. If a plain-text password is also set here, and the manager can be written to, it is moved there after the next successful connection and replaced with true.",
+        "default": true
+      },
+      "passwordCommand": {
         "type": "string",
-        "description": "Password for password-based user authentication.",
+        "description": "Shell command whose output is used as the password, e.g. `security find-generic-password -w -s my-server` or `op read \"op://Private/my-server/password\"`. Takes precedence over `password`. Only runs in a trusted workspace.",
         "default": ""
       },
       "remotePath": {
@@ -218,6 +228,16 @@
       "privateKeyPath": {
         "type": "string",
         "description": "Absolute path to user private key."
+      },
+      "passphraseManager": {
+        "type": ["string", "boolean"],
+        "description": "Where the private key passphrase lives. Same form as passwordManager.",
+        "default": true
+      },
+      "passphraseCommand": {
+        "type": "string",
+        "description": "Shell command whose output is used as the private key passphrase. Takes precedence over `passphrase`. Only runs in a trusted workspace.",
+        "default": ""
       },
       "passphrase": {
         "oneOf": [

@@ -1,11 +1,20 @@
 import CustomError from '../customError';
+import { PromptContext } from '../credentialResolver';
 
 export interface ConnectOption {
   // common
   host: string;
   port: number;
   username?: string;
-  password?: string;
+  /** `true` means "don't keep it here" - it's resolved before connecting. */
+  password?: string | boolean;
+  /** Shell command whose output is the password. */
+  passwordCommand?: string;
+  /** Shell command whose output is the private key passphrase. */
+  passphraseCommand?: string;
+  /** Where the credential lives: true for the built-in store, or a manager name. */
+  passwordManager?: string | boolean;
+  passphraseManager?: string | boolean;
   connectTimeout?: number;
   debug(x: string): void;
 
@@ -30,7 +39,7 @@ export enum ErrorCode {
 }
 
 export interface Config {
-  askForPasswd(msg: string): Promise<string | undefined>;
+  askForPasswd(msg: string, context?: PromptContext): Promise<string | undefined>;
 }
 
 export default abstract class RemoteClient {
@@ -48,19 +57,35 @@ export default abstract class RemoteClient {
   protected abstract _hasProvideAuth(connectOption: ConnectOption): boolean;
   protected abstract _initClient(): any;
 
+  /**
+   * The option this client actually connected with, including a password the
+   * user was prompted for. Opening a sibling connection with it doesn't prompt
+   * again.
+   */
+  get connectOption(): ConnectOption {
+    return this._option;
+  }
+
   async connect(connectOption: ConnectOption, config: Config) {
     if (this._hasProvideAuth(connectOption)) {
+      this._option = connectOption;
       return this._doConnect(connectOption, config);
     }
 
-    const password = await config.askForPasswd(`[${connectOption.host}]: Enter your password`);
+    const password = await config.askForPasswd(
+      `[${connectOption.host}]: Enter your password`,
+      { kind: 'password', host: connectOption.host }
+    );
 
     // cancel connect
     if (password === undefined) {
       throw new CustomError(ErrorCode.CONNECT_CANCELLED, 'cancelled');
     }
 
-    return this._doConnect({ ...connectOption, password }, config);
+    const resolvedOption = { ...connectOption, password };
+    this._option = resolvedOption;
+
+    return this._doConnect(resolvedOption, config);
   }
 
   onDisconnected(cb) {

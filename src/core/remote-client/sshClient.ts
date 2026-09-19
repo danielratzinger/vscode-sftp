@@ -247,7 +247,8 @@ export default class SSHClient extends RemoteClient {
     // explict compare to true, cause we want to distinct between string and true
     if (option.passphrase === true) {
       option.passphrase = await config.askForPasswd(
-        `[${option.host}]: Enter your passphrase`
+        `[${option.host}]: Enter your passphrase`,
+        { kind: 'passphrase', host: option.host }
       );
       if (option.passphrase === undefined) {
         throw new CustomError(ErrorCode.CONNECT_CANCELLED, 'cancelled');
@@ -270,8 +271,10 @@ export default class SSHClient extends RemoteClient {
             [];
           if (answers.length < prompts.length) {
             config
+              // Not remembered: these are usually one-time codes.
               .askForPasswd(
-                `[${option.host}]: ${prompts[answers.length].prompt}`
+                `[${option.host}]: ${prompts[answers.length].prompt}`,
+                { kind: 'interactive', host: option.host }
               )
               .then(answer => {
                 if (answer === undefined) {

@@ -15,6 +15,8 @@ The configuration file can always be accessed with `CTRL` + `Shift` + `P`, and s
 - [port](#port)
 - [username](#username)
 - [password](#password)
+- [passwordManager](#passwordmanager)
+- [passwordCommand](#passwordcommand)
 - [remotePath](#remotepath)
 - [filePerm](#fileperm)
 - [dirPerm](#dirperm)
@@ -135,20 +137,127 @@ Username for authentication.
 ```
 
 ### password
-[!WARNING]
-**Passwords are stored as plain-text!**
-
 The password for password-based user authentication.
 
-| Key | Value |
-| --- | --- |
-| *password* | *string* |
+| ⚠️ Warning |
+| :--- |
+| *A string here is stored in `sftp.json` as plain text. If the file is in version control, so is your password.* | 
+
+Set it to `true`, or leave it out entirely, and you are asked for the password once. It is then kept in the operating system's credential store — the Keychain on macOS, the Credential Manager on Windows, libsecret on Linux — and reused on the next connection. Nothing sensitive stays in `sftp.json`, so the file is safe to commit.
+
+A stored password is saved only after the server accepts it, and dropped again if the server later rejects it, so a changed password re-prompts instead of failing forever. Use `SFTP: Forget Stored Password` from the command palette to remove one yourself, or set [passwordManager](#passwordmanager) to false to stop remembering it for a server.
+
+| Key | Value | Default |
+| --- | --- | --- |
+| *password* | *string*\|*boolean* | |
 
 ```json
 {
-  "password": "Password123"
+  "password": true
 }
 ```
+
+### passwordManager
+Where the password lives.
+
+| Value | Means |
+| --- | --- |
+| *true* | The OS credential store: the Keychain on macOS, VS Code's own storage elsewhere |
+| *false* | Nowhere. You are asked on every connection, and anything already stored for this server is deleted |
+| *"keychain"* | The macOS Keychain |
+| *"vscode"* | VS Code's own secret storage, even on a Mac |
+| *"secret-tool"* | libsecret, on Linux |
+| *"1password"*, *"pass"*, *"gopass"*, *"bitwarden"* | That manager, read-only |
+
+Leave it out and the `sftp.passwordManager` setting decides, which takes the same values and defaults to `true`. Set it per connection to override that.
+
+`false` applies to that one credential, so a key passphrase can still be remembered while a password is not:
+
+```json
+{
+  "passwordManager": false,
+  "passphraseManager": true
+}
+```
+
+Name only the manager and it looks for the item this extension would have created itself:
+
+| Derived name | For |
+| --- | --- |
+| `vscode-sftp/sftp/deploy@example.com:22` | the password |
+| `vscode-sftp-passphrase/home/me/.ssh/id_ed25519` | a key passphrase |
+
+For `true`, `keychain`, `vscode` and `secret-tool` that is the service and account the extension already uses, so an entry it saved is found with no further setup. For the others, create the item under that name, or add a colon and point at one you already have:
+
+```json
+{
+  "passwordManager": "1password:op://Private/My Server/password"
+}
+```
+
+#### Moving a password out of this file
+Set a manager next to a plain-text password and the password is moved there after the next successful connection:
+
+```json
+{
+  "host": "example.com",
+  "username": "deploy",
+  "password": "hunter2",
+  "passwordManager": "keychain"
+}
+```
+
+becomes
+
+```json
+{
+  "host": "example.com",
+  "username": "deploy",
+  "password": true,
+  "passwordManager": "keychain"
+}
+```
+
+`"passwordManager": true` does the same into the OS credential store. The move needs the manager written on the connection itself — the `sftp.passwordManager` setting says where credentials go, but is not on its own licence to edit your config file. A plain-text `passphrase` moves at the same time if `passphraseManager` is set. Other servers in the same file are left alone, including ones sharing a `profiles` block, because only values equal to the one actually stored are replaced.
+
+| 💡 Note |
+| :--- |
+| *Nothing happens until a connection succeeds, so a password that doesn't work is never the one that gets saved. The file is rewritten only after the stored copy has been read back and matches — if the store refuses or returns something else, the file is left exactly as it was and the reason goes to the SFTP output channel. Losing the only copy of a password would be worse than leaving it in plain text a little longer.* | 
+
+| ⚠️ Warning |
+| :--- |
+| *The read-only managers can't be written to, so a password sitting next to one of those is not moved; a warning says so and the file is untouched. Running a manager's CLI only happens in a [trusted workspace](https://code.visualstudio.com/docs/editor/workspace-trust).* | 
+
+| Key | Value | Default |
+| --- | --- | --- |
+| *passwordManager* | *string*\|*boolean* | `true` |
+
+### passwordCommand
+A shell command whose output is used as the password. Takes precedence over [passwordManager](#passwordmanager), and nothing is stored by this extension at all.
+
+```json
+{
+  "passwordCommand": "security find-generic-password -w -s my-server"
+}
+```
+
+```json
+{
+  "passwordCommand": "op read \"op://Private/my-server/password\""
+}
+```
+
+| ⚠️ Warning |
+| :--- |
+| *The command comes from a file in your workspace, so running it runs workspace code. It only runs in a [trusted workspace](https://code.visualstudio.com/docs/editor/workspace-trust), the same bar VS Code sets for tasks.* | 
+
+| 💡 Note |
+| :--- |
+| *One trailing newline is stripped; everything else is used as-is, so a password may contain spaces. The command runs on every connection, so prefer one that doesn't prompt.* | 
+
+| Key | Value |
+| --- | --- |
+| *passwordCommand* | *string* |
 
 ### remotePath
 The absolute path on the remote host.
@@ -552,6 +661,28 @@ Set to 'true' for enable passphrase dialog. This will prevent from using clearte
 ```json
 {
   "passphrase": true
+}
+```
+
+### passphraseManager
+Where the private key passphrase lives. Same form as [passwordManager](#passwordmanager).
+
+```json
+{
+  "passphraseManager": "keychain"
+}
+```
+
+### passphraseCommand
+A shell command whose output is used as the private key passphrase. The counterpart to [passwordCommand](#passwordcommand), with the same trusted-workspace rule.
+
+| Key | Value |
+| --- | --- |
+| *passphraseCommand* | *string* |
+
+```json
+{
+  "passphraseCommand": "security find-generic-password -w -s my-ssh-key"
 }
 ```
 
