@@ -2,7 +2,18 @@ import { Client } from 'ssh2';
 import upath from '../upath';
 import RemoteClient, { ErrorCode, ConnectOption, Config } from './remoteClient';
 import localFs from '../localFs';
-import { FileSystem, RemoteFileSystem, SFTPFileSystem } from '../fs';
+import FileSystem from '../fs/fileSystem';
+import RemoteFileSystem from '../fs/remoteFileSystem';
+// Not imported: `sftpFileSystem` imports this module, and taking its class at
+// module level closes a cycle that production scope-hoisting resolves to
+// `undefined` - which is how a working extension shipped an editor-only
+// failure. It is fetched at the moment it is used instead.
+import type SFTPFileSystemType from '../fs/sftpFileSystem';
+
+function sftpFileSystemClass(): typeof SFTPFileSystemType {
+  // tslint:disable-next-line:no-var-requires
+  return require('../fs/sftpFileSystem').default;
+}
 import logger from '../../logger';
 import CustomError from '../customError';
 
@@ -59,7 +70,7 @@ export default class SSHClient extends RemoteClient {
         const preClient = this.hoppingClients[index - 1];
         if (preClient) {
           sock = await this._makeHopping(preClient, curOpt.host, curOpt.port);
-          fs = new SFTPFileSystem(upath, {
+          fs = new (sftpFileSystemClass())(upath, {
             client: preClient,
           });
         }
@@ -80,7 +91,7 @@ export default class SSHClient extends RemoteClient {
         lastOption.host,
         lastOption.port
       );
-      fs = new SFTPFileSystem(upath, {
+      fs = new (sftpFileSystemClass())(upath, {
         client: lastClient,
       });
     }

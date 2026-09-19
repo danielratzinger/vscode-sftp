@@ -9,7 +9,7 @@ import {
   withDeadline,
 } from './operationTimeout';
 import { isConnectionLost } from './transientError';
-import { FTPClient } from '../remote-client';
+import FTPClient from '../remote-client/ftpClient';
 
 export const DEFAULT_CONNECTION_LIMIT = 4;
 

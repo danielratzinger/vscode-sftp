@@ -12,7 +12,7 @@ import {
   OperationTimeoutError,
   watchForStall,
 } from './operationTimeout';
-import { SSHClient } from '../remote-client';
+import SSHClient from '../remote-client/sshClient';
 
 type FileHandle = Buffer;
 

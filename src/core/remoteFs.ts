@@ -6,12 +6,13 @@ import {
 } from './credentialResolver';
 import app from '../app';
 import { ConnectOption } from './remote-client/remoteClient';
-import {
-  FileSystem,
-  RemoteFileSystem,
-  SFTPFileSystem,
-  FTPFileSystem,
-} from './fs';
+import FileSystem from './fs/fileSystem';
+import RemoteFileSystem from './fs/remoteFileSystem';
+// Directly, not through `./fs`: the barrel is part of a cycle, and a
+// re-exported class read through one can be `undefined` by the time it is
+// called.
+import SFTPFileSystem from './fs/sftpFileSystem';
+import FTPFileSystem from './fs/ftpFileSystem';
 import localFs from './localFs';
 
 function hashOption(opiton) {

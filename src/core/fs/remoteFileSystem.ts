@@ -1,5 +1,8 @@
 import FileSystem, { FileOption } from './fileSystem';
-import { RemoteClient, ConnectOption, RemoteClientConfig } from '../remote-client';
+import RemoteClient, {
+  ConnectOption,
+  Config as RemoteClientConfig,
+} from '../remote-client/remoteClient';
 import { DEFAULT_OPERATION_TIMEOUT, watchForStall } from './operationTimeout';
 
 interface RFSOptionDefaults {
