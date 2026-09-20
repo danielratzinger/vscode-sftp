@@ -69,6 +69,7 @@ export const COMMAND_REVEAL_IN_TERMINAL = 'sftp.revealInTerminal';
 export const COMMAND_AUTOSYNC_WORKTREE = 'sftp.autosyncWorktree';
 export const COMMAND_STOP_AUTOSYNC_WORKTREE = 'sftp.stopAutosyncWorktree';
 export const COMMAND_SWITCH_AUTOSYNC_WORKTREE = 'sftp.switchAutosyncWorktree';
+export const COMMAND_REMOVE_DELETED = 'sftp.removeDeleted';
 export const COMMAND_RESTORE_REMOTE = 'sftp.restoreRemote';
 export const COMMAND_AUTOSYNC_REVEAL_FINDER_MAC = 'sftp.autosyncReveal.mac';
 export const COMMAND_AUTOSYNC_REVEAL_FINDER_WINDOWS = 'sftp.autosyncReveal.windows';

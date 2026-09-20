@@ -500,6 +500,11 @@
         "category": "SFTP"
       },
       {
+        "command": "sftp.removeDeleted",
+        "title": "Remove Files Deleted from the Project",
+        "category": "SFTP"
+      },
+      {
         "command": "sftp.restoreRemote",
         "title": "Restore Server to an Earlier Point",
         "category": "SFTP"
@@ -574,6 +579,10 @@
         {
           "command": "sftp.switchAutosyncWorktree",
           "when": "sftp.enabled && sftp.autosyncWorktreeing"
+        },
+        {
+          "command": "sftp.removeDeleted",
+          "when": "sftp.enabled"
         },
         {
           "command": "sftp.restoreRemote",
@@ -1038,6 +1047,11 @@
           "command": "sftp.autosyncReveal.terminal",
           "group": "3_trans@4",
           "when": "sftp.enabled && viewItem =~ /-autosyncaway/"
+        },
+        {
+          "command": "sftp.removeDeleted",
+          "group": "7_modification@0",
+          "when": "sftp.enabled && viewItem =~ /^root/"
         },
         {
           "command": "sftp.restoreRemote",

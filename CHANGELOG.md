@@ -128,6 +128,18 @@ which is the password for the server it is uploading to.
   folder is asked what has been written since the connection was last
   watching it, so changes made while the window was closed go up too. Uploads
   only; a file deleted while nothing was watching leaves nothing to notice.
+- `SFTP: Remove Files Deleted from the Project`, on a connection in the Remote
+  Explorer: asks git what the project has deleted over its history and offers
+  to take those files off the server, keeping a copy of each first. A server
+  accumulates - downloads write and never remove, a deploy uploads what exists
+  rather than removing what stopped existing, and autosync only removes what
+  leaves the index while it is watching. This and `Sync Local -> Remote` with
+  `syncOption.delete` answer different questions: that one lists the server and
+  removes whatever is not on this machine, which is complete and includes every
+  runtime directory, upload folder and cache the repository ignores; this one
+  can only ever name a path git once tracked. Offered again after an
+  `Everything in the folder` catch-up, since uploading everything the project
+  has says nothing about what it used to have.
 - `Switch Autosync Worktree`, beside `Stop Autosync Worktree` while a
   connection is syncing and in place of `Autosync Worktree`. In the Remote
   Explorer which of the two appears is decided per connection rather than per

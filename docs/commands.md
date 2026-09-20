@@ -151,6 +151,22 @@ That case is the one worth a command: the file explorer shows this window's proj
 
 A worktree removed by hand leaves the rest of git in place, so the folder may simply be gone; both say so rather than opening nothing.
 
+### Remove Files Deleted from the Project
+On a connection in the Remote Explorer, or from the palette. Asks git what the project has deleted over its history, keeps the paths that really are gone from the checkout, and offers to take those off the server — with the list and the count before anything moves, and a copy of each kept first, so `Restore Server to an Earlier Point` still works afterwards.
+
+A server accumulates. Downloads write and never remove; a deploy uploads what exists rather than removing what stopped existing; autosync takes files off as they leave git's index, but only from the moment it starts watching. Everything dropped before that is still there.
+
+**This and `Sync Local -> Remote` answer different questions, and confusing them is expensive.**
+
+| | asks | removes | risk |
+| --- | --- | --- | --- |
+| `Remove Files Deleted from the Project` | git's history | only paths the repository once tracked | cannot name a file the project never owned |
+| `Sync Local -> Remote` with `syncOption.delete` | the server's listing | anything not on this machine | includes runtime directories, uploads and caches the repository ignores |
+
+The second is the complete answer and the dangerous one. On a project whose `.gitignore` holds `/data/*` — runtime content that lives only on the server — and whose `sftp.json` has no `ignore` list, it would delete that content. The first cannot, by construction: a path git never tracked can never appear in the list.
+
+Renames count as a deletion of the old path, which is what they are from a server's point of view — the old name is still sitting there. A file deleted in one commit and written again in another is not offered; the history says both things and only the disk settles it. Offered again after an `Everything in the folder` catch-up, since uploading everything the project *has* says nothing about what it used to have.
+
 ### Restore Server to an Earlier Point
 On a connection in the Remote Explorer, or from the palette. Lists the autosync sessions that kept anything, newest first, with how many files each holds and how long ago it was. Picking one puts back, for every file that session or a later one wrote over, the **earliest** copy from that moment on — which by construction is what the file was before the first thing in that window touched it.
 

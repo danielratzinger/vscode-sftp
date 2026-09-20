@@ -14,6 +14,7 @@ import * as fse from 'fs-extra';
 import { checkoutsOf, lastEditIn } from '../core/clones';
 import { gitIgnoreIn, IgnoreLookup } from '../core/gitIgnored';
 import { indexWrittenAt, trackedIn, vanished } from '../core/trackedFiles';
+import { everDeletedIn, stillGoneIn } from '../core/removedFromHistory';
 import {
   claim,
   keep,
@@ -1181,6 +1182,7 @@ async function offerToCatchUp(service: FileService, plan: CatchUp): Promise<void
 
   let toUpload: string[];
   let toDelete: string[] = [];
+  const wasEverything = picked.hours === 0;
 
   if (picked.from) {
     toUpload = picked.from.upload;
@@ -1294,6 +1296,164 @@ async function offerToCatchUp(service: FileService, plan: CatchUp): Promise<void
           '.'
       );
     })
+  );
+
+  // Uploading everything makes the server hold everything the project has. It
+  // says nothing about what the project used to have and dropped, which is the
+  // other half of what a fresh deploy means - offered separately, because
+  // removing files is not a thing to fold silently into an upload.
+  if (wasEverything && plan.branch) {
+    const clean = 'Look';
+    const answer = await vscode.window.showInformationMessage(
+      `${where} now has everything in the folder. Look for files the project ` +
+        'deleted that may still be on it?',
+      clean,
+      'Not now'
+    );
+
+    if (answer === clean) {
+      await removeWhatWasDeleted(service);
+    }
+  }
+}
+
+/** Which folder a connection deploys, and the checkout it sits in. */
+function deployedBy(service: FileService): { syncRoot: string; checkout: string } {
+  const chosen = activeWorktree(service);
+  if (chosen) {
+    return { syncRoot: chosen.root, checkout: chosen.root };
+  }
+
+  return { syncRoot: service.baseDir, checkout: service.baseDir };
+}
+
+/**
+ * The command: take off the server what the project deleted.
+ *
+ * Autosync removes files as they leave git's index, but only from the moment
+ * it starts watching. Everything dropped before that is still on the server,
+ * along with everything dropped in the years before any of this existed.
+ *
+ * Asked of git's history, never of the server. The other way round - list the
+ * server, remove what is not on disk - answers a more complete question and a
+ * far more dangerous one, because the answer includes every runtime directory,
+ * upload folder and cache the site keeps and the repository ignores. Nothing
+ * here can name a path the repository never tracked.
+ */
+export async function removeWhatWasDeleted(service: FileService): Promise<void> {
+  const where = connectionLabel(service.getConfig() as any);
+  const { syncRoot, checkout } = deployedBy(service);
+
+  const deleted = await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Window,
+      title: 'SFTP: asking git what the project dropped\u2026',
+    },
+    () => everDeletedIn(checkout)
+  );
+
+  if (deleted === undefined) {
+    vscode.window.showInformationMessage(
+      `${syncRoot} is not a git repository, so there is no history to ask. ` +
+        '"SFTP: Sync Local -> Remote" compares against the server instead.'
+    );
+    return;
+  }
+
+  const gone = await stillGoneIn(checkout, deleted);
+  const mine = gone
+    .map(file => path.join(checkout, file))
+    .filter(
+      file =>
+        !isGitPlumbing(syncRoot, file) &&
+        !ignoredInWorktree(service, syncRoot, file) &&
+        path.relative(syncRoot, file).indexOf('..') !== 0
+    );
+
+  if (mine.length === 0) {
+    vscode.window.showInformationMessage(
+      `Nothing to remove from ${where}: everything the project deleted is ` +
+        'already gone from it, or was never deployed.'
+    );
+    return;
+  }
+
+  const some = mine
+    .slice(0, 8)
+    .map(file => path.relative(syncRoot, file))
+    .join('\n');
+
+  const go = `Remove ${mine.length}`;
+  const answer = await vscode.window.showWarningMessage(
+    `Remove ${mine.length} file${mine.length === 1 ? '' : 's'} from ${where}?`,
+    {
+      modal: true,
+      detail:
+        `${some}${mine.length > 8 ? `\n…and ${mine.length - 8} more` : ''}\n\n` +
+        'These were deleted from the project and may still be on the server. ' +
+        'Only paths git once tracked are listed, so nothing the repository ' +
+        'ignores - runtime data, uploads, caches - can appear here. Each one ' +
+        'is copied off the server before it goes.',
+    },
+    go
+  );
+
+  if (answer !== go) {
+    return;
+  }
+
+  await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: `Removing what the project deleted from ${where}`,
+      cancellable: true,
+    },
+    (progress, token) =>
+      withConnection(where, async () => {
+        let removed = 0;
+        let kept = 0;
+
+        for (const file of mine) {
+          if (token.isCancellationRequested) {
+            break;
+          }
+
+          progress.report({
+            increment: 100 / mine.length,
+            message: path.relative(syncRoot, file),
+          });
+
+          // Same rule as everywhere else: no copy, no removal.
+          const cleared = await clearToOverwrite(
+            service,
+            remotePathOf(service, syncRoot, file)
+          ).catch(() => false);
+
+          if (!cleared) {
+            kept += 1;
+            continue;
+          }
+
+          try {
+            await remove(service, syncRoot, file);
+            removed += 1;
+          } catch (error) {
+            // A file that is not there is the outcome asked for.
+            logger.debug(`could not remove ${file}: ${error.message}`);
+          }
+        }
+
+        logger.info(
+          `[cleanup] ${removed} removed from ${where}` +
+            (kept ? `, ${kept} left alone (no copy could be kept)` : '') +
+            '.'
+        );
+
+        vscode.window.showInformationMessage(
+          `${removed} file${removed === 1 ? '' : 's'} removed from ${where}` +
+            (kept ? `; ${kept} left alone because no copy could be kept.` : '.')
+        );
+      })
   );
 }
 
