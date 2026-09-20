@@ -92,6 +92,8 @@ now diverges from upstream's.
   the function rather than passing it.
 - The webpack build failed on two constants used without being imported.
 - `getFileSystemPath` took a URI while its callers pass a path string.
+- Every FTP connection left its connect-deadline timer running after the
+  connection was made.
 - A tree or search that stopped early said only that it had “hit its limit”.
   It now says which limit - depth, file count or time - because the way out of
   each is a different one.

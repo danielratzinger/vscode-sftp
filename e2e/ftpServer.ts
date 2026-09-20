@@ -79,9 +79,14 @@ export async function startFtpServer(
 ): Promise<RunningFtpServer> {
   let misbehaviour: Misbehaviour = {};
   let opened = 0;
-  // Held so `close` can end them: a client that keeps its control connection
-  // open would otherwise keep the server listening for ever.
+  // Held so `close` can end them: a control or data connection the client
+  // never finished with would otherwise keep the process alive after the test
+  // that made it has passed. The tests here deliberately make some of those.
   const live: net.Socket[] = [];
+  // The same, for the one-shot listeners PASV opens. Each stops listening as
+  // soon as it has its connection, but one the client never dialled would
+  // otherwise keep the process alive after the test had finished with it.
+  const dataServers: net.Server[] = [];
 
   const server = net.createServer(rawControl => {
     opened += 1;
@@ -128,6 +133,16 @@ export async function startFtpServer(
       }
 
       const data = net.createServer(socket => {
+        // PASV listens for exactly one connection, and a listener nobody
+        // closes is a handle nobody closes.
+        data.close();
+        live.push(socket);
+        socket.on('close', () => {
+          const at = live.indexOf(socket);
+          if (at !== -1) {
+            live.splice(at, 1);
+          }
+        });
         dataSocket =
           protectData && secure && !misbehaviour.breakDataTls
             ? new tls.TLSSocket(socket, {
@@ -142,6 +157,7 @@ export async function startFtpServer(
       });
 
       pending = data;
+      dataServers.push(data);
       if (work) {
         job = work;
       }
@@ -360,6 +376,7 @@ export async function startFtpServer(
     close: () =>
       new Promise<void>(resolve => {
         live.slice().forEach(socket => socket.destroy());
+        dataServers.forEach(data => data.close());
         server.close(() => resolve());
       }),
   };

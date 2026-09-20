@@ -31,9 +31,18 @@ const FILES: { [name: string]: string } = {
 
 let server: RunningFtpServer;
 let root: string;
+// Every connection a test opened, ended afterwards whether the test did or
+// not: node-ftp holds a keepalive timer per client, and a timer nobody clears
+// keeps the process alive long after the suite has passed.
+const opened: FTPFileSystem[] = [];
+
+function track(fileSystem: FTPFileSystem): FTPFileSystem {
+  opened.push(fileSystem);
+  return fileSystem;
+}
 
 function connect(option: object = {}): Promise<FTPFileSystem> {
-  const fileSystem = new FTPFileSystem(upath, {
+  const fileSystem = track(new FTPFileSystem(upath, {
     clientOption: {
       host: '127.0.0.1',
       port: server.port,
@@ -43,7 +52,7 @@ function connect(option: object = {}): Promise<FTPFileSystem> {
       debug: () => undefined,
     },
     ...option,
-  } as any);
+  } as any));
 
   return fileSystem
     .connect((fileSystem as any).client._option, {
@@ -64,6 +73,13 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  opened.splice(0).forEach(fileSystem => {
+    try {
+      fileSystem.end();
+    } catch (error) {
+      // Already ended, or never connected. Either is fine here.
+    }
+  });
   await server.close();
 });
 
@@ -83,7 +99,7 @@ function certificates() {
 }
 
 function connectWith(option: any, port: number, operationTimeout?: number) {
-  const fileSystem = new FTPFileSystem(upath, {
+  const fileSystem = track(new FTPFileSystem(upath, {
     operationTimeout,
     clientOption: {
       host: '127.0.0.1',
@@ -95,7 +111,7 @@ function connectWith(option: any, port: number, operationTimeout?: number) {
       secure: option.secure,
       secureOptions: option.secureOptions,
     },
-  } as any);
+  } as any));
 
   return fileSystem
     .connect((fileSystem as any).client._option, {
