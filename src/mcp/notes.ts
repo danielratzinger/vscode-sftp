@@ -16,8 +16,28 @@ export interface Note {
   /** The version this describes; a file that moves on makes it stale. */
   mtime: number;
   size: number;
+  /**
+   * What that version's bytes hashed to, when they were to hand.
+   *
+   * The timestamp and the size are what a *listing* gives, which is why the
+   * cheap check is built on them - but they answer the wrong question. Every
+   * deploy here is an upload, and an upload restamps every file it copies,
+   * so a redeploy of unchanged code would mark every description on the
+   * server stale at once. The hash is what actually says whether the thing
+   * described has changed, and it settles both ways: a file whose bytes are
+   * the same keeps its description however often it is uploaded, and one
+   * whose bytes differ has moved on however the timestamp reads.
+   */
+  hash?: string;
   /** When it was last written or confirmed. */
   updated: number;
+}
+
+export interface Version {
+  mtime: number;
+  size: number;
+  /** Only where the content was at hand: a listing does not carry one. */
+  hash?: string;
 }
 
 /**
@@ -237,11 +257,22 @@ export interface NoteView {
 export function viewOf(
   store: NoteStore,
   remotePath: string,
-  current?: { mtime: number; size: number }
+  current?: Version
 ): NoteView {
   const note = store.files[remotePath];
   if (!note) {
     return { state: NoteState.None };
+  }
+
+  // A hash on both sides settles it outright, in either direction.
+  if (current && current.hash && note.hash) {
+    return current.hash === note.hash
+      ? { state: NoteState.Current, summary: note.summary }
+      : {
+          state: NoteState.Stale,
+          summary: note.summary,
+          describedMtime: note.mtime,
+        };
   }
 
   if (
@@ -263,7 +294,7 @@ export function put(
   store: NoteStore,
   remotePath: string,
   summary: string,
-  version: { mtime: number; size: number }
+  version: Version
 ): NoteStore {
   return {
     ...store,
@@ -273,6 +304,41 @@ export function put(
         summary,
         mtime: version.mtime,
         size: version.size,
+        hash: version.hash,
+        updated: Date.now(),
+      },
+    },
+  };
+}
+
+/**
+ * The same description, against the version in front of us now.
+ *
+ * Not a new description - the words are untouched. This is for the case where
+ * the bytes are known to be the ones the note was written about, and only the
+ * timestamp has moved: a redeploy, a touch, a transfer that rewrote the file
+ * with what was already in it. Re-anchoring is also a confirmation, so it
+ * counts against ageing out.
+ */
+export function reanchor(
+  store: NoteStore,
+  remotePath: string,
+  version: Version
+): NoteStore {
+  const note = store.files[remotePath];
+  if (!note) {
+    return store;
+  }
+
+  return {
+    ...store,
+    files: {
+      ...store.files,
+      [remotePath]: {
+        ...note,
+        mtime: version.mtime,
+        size: version.size,
+        hash: version.hash || note.hash,
         updated: Date.now(),
       },
     },

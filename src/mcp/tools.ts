@@ -1,9 +1,16 @@
+import * as crypto from 'crypto';
 import * as path from 'path';
 import upath from '../core/upath';
 import { FileEntry, FileType } from '../core/fs';
 import * as fse from 'fs-extra';
 import { ToolDefinition, ToolResult } from './protocol';
-import { CacheOption, LocalState, materialise, pruneCache } from './cache';
+import {
+  cachePathFor,
+  CacheOption,
+  LocalState,
+  materialise,
+  pruneCache,
+} from './cache';
 import {
   canReturnWhole,
   deniedMessage,
@@ -50,7 +57,9 @@ import {
   prune,
   put as putNote,
   putOverview,
+  reanchor,
   save as saveNotes,
+  Version,
   viewOf,
 } from './notes';
 
@@ -275,7 +284,7 @@ async function noteFor(
   context: ToolContext,
   service: ServiceLike,
   remotePath: string,
-  current: { mtime: number; size: number }
+  current: Version
 ) {
   const store = await loadNotes(
     context.cacheOption(service).cacheRoot,
@@ -283,6 +292,81 @@ async function noteFor(
   );
 
   return viewOf(store, remotePath, current);
+}
+
+/**
+ * The same, for the one caller that has the file's bytes rather than its
+ * listing - and which can therefore settle what a listing only guesses at.
+ *
+ * Every deploy here is an upload, and an upload restamps every file it
+ * copies. Against a timestamp, a redeploy of unchanged code marks every
+ * description on the server stale at once; against the content, nothing has
+ * changed and the descriptions stand. So a note whose hash still matches is
+ * re-anchored to the version in front of us, and stops being asked about.
+ */
+async function confirmNote(
+  context: ToolContext,
+  service: ServiceLike,
+  remotePath: string,
+  current: Version
+) {
+  const root = context.cacheOption(service).cacheRoot;
+  const id = stableId(service);
+  const store = await loadNotes(root, id);
+  const note = store.files[remotePath];
+  const view = viewOf(store, remotePath, current);
+
+  const unchanged =
+    note &&
+    ((note.hash && note.hash === current.hash) ||
+      // Written before notes carried a hash, and still describing this
+      // version by the older measure: give it one.
+      (!note.hash &&
+        note.size === current.size &&
+        Math.floor(note.mtime / 1000) === Math.floor(current.mtime / 1000)));
+
+  if (unchanged && (note.mtime !== current.mtime || !note.hash)) {
+    await saveNotes(
+      root,
+      id,
+      reanchor(store, remotePath, current),
+      identityOf(service.workspace, service.getConfig())
+    ).catch(() => undefined);
+  }
+
+  return view;
+}
+
+/**
+ * The hash of the copy on this machine, when it is the same version the
+ * server has. Nothing is transferred for it.
+ */
+async function hashOfCopy(
+  context: ToolContext,
+  service: ServiceLike,
+  remotePath: string,
+  size: number
+): Promise<string | undefined> {
+  const option = context.cacheOption(service);
+  const candidates = [
+    (context.localPathFor || localPathFor)(service, remotePath),
+    cachePathFor(option, stableId(service), remotePath),
+  ];
+
+  for (const file of candidates) {
+    try {
+      const stat = await fse.stat(file);
+      if (stat.size !== size) {
+        continue;
+      }
+
+      return hashOf(await fse.readFile(file));
+    } catch (error) {
+      // Not there, or not readable. The note simply goes without one.
+    }
+  }
+
+  return undefined;
 }
 
 function describeNote(view: { state: NoteState; summary?: string }): string {
@@ -806,8 +890,16 @@ export function createTools(
       }
 
       const body = sliceLines(scrubbed.text, args.start_line, args.end_line);
-      const described = await noteFor(context, service, target, remoteStat);
+      // The server's bytes, not the redacted view of them: the note describes
+      // the file, and a marker in place of a credential is ours, not its.
+      const version = {
+        mtime: remoteStat.mtime,
+        size: remoteStat.size,
+        hash: hashOf(raw),
+      };
+      const described = await confirmNote(context, service, target, version);
       const hint = askForANote(stableId(service), target, described, remoteStat.size);
+
       const notes = [
         DIVERGENCE[result.state],
         redactionNote(scrubbed.found, scrubbed.secrets.length),
@@ -1432,13 +1524,18 @@ export function createTools(
       const store = await loadNotes(cacheRoot, id);
 
       // Keyed by the version described, so the note goes stale by itself when
-      // the file moves on rather than quietly describing something else.
+      // the file moves on rather than quietly describing something else. A
+      // description is written just after a read, so the bytes it was written
+      // about are already on this machine - no transfer, and only when what is
+      // there is the same size as what the server has, so it is the same
+      // version and not a stale copy.
       await saveNotes(
         cacheRoot,
         id,
         putNote(store, target, summary, {
           mtime: remoteStat.mtime,
           size: remoteStat.size,
+          hash: await hashOfCopy(context, service, target, remoteStat.size),
         }),
         identityOf(service.workspace, service.getConfig())
       );
@@ -2069,6 +2166,14 @@ function describeConnectionLine(
     `    project: ${connection.workspace}` +
     (connection.summary ? `\n    ${connection.summary}` : '')
   );
+}
+
+/** What a version of a file is, for a note that describes it. */
+function hashOf(content: string | Buffer): string {
+  return crypto
+    .createHash('sha1')
+    .update(typeof content === 'string' ? Buffer.from(content, 'utf8') : content)
+    .digest('hex');
 }
 
 /**

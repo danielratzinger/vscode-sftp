@@ -832,27 +832,30 @@ describe('a description whose file has moved on', () => {
   const BIG = 'x'.repeat(4000);
   const MOVED = MTIME + 60000;
 
-  const serving = (size: number, mtime: number): any => ({
+  const serving = (text: string, mtime: number): any => ({
     services: () => [STAGING],
     exposure: () => ({ exposedByDefault: true }),
     cacheOption: () => ({ cacheRoot: '/cache', materialize: false }),
     remoteFs: async () => ({
       list: async () => [],
-      lstat: async () => ({ type: FileType.File, size, mtime }),
-      readFile: async () => BIG,
+      lstat: async () => ({ type: FileType.File, size: text.length, mtime }),
+      readFile: async () => text,
     }),
   });
+
+  /** Same length, different bytes: the size cannot tell these apart. */
+  const REWRITTEN = `${'y'.repeat(3999)}z`;
 
   beforeEach(() => forgetWhatWasAsked());
 
   it('asks for a correction once the file has changed', async () => {
-    const before = createTools(serving(BIG.length, MTIME));
+    const before = createTools(serving(BIG, MTIME));
     await before.find(t => t.name === 'note')!.run({
       server: 'Staging', path: '/srv/app/big.php', summary: 'what it used to do',
     });
 
     // Same file, later version.
-    const after = createTools(serving(BIG.length, MOVED));
+    const after = createTools(serving(REWRITTEN, MOVED));
     const result: any = await after.find(t => t.name === 'read')!.run({
       server: 'Staging', path: '/srv/app/big.php',
     });
@@ -865,7 +868,7 @@ describe('a description whose file has moved on', () => {
   });
 
   it('asks again after a note it once asked about goes stale', async () => {
-    const fresh = createTools(serving(BIG.length, MTIME));
+    const fresh = createTools(serving(BIG, MTIME));
     const first: any = await fresh.find(t => t.name === 'read')!.run({
       server: 'Staging', path: '/srv/app/big.php',
     });
@@ -875,7 +878,7 @@ describe('a description whose file has moved on', () => {
       server: 'Staging', path: '/srv/app/big.php', summary: 'what it used to do',
     });
 
-    const after = createTools(serving(BIG.length, MOVED));
+    const after = createTools(serving(REWRITTEN, MOVED));
     const second: any = await after.find(t => t.name === 'read')!.run({
       server: 'Staging', path: '/srv/app/big.php',
     });
@@ -884,7 +887,7 @@ describe('a description whose file has moved on', () => {
   });
 
   it('stops asking once the description is put right', async () => {
-    const after = createTools(serving(BIG.length, MOVED));
+    const after = createTools(serving(REWRITTEN, MOVED));
     await after.find(t => t.name === 'note')!.run({
       server: 'Staging', path: '/srv/app/big.php', summary: 'what it does now',
     });
@@ -898,5 +901,97 @@ describe('a description whose file has moved on', () => {
     // What it no longer asks for is a correction; it may still invite a
     // better line, which is a different request.
     expect(result.structured.hint || '').not.toContain('older version');
+  });
+});
+
+describe('a description against the bytes it describes', () => {
+  // Every deploy here is an upload, and an upload restamps every file it
+  // copies. Against a timestamp, redeploying unchanged code marks every
+  // description on a server stale at once.
+  const TEXT = 'x'.repeat(4000);
+  const REWRITTEN = `${'x'.repeat(3999)}y`; // Same size, different bytes.
+  const MOVED = MTIME + 60000;
+
+  const serving = (text: string, mtime: number): any => ({
+    services: () => [STAGING],
+    exposure: () => ({ exposedByDefault: true }),
+    cacheOption: () => ({ cacheRoot: '/cache', materialize: false }),
+    remoteFs: async () => ({
+      list: async () => [],
+      lstat: async () => ({ type: FileType.File, size: text.length, mtime }),
+      readFile: async () => text,
+    }),
+  });
+
+  /** As it happens: the file is read, and then described. */
+  const noteAfterReading = async (text: string, mtime: number) => {
+    const tools = createTools({
+      ...serving(text, mtime),
+      cacheOption: () => ({ cacheRoot: '/cache', materialize: true }),
+    });
+
+    await tools.find(t => t.name === 'read')!.run({
+      server: 'Staging', path: '/srv/app/big.php',
+    });
+    await tools.find(t => t.name === 'note')!.run({
+      server: 'Staging', path: '/srv/app/big.php', summary: 'what it does',
+    });
+
+    return tools;
+  };
+
+  const readWith = (text: string, mtime: number) =>
+    createTools(serving(text, mtime))
+      .find(t => t.name === 'read')!
+      .run({ server: 'Staging', path: '/srv/app/big.php' }) as any;
+
+  beforeEach(() => forgetWhatWasAsked());
+
+  it('survives a redeploy that changed nothing but the timestamp', async () => {
+    await noteAfterReading(TEXT, MTIME);
+
+    const result = await readWith(TEXT, MOVED);
+
+    expect(result.structured.note.state).toBe('current');
+    expect(result.structured.note.summary).toBe('what it does');
+  });
+
+  it('re-anchors it, so the tree stops calling it stale too', async () => {
+    await noteAfterReading(TEXT, MTIME);
+    await readWith(TEXT, MOVED);
+
+    // `tree` has only a listing to go on, so what it sees has to have been
+    // corrected by the read that knew better.
+    const listed = await load('/cache', stableId(STAGING as any));
+    expect(listed.files['/srv/app/big.php'].mtime).toBe(MOVED);
+    expect(listed.files['/srv/app/big.php'].summary).toBe('what it does');
+  });
+
+  it('goes stale on a change the size cannot see', async () => {
+    await noteAfterReading(TEXT, MTIME);
+
+    const result = await readWith(REWRITTEN, MTIME);
+
+    expect(result.structured.note.state).toBe('stale');
+    expect(result.structured.hint).toContain('older version');
+  });
+
+  it('gives a hash to a description written before there were any', async () => {
+    // The store from an older version of this: a summary, an mtime, a size.
+    const id = stableId(STAGING as any);
+    vol.fromJSON({
+      [`/cache/${id}/notes.json`]: JSON.stringify({
+        files: {
+          '/srv/app/big.php': {
+            summary: 'from before', mtime: MTIME, size: TEXT.length, updated: Date.now(),
+          },
+        },
+      }),
+    });
+
+    const result = await readWith(TEXT, MTIME);
+
+    expect(result.structured.note.state).toBe('current');
+    expect((await load('/cache', id)).files['/srv/app/big.php'].hash).toHaveLength(40);
   });
 });

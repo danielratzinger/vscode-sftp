@@ -42,6 +42,12 @@ now diverges from upstream's.
   password was never part of either, so changing one moves nothing. Where two
   connections could claim the same notes, neither gets them. Cached files
   can be fetched twice; a note is the only thing in that cache that cannot.
+- A description is anchored to what the file's bytes hash to, not only to its
+  timestamp and size. Every deploy here is an upload, and an upload restamps
+  every file it copies - so redeploying unchanged code used to mark every
+  description on a server stale at once. A file whose bytes are the same now
+  keeps its description however often it is uploaded, and one whose bytes
+  differ has moved on however the timestamp reads.
 - `read` asks for a description when a substantial file has none, for a
   correction when the one it has describes an older version, and for a better
   line when reading has turned up something the description does not say -
