@@ -115,9 +115,13 @@ export function findExposed(
     }
   });
 
-  const byId = exposed.find(service => stableId(service) === id);
-  if (byId) {
-    return byId;
+  const byId = exposed.filter(service => stableId(service) === id);
+  if (byId.length > 0) {
+    // More than one would mean two connections that agree on their project,
+    // host, account, path and name, so there is nothing to choose between
+    // them - but choosing anyway is how a tool reads a server nobody asked
+    // for, and that is not a thing to do quietly.
+    return byId.length === 1 ? byId[0] : undefined;
   }
 
   // A name, when it can only mean one connection. Agents write down the name

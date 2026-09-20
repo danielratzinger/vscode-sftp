@@ -75,7 +75,8 @@ now diverges from upstream's.
   is below what MCP clients usually wait. A call that overruns it returns what
   it found and where to carry on; one that overruns the client returns nothing.
 - Cache folders from the old connection numbering are removed at startup.
-- A connection's MCP id is derived from where it points rather than from the
+- A connection's MCP id is derived from where it points - project, host,
+  account, path and name - rather than from the
   order the editor loaded it in, so it survives a reload - and so do the
   cached files and notes kept under it. A name from `servers` works in place
   of an id when only one connection answers to it.

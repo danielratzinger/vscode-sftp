@@ -178,3 +178,59 @@ describe('the id a connection keeps', () => {
     );
   });
 });
+
+describe('connections that look alike', () => {
+  const at = (over: any) =>
+    service(1, {
+      name: 'site', protocol: 'sftp', host: 'shared.example.com', port: 2121,
+      username: 'one', remotePath: '/httpdocs', workspace: '/work/remote',
+      ...over,
+    });
+
+  it('tells two accounts on one host apart', () => {
+    // Shared hosting: a dozen accounts, each with its own `/httpdocs`. Without
+    // the username these collapse into one id, and whichever loaded first
+    // answers for all of them - which is a read of somebody else's server.
+    expect(stableId(at({ username: 'two' }))).not.toBe(stableId(at({})));
+  });
+
+  it('tells two names for one target apart', () => {
+    // Both rows are listed, so both have to be addressable.
+    expect(stableId(at({ name: 'other' }))).not.toBe(stableId(at({})));
+  });
+
+  it('gives every connection in a real listing its own id', () => {
+    // The shapes that collided when this was first written, from a listing of
+    // 104 connections: same host, same path, different accounts.
+    const listing = [
+      at({ name: 'gaydoul-group.ch', username: 'gaydoulgro' }),
+      at({ name: 'fondationgaydoul.ch', username: 'fondationg' }),
+      at({ name: 'ratzinger.cc', username: 'ratzing' }),
+      at({ name: 'norges-spark.ch', username: 'norgess' }),
+      at({ name: 'metanet.st-poelten.at', username: 'dbstpoe' }),
+      at({ name: 'st-poelten.at', username: 'dbstpoe' }),
+    ];
+
+    const ids = listing.map(stableId);
+    expect(new Set(ids).size).toBe(listing.length);
+  });
+});
+
+describe('an id that somehow means two connections', () => {
+  it('resolves to neither, rather than to whichever came first', () => {
+    const twin = () => ({
+      id: 1,
+      name: 'same',
+      workspace: '/work',
+      baseDir: '/work',
+      getConfig: () => ({
+        name: 'same', protocol: 'sftp', host: 'h', port: 22,
+        username: 'u', remotePath: '/',
+      }),
+    });
+    const pair = [twin(), twin()] as any;
+
+    expect(stableId(pair[0])).toBe(stableId(pair[1]));
+    expect(findExposed(pair, DEFAULT_ON, stableId(pair[0]))).toBeUndefined();
+  });
+});
