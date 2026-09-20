@@ -15,19 +15,25 @@ import {
 import { changesIn } from '../core/worktreeChanges';
 
 /**
- * Deploying from a checkout the editor does not have open.
+ * Deploying continuously from a folder, chosen rather than assumed.
  *
- * An agent working on a branch gets its own worktree, usually nowhere near the
- * folder in this window. Until now the only way to deploy from one was to
- * start something inside it by hand. This watches it instead - the same
- * upload-on-change the workspace gets, sourced from somewhere else.
+ * Two things at once, because they are the same thing. An agent working on a
+ * branch gets its own git worktree, usually nowhere near the folder in this
+ * window, and until now the only way to deploy one was to start something
+ * inside it by hand. And a project that is not a repository at all - which is
+ * most of the connections here - has no way to say "keep this folder on the
+ * server" short of writing a `watcher` block into `sftp.json`.
  *
- * **One writer.** A connection has one remote path, and three worktrees on
- * three branches writing to it would leave whichever saved last. So a
- * connection syncs from exactly one worktree at a time, chosen deliberately,
- * and while that is not this window the window's own uploads are paused and
- * said to be paused. Nothing here starts on its own: a new worktree is
- * offered, never adopted.
+ * Both are: watch a folder, upload what changes. Where there are worktrees
+ * they are what you choose between; where there are none there is one
+ * candidate, the folder itself, and choosing it turns continuous sync on.
+ *
+ * **One writer.** A connection has one remote path, and two sources writing to
+ * it would leave whichever saved last. So a connection syncs from exactly one
+ * folder at a time, and while it does, the window's own upload-on-save for
+ * that connection stands down - the watcher covers saves too, and covers the
+ * changes a save never sees. Nothing starts on its own: a worktree that
+ * appears is offered, never adopted.
  */
 
 const REMEMBERED = 'sftp.worktreeSync';
@@ -63,18 +69,15 @@ export function activeWorktree(service: FileService): Chosen | undefined {
 }
 
 /**
- * Whether this connection's own window should keep quiet.
+ * Whether this connection's own upload-on-save should stand down.
  *
- * Only while another checkout owns the connection. A connection syncing from
- * the folder in this window is the ordinary case and pauses nothing.
+ * Whenever anything is syncing continuously, including this window's own
+ * folder: two mechanisms uploading the same save is one upload too many, and
+ * the watcher sees everything upload-on-save sees. The cost is that a save
+ * goes up when it has settled rather than the instant it is written.
  */
 export function pausedFor(service: FileService): Chosen | undefined {
-  const chosen = activeWorktree(service);
-  if (!chosen || samePath(chosen.root, service.baseDir)) {
-    return undefined;
-  }
-
-  return chosen;
+  return activeWorktree(service);
 }
 
 const said = new Set<string>();
@@ -92,8 +95,9 @@ export function sayIfPaused(service: FileService): boolean {
     logger
       .for(connectionLabel(service.getConfig() as any))
       .info(
-        `[worktree] not uploading from this window: the connection is syncing ` +
-          `${chosen.branch || chosen.root}. "SFTP: Sync Worktree" changes that.`
+        `[sync] upload-on-save is standing down: this connection is syncing ` +
+          `${chosen.branch || chosen.root} continuously. ` +
+          '"SFTP: Stop Continuous Sync" hands it back.'
       );
   }
 
@@ -250,7 +254,7 @@ function stopWatching(id: string): void {
 async function sayWhetherAnythingIsSyncing(): Promise<void> {
   await vscode.commands.executeCommand(
     'setContext',
-    'sftp.worktreeSyncing',
+    'sftp.continuousSyncing',
     Object.keys(chosenAll()).length > 0
   );
 }
@@ -418,7 +422,7 @@ export async function chooseWorktree(service: FileService): Promise<void> {
         active && samePath(active.root, one.root)
           ? 'syncing now'
           : one.isMain
-          ? 'the folder this window has open'
+          ? 'this window’s own folder — every change, not only saves'
           : undefined,
       worktree: one as Worktree | undefined,
     }));
@@ -426,14 +430,15 @@ export async function chooseWorktree(service: FileService): Promise<void> {
   if (active) {
     items.push({
       label: 'Stop syncing',
-      description: 'nothing is uploaded until you save in this window again',
+      description: 'upload-on-save takes over again',
       detail: undefined,
       worktree: undefined,
     });
   }
 
   const picked = await vscode.window.showQuickPick(items, {
-    placeHolder: `Deploy to ${connectionLabel(service.getConfig() as any)} from…`,
+    placeHolder:
+      `Sync ${connectionLabel(service.getConfig() as any)} continuously from…`,
   });
 
   if (!picked) {
@@ -448,6 +453,17 @@ export async function chooseWorktree(service: FileService): Promise<void> {
   );
 
   if (!picked.worktree) {
+    return;
+  }
+
+  // A folder that is not a branch has nothing to compare against: git can say
+  // what a branch changed, and about an ordinary directory it knows nothing.
+  // Watching it from now is the whole of what was asked for.
+  if (!picked.worktree.branch) {
+    vscode.window.showInformationMessage(
+      `${connectionLabel(service.getConfig() as any)} now uploads every change ` +
+        `in ${picked.worktree.root} as it settles, saved in this window or not.`
+    );
     return;
   }
 

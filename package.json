@@ -442,13 +442,13 @@
         "category": "SFTP"
       },
       {
-        "command": "sftp.syncWorktree",
-        "title": "Sync Worktree",
+        "command": "sftp.continuousSync",
+        "title": "Continuous Sync",
         "category": "SFTP"
       },
       {
-        "command": "sftp.stopWorktreeSync",
-        "title": "Stop Worktree Sync",
+        "command": "sftp.stopContinuousSync",
+        "title": "Stop Continuous Sync",
         "category": "SFTP"
       },
       {
@@ -745,14 +745,14 @@
           "when": "sftp.enabled && explorerResourceIsFolder"
         },
         {
-          "command": "sftp.syncWorktree",
+          "command": "sftp.continuousSync",
           "group": "sftp.trans@4",
           "when": "sftp.enabled && explorerResourceIsFolder"
         },
         {
-          "command": "sftp.stopWorktreeSync",
+          "command": "sftp.stopContinuousSync",
           "group": "sftp.trans@5",
-          "when": "sftp.enabled && explorerResourceIsFolder && sftp.worktreeSyncing"
+          "when": "sftp.enabled && explorerResourceIsFolder && sftp.continuousSyncing"
         }
       ],
       "editor/context": [
@@ -883,14 +883,14 @@
           "when": "sftp.enabled && !(viewItem =~ /^file/)"
         },
         {
-          "command": "sftp.syncWorktree",
+          "command": "sftp.continuousSync",
           "group": "3_trans@5",
           "when": "sftp.enabled && viewItem =~ /^root/"
         },
         {
-          "command": "sftp.stopWorktreeSync",
+          "command": "sftp.stopContinuousSync",
           "group": "3_trans@6",
-          "when": "sftp.enabled && viewItem =~ /^root/ && sftp.worktreeSyncing"
+          "when": "sftp.enabled && viewItem =~ /^root/ && sftp.continuousSyncing"
         },
         {
           "command": "sftp.clear.localFolder",
