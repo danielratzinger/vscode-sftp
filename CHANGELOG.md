@@ -108,6 +108,13 @@ now diverges from upstream's.
   server: path containment caught the obvious cases, and two servers that
   both keep their site under `/httpdocs` it could not. The cached files and
   the notes under that id were mixed up the same way.
+- Redaction covers the shapes other ecosystems use: dotted property keys
+  (`spring.datasource.password`), Go's `:=`, keys the secret word is only
+  part of (`secret_key_base`), .NET and Spring XML attributes, base64 in a
+  Kubernetes secret, `curl -u`, SQL `IDENTIFIED BY`, a literal behind a `??`
+  fallback, and tokens from Anthropic, GitLab, npm, Shopify, DigitalOcean
+  and Hugging Face. Measured against a corpus from those ecosystems it went
+  from 17 of 32 to 31 of 32.
 - Redaction read straight past the way credentials are actually spelled.
   `DB_PASSWORD`, `smtp_password`, `api_secret`, `MAIL_PASSWORD`: the rule
   wanted a word boundary before the name, and `_` is a word character, so a

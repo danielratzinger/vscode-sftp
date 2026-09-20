@@ -61,6 +61,12 @@ const RULES: Rule[] = [
   { name: 'google-api-key', pattern: /\bAIza[A-Za-z0-9_-]{35}\b/g },
   { name: 'sendgrid-key', pattern: /\bSG\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\b/g },
   { name: 'openai-key', pattern: /\bsk-[A-Za-z0-9]{20,}\b/g },
+  { name: 'anthropic-key', pattern: /\bsk-ant-[A-Za-z0-9_-]{20,}/g },
+  { name: 'gitlab-token', pattern: /\bglpat-[A-Za-z0-9_-]{20,}/g },
+  { name: 'npm-token', pattern: /\bnpm_[A-Za-z0-9]{36}\b/g },
+  { name: 'shopify-token', pattern: /\bshp(?:at|ca|pa|ss)_[a-fA-F0-9]{32}\b/g },
+  { name: 'digitalocean-token', pattern: /\bdop_v1_[a-f0-9]{64}\b/g },
+  { name: 'huggingface-token', pattern: /\bhf_[A-Za-z0-9]{30,}\b/g },
   { name: 'slack-webhook', pattern: /https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/+]+/g },
   { name: 'jwt', pattern: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g },
   {
@@ -96,7 +102,8 @@ export const REDACTION_MARKER = '[redacted:';
  */
 const LATIN_SECRET_NAME =
   '(?:pass(?:word|wd|w|phrase)?|passwort|kennwort|passcode|pwd|pw|psw|pswrd|' +
-  'secret|token|api[_-]?key|apikey|access[_-]?key|auth[_-]?(?:key|token)|' +
+  'secret|token|api[_-]?key|apikey|access[_-]?key|account[_-]?key|' +
+  'auth[_-]?(?:key|token)|' +
   'credentials?|client[_-]?secret|contrase|senha|wachtwoord|has[l\u0142]o|heslo|' +
   'jelsz[o\u00f3]|lozinka|geslo|l[o\u00f6]senord|salasana|adgangskode|' +
   'mot[_ -]?de[_ -]?passe|[s\u015f]ifre)';
@@ -126,17 +133,33 @@ const SECRET_KEY = `(?:(?<![A-Za-z0-9])${LATIN_SECRET_NAME}|${OTHER_SECRET_NAME}
  * Where the name is *not* a key, and so what follows it cannot be its value.
  *
  * After `=` it is a value being compared - `if ($field == "password")`. After
- * `.` or `#` it is a CSS class or an id. Each of these cost somebody a real
- * false positive, and a false positive here is silent: the marker looks
+ * `#` it is a CSS id. A false positive here is silent: the marker looks
  * exactly like a redaction that was meant to happen, and the code it ate is
  * gone. A `-` is deliberately not excluded, because `X-Password: hunter2` is
  * how a real header is spelled.
+ *
+ * A `.` was excluded too, for CSS classes - at the cost of every dotted
+ * configuration key there is: `spring.datasource.password`, and `db.password`
+ * in half the property files ever written. CSS is safe without it, because a
+ * rule is `{` and a selector is not an assignment of a quoted literal.
  */
-const NOT_A_KEY = '(?<![=.#])(?<![=]["\'])';
+const NOT_A_KEY = '(?<![=#])(?<![=]["\'])';
 
 /** `$cfg['pw'] = '...'`, `password: '...'`, `'client_secret' => '...'`. */
+/**
+ * The rest of a key the name is only part of: `secret_key_base`,
+ * `password_hash`, `api_key_id`.
+ *
+ * Only after a separator, which is the same rule as the one in front of the
+ * name: `pass` inside `passenger` is a word, `pass` in `pass_hash` is a name.
+ */
+const REST_OF_KEY = '(?:[_-][A-Za-z0-9_-]*)?';
+
+/** `=>`, `=`, `:` and Go's `:=`. */
+const ASSIGNS = '(?:=>|:=|=|:)';
+
 const ASSIGNMENT = new RegExp(
-  `(${NOT_A_KEY}${SECRET_KEY}['"\\]]*\\s*(?:=>|=|:)\\s*)(['"])([^'"\\n]{1,200})\\2`,
+  `(${NOT_A_KEY}${SECRET_KEY}${REST_OF_KEY}['"\\]]*\\s*${ASSIGNS}\\s*)(['"])([^'"\\n]{1,200})\\2`,
   'gi'
 );
 
@@ -153,7 +176,7 @@ const ASSIGNMENT = new RegExp(
  * towards redacting, but not towards eating identifiers.
  */
 const BARE_ASSIGNMENT = new RegExp(
-  `(${NOT_A_KEY}${SECRET_KEY}['"\\]]*[ \\t]*(?:=>|=|:)[ \\t]*)([^\\s'"\`{};,]{6,200})`,
+  `(${NOT_A_KEY}${SECRET_KEY}${REST_OF_KEY}['"\\]]*[ \\t]*${ASSIGNS}[ \\t]*)([^\\s'"\`{};,]{6,200})`,
   'gi'
 );
 
@@ -187,6 +210,43 @@ const DEFINE_CALL = new RegExp(
   'gi'
 );
 
+/**
+ * `<add key="Password" value="..." />`, `<property name="password" value=.../>`
+ *
+ * The name and the value are separate attributes, so nothing here is an
+ * assignment in the sense the rules above mean. .NET's `web.config` and
+ * `appsettings`, Spring's XML beans and Ant builds all spell credentials this
+ * way, and the general rule reads the `value=` and finds `value` on the left.
+ */
+const XML_ATTRIBUTE = new RegExp(
+  `(<[^>]*\\b(?:key|name|id)\\s*=\\s*['"][^'"]*${SECRET_NAME}[^'"]*['"][^>]{0,200}?` +
+    `\\bvalue\\s*=\\s*)(['"])([^'"\\n]{1,200})\\2`,
+  'gi'
+);
+
+/** `CREATE USER x IDENTIFIED BY '...'`, and `WITH PASSWORD '...'`. */
+const SQL_CREDENTIAL = new RegExp(
+  `((?:identified\\s+by|with\\s+password|password)\\s+)(['"])([^'"\\n]{1,200})\\2`,
+  'gi'
+);
+
+/**
+ * `apiKey: process.env.API_KEY ?? 'literal'`.
+ *
+ * The literal is not next to the name - an environment variable is, and the
+ * credential is the fallback behind it. It is how a JavaScript config file
+ * carries a default, and how a real key gets committed by someone who meant
+ * to set the variable.
+ */
+const FALLBACK_LITERAL = new RegExp(
+  `(${NOT_A_KEY}${SECRET_KEY}${REST_OF_KEY}['"\\]]*\\s*${ASSIGNS}` +
+    `[^'"\\n]{0,80}?(?:\\?\\?|\\|\\|)\\s*)(['"])([^'"\\n]{1,200})\\2`,
+  'gi'
+);
+
+/** `curl -u user:password`, which is how an API is documented. */
+const CURL_USER = /((?:^|\s)(?:-u|--user)[ =])([^\s:'"]{1,64}):([^\s'"]{1,200})/g;
+
 /** Values that look like a credential but are a stand-in for one. */
 const PLACEHOLDERS = [
   'password', 'passwd', 'secret', 'token', 'changeme', 'change_me', 'xxx',
@@ -201,12 +261,27 @@ const PLACEHOLDERS = [
   'same-origin', 'omit', 'include',
 ];
 
-/**
- * The name this value was found under: the last identifier before the `=`.
- */
-function nameIn(prefix: string): string {
-  const match = prefix.match(/([A-Za-z0-9_-]+)['"\]]*\s*(?:=>|=|:)\s*$/);
-  return match ? match[1] : '';
+/** The secret word that matched, which is rarely the whole key. */
+const SECRET_WORD = new RegExp(SECRET_NAME, 'gi');
+
+function secretWordsIn(prefix: string): string[] {
+  SECRET_WORD.lastIndex = 0;
+  const words: string[] = [];
+  let match = SECRET_WORD.exec(prefix);
+
+  while (match) {
+    const word = match[0];
+    words.push(word);
+    // `auth_token` is also `token`, which is the half a value repeats back:
+    // `ENV_AUTH_TOKEN = "AWS_CONTAINER_AUTHORIZATION_TOKEN"`.
+    const tail = word.split(/[_-]/).pop();
+    if (tail && tail !== word) {
+      words.push(tail);
+    }
+    match = SECRET_WORD.exec(prefix);
+  }
+
+  return words;
 }
 
 const plain = (text: string) => text.toLowerCase().replace(/[_\- ]/g, '');
@@ -214,18 +289,25 @@ const plain = (text: string) => text.toLowerCase().replace(/[_\- ]/g, '');
 /**
  * A value that says what it is, rather than being it.
  *
- * `'token' => 'appendTokenMetric'`, `'X-Amz-Security-Token' => '[TOKEN]'`:
- * lookup tables and placeholder maps, where the value repeats the key back.
- * Only when there is not a digit or a symbol in it, so a real, weak
- * `'password' => 'my_password_2024'` is still caught.
+ * `'token' => 'appendTokenMetric'`, `const ENV_AUTH_TOKEN =
+ * "AWS_CONTAINER_AUTHORIZATION_TOKEN"`, `TOKEN_PATH = 'api/token'`: lookup
+ * tables, environment-variable names and placeholder maps, where the value
+ * says the secret word back rather than being a secret.
+ *
+ * Only when there is no digit and no symbol in it, so a real if weak
+ * `'password' => 'my_password_2024'` is still caught. What this does cost is
+ * a password that is literally the word - `'password' => 'mypassword'` - and
+ * that is a trade worth making against the constants of every SDK there is.
  */
 function echoesItsName(prefix: string, value: string): boolean {
-  if (/[0-9!-\/:-@{-~]/.test(value.replace(/[\[\]-]/g, ''))) {
+  if (/[0-9!-\/:-@{-~]/.test(value.replace(/[\[\]\/-]/g, ''))) {
     return false;
   }
 
-  const name = plain(nameIn(prefix));
-  return name.length > 2 && plain(value).indexOf(name) !== -1;
+  const said = plain(value);
+  return secretWordsIn(prefix)
+    .map(plain)
+    .some(word => word.length > 2 && said.indexOf(word) !== -1);
 }
 
 function looksLikeASecret(value: string, prefix = ''): boolean {
@@ -301,7 +383,10 @@ function looksLikeASecret(value: string, prefix = ''): boolean {
  * makes an expression.
  */
 function isBareLiteral(value: string): boolean {
-  if (/[$()\[\]<>=\\]/.test(value)) {
+  // Trailing `=` is base64 padding, which is how a Kubernetes secret and half
+  // of Azure's connection strings spell a credential - not the punctuation of
+  // an expression, which is what this check is for.
+  if (/[$()\[\]<>=\\]/.test(value.replace(/=+$/, ''))) {
     return false;
   }
 
@@ -475,7 +560,18 @@ export function redact(text: string, option: RedactOption = {}): Redacted {
     };
 
     result = result.replace(DEFINE_CALL, replace);
+    result = result.replace(XML_ATTRIBUTE, replace);
+    result = result.replace(SQL_CREDENTIAL, replace);
     result = result.replace(ASSIGNMENT, replace);
+    result = result.replace(FALLBACK_LITERAL, replace);
+
+    result = result.replace(
+      CURL_USER,
+      (whole: string, flag: string, user: string, secret: string) =>
+        looksLikeASecret(secret)
+          ? `${flag}${user}:${markerFor('assigned-secret', secret)}`
+          : whole
+    );
 
     // Unquoted values have no quoting to preserve, and have to look less like
     // an identifier to qualify.

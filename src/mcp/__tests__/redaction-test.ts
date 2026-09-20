@@ -515,3 +515,68 @@ describe('the worst thing this can do is eat code', () => {
     expect(result.text).not.toContain('my_password_2024');
   });
 });
+
+describe('the shapes other ecosystems use', () => {
+  // This rule grew up on PHP, because that is what it was first pointed at.
+  // Measured against a corpus from elsewhere it caught seventeen of thirty-two
+  // credentials; these are the ones it did not.
+  const SECRET = 'Xk7mQ2vL9pR';
+
+  const caught: Array<[string, string]> = [
+    ['a key the name is only part of', `secret_key_base: ${SECRET}9`],
+    ['Go’s assignment', `password := "${SECRET}"`],
+    ['a dotted property key', `spring.datasource.password=${SECRET}`],
+    ['a property on an object', `config.smtp_password = "${SECRET}";`],
+    ['a .NET config attribute', `<add key="Password" value="${SECRET}" />`],
+    ['a Spring bean attribute', `<property name="password" value="${SECRET}"/>`],
+    ['an Azure connection string', `AccountKey=${SECRET}abc123==;EndpointSuffix=core.windows.net`],
+    ['base64 in a Kubernetes secret', `  password: ${SECRET}==`],
+    ['a curl invocation', `curl -u admin:${SECRET} https://api.example.com`],
+    ['SQL granting a login', `CREATE USER app IDENTIFIED BY '${SECRET}';`],
+    ['a fallback behind an environment variable', `apiKey: process.env.API_KEY ?? "${SECRET}",`],
+  ];
+
+  caught.forEach(([what, code]) =>
+    it(`catches ${what}`, () => {
+      const result = redact(code);
+      expect(result.text).not.toContain(SECRET);
+      expect(result.found.length).toBeGreaterThan(0);
+    })
+  );
+
+  const tokens: Array<[string, string]> = [
+    ['an Anthropic key', `sk-ant-api03-${'9f2c41ab7de85610c3bb0429fd77ea13'.repeat(3)}`],
+    ['a GitLab token', `glpat-9f2c41ab7de85610c3bb`],
+    ['an npm token', `npm_9f2c41ab7de85610c3bb0429fd77ea13abcd`],
+    ['a Shopify token', `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`],
+    ['a DigitalOcean token', `dop_v1_${'9f2c41ab7de85610c3bb0429fd77ea13'.repeat(2)}`],
+    ['a Hugging Face token', `hf_9f2c41ab7de85610c3bb0429fd77ea13`],
+  ];
+
+  tokens.forEach(([what, token]) =>
+    it(`catches ${what} wherever it appears`, () => {
+      const result = redact(`const t = "${token}";`);
+      expect(result.text).not.toContain(token);
+    })
+  );
+
+  it('still leaves an environment variable name alone', () => {
+    // An SDK constant naming the variable a token comes from is not a token.
+    const code = `const ENV_AUTH_TOKEN = "AWS_CONTAINER_AUTHORIZATION_TOKEN";`;
+    expect(redact(code).text).toBe(code);
+  });
+
+  it('still leaves a CSS rule alone', () => {
+    // A `.` before the name used to disqualify it, which cost every dotted
+    // configuration key there is. CSS survives on the shape of its values.
+    const code = `.password-field:focus { border-color: #ff0000; }`;
+    expect(redact(code).text).toBe(code);
+  });
+
+  it('leaves a bare value that could be an identifier alone', () => {
+    // The documented gap: with no quotes and no digit or symbol, a value is
+    // indistinguishable from the name of the thing that holds it.
+    const code = `spring.datasource.password=supersecretvalue`;
+    expect(redact(code).text).toBe(code);
+  });
+});
