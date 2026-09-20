@@ -18,6 +18,40 @@ const HOUR = 60 * MINUTE;
 /** Timezones move in quarter hours, and nothing finer survives a `LIST`. */
 const QUARTER_HOUR = 15 * MINUTE;
 
+/**
+ * A listing older than about six months carries a year instead of a clock
+ * time - `Mar 15 2025` rather than `Sep 19 15:40` - and the parser fills the
+ * missing time with midnight. Measured against a real `MDTM`, that reads as
+ * an offset of minus the file's time of day: a file saved at four in the
+ * afternoon makes the server look sixteen hours behind.
+ *
+ * So the sample has to be recent enough to have been printed with a time.
+ */
+const LISTING_KEEPS_THE_TIME_FOR = 150 * 24 * HOUR;
+
+export function pickTimeSample(stats: any[], now: number = Date.now()): any {
+  const usable = stats.filter(
+    item =>
+      item &&
+      item.name &&
+      item.type === '-' &&
+      item.date instanceof Date &&
+      !isNaN(item.date.getTime()) &&
+      now - item.date.getTime() < LISTING_KEEPS_THE_TIME_FOR &&
+      // A year-form listing lands exactly on midnight. A file genuinely saved
+      // then is possible and rare, and skipping it costs nothing.
+      !(item.date.getHours() === 0 && item.date.getMinutes() === 0)
+  );
+
+  // The newest, because it is the one most certainly printed with a time.
+  return usable.sort((a, b) => b.date.getTime() - a.date.getTime())[0];
+}
+
+/** Real UTC offsets run from -12:00 to +14:00, in quarter hours. */
+export function isAPlausibleUtcOffset(milliseconds: number): boolean {
+  return milliseconds >= -12 * HOUR && milliseconds <= 14 * HOUR;
+}
+
 interface FtpFileHandle {
   path: string;
   flags: string;
@@ -295,11 +329,10 @@ export default class FTPFileSystem extends RemoteFileSystem {
    * no writing to the server, one extra command per connection.
    */
   private async _measureTimeOffset(dir: string, stats: any[]): Promise<boolean> {
-    const sample = stats.find(
-      item => item.name && item.type === '-' && item.date instanceof Date
-    );
+    const sample = pickTimeSample(stats);
     if (!sample) {
-      // An empty or file-less directory is no answer either way.
+      // Nothing here can be measured against; the next directory might have
+      // something.
       return false;
     }
 
@@ -332,7 +365,23 @@ export default class FTPFileSystem extends RemoteFileSystem {
       return true;
     }
 
+    // Both dates come back parsed as local time - node-ftp builds the MDTM
+    // one from an ISO string with no `Z` - so the difference between them is
+    // the server's own UTC offset, with the local one cancelling out.
     const serverOffset = sample.date.getTime() - asUtc.getTime();
+
+    if (!isAPlausibleUtcOffset(serverOffset)) {
+      // Nothing between -12:00 and +14:00 is a timezone, so this is a
+      // measurement rather than an offset: usually a listing that gave a date
+      // without a time, whose midnight is being compared against a real one.
+      logger.info(
+        `The server's time offset measured ${(serverOffset / HOUR).toFixed(2)} ` +
+          'hours, which is not a timezone; ignoring it. Set ' +
+          'remoteTimeOffsetInHours if timestamps here need correcting.'
+      );
+      return true;
+    }
+
     const localOffset = -sample.date.getTimezoneOffset() * MINUTE;
     const measured = serverOffset - localOffset;
     const rounded = Math.round(measured / QUARTER_HOUR) * QUARTER_HOUR;

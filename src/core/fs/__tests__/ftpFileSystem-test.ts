@@ -1,5 +1,8 @@
 import upath from '../../upath';
-import FTPFileSystem from '../ftpFileSystem';
+import FTPFileSystem, {
+  isAPlausibleUtcOffset,
+  pickTimeSample,
+} from '../ftpFileSystem';
 
 function entry(name: string) {
   return {
@@ -263,7 +266,14 @@ function createClockClient(serverUtcOffsetHours: number, fileUtc: Date, log: str
 }
 
 describe('FTPFileSystem time offset', () => {
-  const FILE_UTC = new Date('2024-01-15T00:00:00Z');
+  // Recent, and not on the hour: a listing only carries a clock time for the
+  // last few months, and the measurement now refuses anything older because
+  // an `ls` year-form date is midnight and measures as a wild offset.
+  // Whole seconds: a listing and an MDTM both carry seconds at most, so a
+  // fixture with milliseconds could never be reproduced exactly.
+  const FILE_UTC = new Date(
+    Math.floor((Date.now() - 2 * 24 * 60 * 60 * 1000 - 37 * 60 * 1000) / 1000) * 1000
+  );
 
   function createClockFs(serverUtcOffsetHours: number, option: object = {}) {
     const log: string[] = [];
@@ -447,5 +457,81 @@ describe('what a stall must not be mistaken for', () => {
     // The next listing still asks for hidden files.
     expect(names(await fs.list('/pub'))).toEqual(['.env', 'a']);
     expect(calls).toEqual(['-a /pub', '-a /pub']);
+  });
+});
+
+describe('choosing a file to measure the clock against', () => {
+  const NOW = new Date('2026-09-20T10:00:00').getTime();
+  const at = (iso: string) => new Date(iso);
+
+  const file = (name: string, date: Date) => ({
+    name,
+    type: '-',
+    size: 1,
+    date,
+    rights: { user: 'rw', group: 'r', other: 'r' },
+  });
+
+  it('takes the newest file that was listed with a time', () => {
+    const chosen = pickTimeSample(
+      [
+        file('old.php', at('2026-09-18T09:15:00')),
+        file('newest.php', at('2026-09-20T08:30:00')),
+        file('older.php', at('2026-09-01T12:00:00')),
+      ],
+      NOW
+    );
+
+    expect(chosen.name).toBe('newest.php');
+  });
+
+  it('refuses one old enough to have been listed without a time', () => {
+    // `ls` prints a year instead of a clock time after about six months, and
+    // the parser fills the gap with midnight. Measuring against that reads as
+    // an offset of minus the file's time of day - which is exactly how a
+    // server came to look eighteen hours out.
+    const chosen = pickTimeSample(
+      [file('ancient.php', at('2024-03-15T00:00:00'))],
+      NOW
+    );
+
+    expect(chosen).toBeUndefined();
+  });
+
+  it('refuses one that landed exactly on midnight', () => {
+    expect(
+      pickTimeSample([file('midnight.php', at('2026-09-19T00:00:00'))], NOW)
+    ).toBeUndefined();
+  });
+
+  it('ignores directories and unparsed entries', () => {
+    const chosen = pickTimeSample(
+      [
+        { name: 'sub', type: 'd', date: at('2026-09-20T09:00:00') },
+        { name: 'broken.php', type: '-', date: 'not a date' },
+        file('good.php', at('2026-09-19T14:20:00')),
+      ] as any,
+      NOW
+    );
+
+    expect(chosen.name).toBe('good.php');
+  });
+});
+
+describe('what counts as a timezone', () => {
+  const hour = 60 * 60 * 1000;
+
+  it('accepts the offsets that exist', () => {
+    [-12, -5, 0, 1, 5.75, 12, 13, 14].forEach(offset =>
+      expect(isAPlausibleUtcOffset(offset * hour)).toBe(true)
+    );
+  });
+
+  it('refuses the ones that do not', () => {
+    // The value that started this: no timezone is eighteen hours from UTC, so
+    // a measurement saying so is a measurement error, not an offset.
+    [-18.25, -16.25, 15, 24, -24].forEach(offset =>
+      expect(isAPlausibleUtcOffset(offset * hour)).toBe(false)
+    );
   });
 });
