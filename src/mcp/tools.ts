@@ -675,6 +675,14 @@ export function createTools(
       localMtime: numberField,
       remoteMtime: numberField,
       redacted: { type: 'array', items: stringField },
+      /**
+       * Asking for a description, where understanding happens.
+       *
+       * In the text as well, but a client that reads structured output stops
+       * reading the text - which is where every nudge lived until now, and is
+       * why after a day of heavy use exactly one note had been written.
+       */
+      hint: stringField,
       // What `note` recorded about this file, if anything: a declared field
       // rather than an undeclared extra, because a client that validates the
       // schema strictly is entitled to reject what it was not promised.
@@ -799,10 +807,12 @@ export function createTools(
 
       const body = sliceLines(scrubbed.text, args.start_line, args.end_line);
       const described = await noteFor(context, service, target, remoteStat);
+      const hint = askForANote(stableId(service), target, described, remoteStat.size);
       const notes = [
         DIVERGENCE[result.state],
         redactionNote(scrubbed.found, scrubbed.secrets.length),
         describeNote(described),
+        hint,
       ]
         .filter(Boolean)
         .join('\n');
@@ -819,6 +829,7 @@ export function createTools(
           remoteMtime: result.remoteMtime,
           redacted: scrubbed.found,
           note: described,
+          hint: hint || undefined,
         },
       };
     },
@@ -2041,6 +2052,54 @@ function describeConnectionLine(
     `    project: ${connection.workspace}` +
     (connection.summary ? `\n    ${connection.summary}` : '')
   );
+}
+
+/**
+ * Files below this are not worth a line of description: a two-line include or
+ * a stub tells you what it is from its name.
+ */
+const WORTH_DESCRIBING = 2000;
+
+/**
+ * Asked once per file per window, so a second read of the same file is not a
+ * second request. Bounded by the files actually read.
+ */
+const alreadyAsked: { [key: string]: true } = Object.create(null);
+
+/**
+ * Nudging where the understanding is.
+ *
+ * Notes only pay for themselves if they get written, and nothing was writing
+ * them: the one prompt lived in `tree`, which is where you go *before* you
+ * understand anything. This asks at the moment a file has just been read and
+ * has no description - and only then, and only once.
+ */
+function askForANote(
+  connectionId: string,
+  remotePath: string,
+  described: { state: NoteState },
+  size: number
+): string {
+  if (described.state !== NoteState.None || size < WORTH_DESCRIBING) {
+    return '';
+  }
+
+  const key = `${connectionId}|${remotePath}`;
+  if (alreadyAsked[key]) {
+    return '';
+  }
+  alreadyAsked[key] = true;
+
+  return (
+    'Nothing describes this file yet. If you now know what it is for, ' +
+    '`note` takes one line and puts it in every `tree` from here on - for ' +
+    'you next time, or for whoever reads this server next.'
+  );
+}
+
+/** For tests, and for a window that has been open long enough to forget. */
+export function forgetWhatWasAsked(): void {
+  Object.keys(alreadyAsked).forEach(key => delete alreadyAsked[key]);
 }
 
 function clamp(value: any, fallback: number, max: number): number {

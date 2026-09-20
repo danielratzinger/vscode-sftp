@@ -1,7 +1,7 @@
 jest.mock('fs');
 
 import { vol } from 'memfs';
-import { createTools, ToolContext } from '../tools';
+import { createTools, forgetWhatWasAsked, ToolContext } from '../tools';
 import { stableId } from '../identity';
 import { ServiceLike } from '../exposure';
 import { FileType } from '../../core/fs';
@@ -713,5 +713,80 @@ describe('notes when a connection is reconfigured', () => {
     expect(
       await adopt('/cache', 'newid', identity, [{ id: 'newid', identity }])
     ).toBeUndefined();
+  });
+});
+
+describe('asking for a description where the file is read', () => {
+  // Notes only pay for themselves if they get written, and nothing was
+  // writing them: the one prompt lived in `tree`, which is where you go
+  // before you understand anything. After a day of heavy use, one note
+  // existed.
+  const BIG = 'x'.repeat(4000);
+
+  const serving = (files: { [path: string]: string }): any => ({
+    services: () => [STAGING],
+    exposure: () => ({ exposedByDefault: true }),
+    cacheOption: () => ({ cacheRoot: '/cache', materialize: false }),
+    remoteFs: async () => ({
+      list: async () => [],
+      lstat: async (p: string) =>
+        files[p]
+          ? { type: FileType.File, size: files[p].length, mtime: MTIME }
+          : Promise.reject(new Error('file not exist')),
+      readFile: async (p: string) => files[p],
+    }),
+  });
+
+  const read = (files: { [path: string]: string }, path: string) =>
+    createTools(serving(files)).find(t => t.name === 'read')!.run({
+      server: 'Staging',
+      path,
+    });
+
+  beforeEach(() => forgetWhatWasAsked());
+
+  it('asks once, for a file nothing describes', async () => {
+    const files = { '/srv/app/big.php': BIG };
+
+    const first: any = await read(files, '/srv/app/big.php');
+    expect(first.structured.hint).toContain('Nothing describes this file yet');
+    expect(first.text).toContain('`note` takes one line');
+
+    // A second read of the same file is not a second request.
+    const again: any = await read(files, '/srv/app/big.php');
+    expect(again.structured.hint).toBeUndefined();
+  });
+
+  it('says nothing about a file too small to be worth a line', async () => {
+    const files = { '/srv/app/stub.php': '<?php return [];' };
+
+    const result: any = await read(files, '/srv/app/stub.php');
+
+    expect(result.structured.hint).toBeUndefined();
+  });
+
+  it('says nothing once the file has a description', async () => {
+    const files = { '/srv/app/big.php': BIG };
+    const tools = createTools(serving(files));
+
+    await tools.find(t => t.name === 'note')!.run({
+      server: 'Staging', path: '/srv/app/big.php', summary: 'the big one',
+    });
+    forgetWhatWasAsked();
+
+    const result: any = await tools.find(t => t.name === 'read')!.run({
+      server: 'Staging', path: '/srv/app/big.php',
+    });
+
+    expect(result.structured.hint).toBeUndefined();
+    expect(result.text).toContain('the big one');
+  });
+
+  it('still returns the file, whatever it asks for', async () => {
+    const files = { '/srv/app/big.php': BIG };
+
+    const result: any = await read(files, '/srv/app/big.php');
+
+    expect(result.structured.content).toBe(BIG);
   });
 });
