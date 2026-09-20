@@ -31,6 +31,21 @@ export interface Note {
   hash?: string;
   /** When it was last written or confirmed. */
   updated: number;
+  /**
+   * The descriptions this one replaced, newest first.
+   *
+   * A description is written by whoever read the file, for whatever they were
+   * reading it for. The next reader comes to the same file for something else
+   * and knows something the line does not say - but they are also writing
+   * from one angle, and a line that replaces the last one can quietly delete
+   * what somebody already worked out. Keeping the ones it replaced makes that
+   * recoverable, and gives the next writer something to merge rather than
+   * overwrite.
+   *
+   * A few, not a log: the point is what is still worth knowing, not an
+   * archive of how the understanding got here.
+   */
+  previous?: Array<{ summary: string; updated: number }>;
 }
 
 export interface Version {
@@ -245,6 +260,8 @@ export interface NoteView {
   summary?: string;
   /** Set when the note describes an older version. */
   describedMtime?: number;
+  /** Descriptions this one replaced, newest first. */
+  previous?: Array<{ summary: string; updated: number }>;
 }
 
 /**
@@ -267,7 +284,7 @@ export function viewOf(
   // A hash on both sides settles it outright, in either direction.
   if (current && current.hash && note.hash) {
     return current.hash === note.hash
-      ? { state: NoteState.Current, summary: note.summary }
+      ? { state: NoteState.Current, summary: note.summary, previous: note.previous }
       : {
           state: NoteState.Stale,
           summary: note.summary,
@@ -287,8 +304,11 @@ export function viewOf(
     };
   }
 
-  return { state: NoteState.Current, summary: note.summary };
+  return { state: NoteState.Current, summary: note.summary, previous: note.previous };
 }
+
+/** How many replaced descriptions are kept. */
+const KEEP_PREVIOUS = 3;
 
 export function put(
   store: NoteStore,
@@ -296,6 +316,14 @@ export function put(
   summary: string,
   version: Version
 ): NoteStore {
+  const before = store.files[remotePath];
+  const superseded =
+    before && before.summary !== summary
+      ? [{ summary: before.summary, updated: before.updated }]
+          .concat(before.previous || [])
+          .slice(0, KEEP_PREVIOUS)
+      : before && before.previous;
+
   return {
     ...store,
     files: {
@@ -306,6 +334,7 @@ export function put(
         size: version.size,
         hash: version.hash,
         updated: Date.now(),
+        previous: superseded && superseded.length > 0 ? superseded : undefined,
       },
     },
   };

@@ -995,3 +995,93 @@ describe('a description against the bytes it describes', () => {
     expect((await load('/cache', id)).files['/srv/app/big.php'].hash).toHaveLength(40);
   });
 });
+
+describe('a description is written from somewhere', () => {
+  // Whoever reads a file reads it for something, and writes the line they
+  // needed. The next reader is there for something else and knows what that
+  // line does not say - but is also writing from one angle, and a line that
+  // replaces the last one can quietly delete what somebody worked out.
+  const version = { mtime: 1, size: 1, hash: 'abc' };
+
+  it('keeps the description it replaced', () => {
+    let store = put({ files: {} }, '/a.php', 'parses the feed', version);
+    store = put(store, '/a.php', 'parses the feed; retries twice on a 5xx', version);
+
+    expect(store.files['/a.php'].summary).toContain('retries twice');
+    expect(store.files['/a.php'].previous).toEqual([
+      expect.objectContaining({ summary: 'parses the feed' }),
+    ]);
+  });
+
+  it('keeps a few, not a log', () => {
+    let store = put({ files: {} }, '/a.php', 'one', version);
+    ['two', 'three', 'four', 'five'].forEach(summary => {
+      store = put(store, '/a.php', summary, version);
+    });
+
+    const previous = store.files['/a.php'].previous!;
+    expect(previous.map(one => one.summary)).toEqual(['four', 'three', 'two']);
+  });
+
+  it('does not stack the same line against itself', () => {
+    // Re-confirming a description is not replacing it.
+    let store = put({ files: {} }, '/a.php', 'parses the feed', version);
+    store = put(store, '/a.php', 'parses the feed', version);
+
+    expect(store.files['/a.php'].previous).toBeUndefined();
+  });
+
+  it('hands the replaced lines to whoever reads the file next', async () => {
+    const text = 'x'.repeat(4000);
+    const serving: any = {
+      services: () => [STAGING],
+      exposure: () => ({ exposedByDefault: true }),
+      cacheOption: () => ({ cacheRoot: '/cache', materialize: true }),
+      remoteFs: async () => ({
+        list: async () => [],
+        lstat: async () => ({ type: FileType.File, size: text.length, mtime: MTIME }),
+        readFile: async () => text,
+      }),
+    };
+    const tools = createTools(serving);
+    const note = tools.find(t => t.name === 'note')!;
+
+    await tools.find(t => t.name === 'read')!.run({ server: 'Staging', path: '/srv/app/big.php' });
+    await note.run({ server: 'Staging', path: '/srv/app/big.php', summary: 'parses the feed' });
+    await note.run({ server: 'Staging', path: '/srv/app/big.php', summary: 'parses the feed, badly' });
+
+    const result: any = await tools
+      .find(t => t.name === 'read')!
+      .run({ server: 'Staging', path: '/srv/app/big.php' });
+
+    expect(result.structured.note.summary).toBe('parses the feed, badly');
+    expect(result.structured.note.previous[0].summary).toBe('parses the feed');
+  });
+
+  it('asks the next reader to merge rather than overwrite', async () => {
+    const text = 'x'.repeat(4000);
+    const serving: any = {
+      services: () => [STAGING],
+      exposure: () => ({ exposedByDefault: true }),
+      cacheOption: () => ({ cacheRoot: '/cache', materialize: true }),
+      remoteFs: async () => ({
+        list: async () => [],
+        lstat: async () => ({ type: FileType.File, size: text.length, mtime: MTIME }),
+        readFile: async () => text,
+      }),
+    };
+    const tools = createTools(serving);
+
+    await tools.find(t => t.name === 'read')!.run({ server: 'Staging', path: '/srv/app/big.php' });
+    await tools.find(t => t.name === 'note')!.run({
+      server: 'Staging', path: '/srv/app/big.php', summary: 'parses the feed',
+    });
+    forgetWhatWasAsked();
+
+    const result: any = await tools
+      .find(t => t.name === 'read')!
+      .run({ server: 'Staging', path: '/srv/app/big.php' });
+
+    expect(result.structured.hint).toContain('keep what still holds');
+  });
+});

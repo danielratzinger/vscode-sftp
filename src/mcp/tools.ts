@@ -673,6 +673,11 @@ export function createTools(
         state: stringField,
         summary: stringField,
         describedMtime: numberField,
+        /** Descriptions this one replaced, newest first. */
+        previous: {
+          type: 'array',
+          items: objectSchema({ summary: stringField, updated: numberField }),
+        },
       }),
     }),
     annotations: { readOnlyHint: true, openWorldHint: true },
@@ -774,6 +779,11 @@ export function createTools(
         state: stringField,
         summary: stringField,
         describedMtime: numberField,
+        /** Descriptions this one replaced, newest first. */
+        previous: {
+          type: 'array',
+          items: objectSchema({ summary: stringField, updated: numberField }),
+        },
       }),
     }),
     annotations: { readOnlyHint: true, openWorldHint: true },
@@ -1435,9 +1445,10 @@ export function createTools(
       'without one it describes the whole project and appears in `servers` ' +
       'and `overview`, which is where to put what a server is actually for. ' +
       'Writes only to this machine, never to the server. Describe the ' +
-      'purpose, not the contents - and replace what is there when you learn ' +
-      'more, which is what it is for: a description is worth what the last ' +
-      'person to read the file knew.',
+      'purpose, not the contents. Replacing what is there is expected - a ' +
+      'description is written from whatever its writer was reading the file ' +
+      'for, and grows as people come to it for other things - so keep what ' +
+      'still holds and add what it missed. The lines it replaces are kept.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -2234,7 +2245,8 @@ function askForANote(
   if (described.state === NoteState.Stale) {
     return (
       'The description above is of an older version of this file. You have ' +
-      'just read the current one: if it no longer fits, `note` replaces it.'
+      'just read the current one: if it no longer fits, `note` replaces it - ' +
+      'keeping whatever is still true of it.'
     );
   }
 
@@ -2244,9 +2256,11 @@ function askForANote(
   // something that line does not say.
   if (described.state === NoteState.Current) {
     return (
-      'If reading it has told you something its description does not say, ' +
-      '`note` replaces that line - a description is worth what the last ' +
-      'person to read the file knew, not what the first one did.'
+      'That description was written by whoever read this file before you, ' +
+      'for whatever they were reading it for. If your reading has shown you ' +
+      'something it does not say, `note` replaces the line - keep what still ' +
+      'holds and add what it misses, rather than writing it from your angle ' +
+      'alone. What it replaces is kept either way.'
     );
   }
 
