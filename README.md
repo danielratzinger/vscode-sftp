@@ -34,6 +34,33 @@ bounded by the connection's own root, credentials are removed before anything
 is returned, and connections are exposed only if you say so. See
 [docs/commands.md](./docs/commands.md#mcp-for-ai-clients).
 
+**Continuous deploy from a folder you choose.** `SFTP: Autosync Worktree`
+keeps a folder on the server as it changes — saved in this window or written
+by anything else. Usually that folder is not the one the editor has open: an
+agent working on a branch gets its own checkout, and where the tooling clones
+rather than adds a worktree, git records nothing relating the two. So the
+other checkouts are found — worktrees from git's metadata, clones by the
+remote they came from — and listed by which was written in most recently. What
+goes up is what git would keep, so `npm install` in a watched checkout does
+not deploy `node_modules`. What leaves the branch is removed from the server.
+Nothing is dropped: a failed upload waits and is tried again, and what is
+still waiting when the window closes is picked up when it opens. One writer
+per connection, across windows as well as within one. See
+[docs/commands.md](./docs/commands.md#autosync-worktree).
+
+**A way back from a bad deploy.** Before autosync first writes over a file it
+fetches what the server had and keeps it, once per file per session; if the
+server cannot be reached to make that copy, the file is not overwritten.
+`SFTP: Restore Server to an Earlier Point` puts a server back to how it was
+before a session started.
+
+**Host keys are checked.** Every connection here authenticates with a password
+out of `sftp.json`, and until now the extension checked nothing — whatever
+answered on port 22 got it. `~/.ssh/known_hosts` is read first, so a host you
+have already accepted in a terminal is not asked about again; an unknown host
+shows its fingerprint once; a key that has changed is refused, with the option
+to update the stored one.
+
 **Transfers that use the bandwidth.** FTP opens a pool of control connections
 rather than moving one file at a time; SFTP uses pipelined transfers instead
 of one request in flight. Every transfer is retried on a transient failure and

@@ -3,8 +3,155 @@
 This fork continues the changelog below, which is the history of the
 extension as written by [liximomo](https://github.com/liximomo/vscode-sftp)
 and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
-Everything under *Unreleased* is this fork; everything under 1.16.3 and
+Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
+
+## 2.1.0 - 2026-09-21
+
+Continuous deploy, built out until it does what a shell script I had been
+using for it does - and then past it, because two of the things it needed
+turned out to be missing from the extension as a whole rather than from
+autosync.
+
+The shape of the release: autosync keeps a folder on the server, and that
+folder is usually not the one the editor has open. So it has to find the other
+checkouts, know which of them the work is happening in, survive the window
+closing, know what git would ignore, keep what it is about to overwrite, and
+refuse to be two writers at once. Each of those is a bullet below.
+
+The two that were not about autosync: the extension has never checked an SSH
+host key, and every connection here authenticates with a password out of
+`sftp.json` - so whatever answered got the password. And a watcher uploading
+whatever changes will upload `.vscode/sftp.json` unless something stops it,
+which is the password for the server it is uploading to.
+
+### Added
+
+- SSH host keys are checked before anything is sent. The extension has never
+  done this: whatever answered on port 22 got the password out of `sftp.json`,
+  and with autosync opening connections on its own that is worth closing.
+  `~/.ssh/known_hosts` is read first, so hosts already accepted in a terminal
+  are not asked about again. A host with nothing on record shows its
+  fingerprint and asks once. A key that has *changed* is refused, with both
+  fingerprints shown and `Update the stored key` as the way through - the
+  innocent explanation is common, the other one hands that connection's
+  password to whoever is answering. A key marked `@revoked` is refused
+  outright. `StrictHostKeyChecking` and `UserKnownHostsFile` in ssh config are
+  honoured, which they were not: that file was read but only six directives
+  were ever mapped out of it. `sftp.hostVerification` turns the whole thing
+  off, `"hostVerification": false` does it for one connection.
+
+- `SFTP: Autosync Worktree` and `SFTP: Stop Autosync Worktree`, on a connection in
+  the Remote Explorer and on a folder in the file explorer: upload everything
+  that changes in a chosen folder, saved in this window or not. In a git
+  repository the folders on offer are its worktrees - a checkout the editor
+  does not have open - an agent's checkout of a branch, typically nowhere near
+  the workspace, and clones of the same repository too, matched on the remote
+  they came from because nothing else relates them. The list is ordered by
+  which was written in most recently and says how long ago, since that is the
+  question behind it. Two kinds git reports are left out, with the count
+  shown: one sitting on a commit rather than a branch, since nothing tracks
+  it, and one nested inside another checkout's `.git`, `.vscode` or `.claude`,
+  since the thing deployed there is the checkout around it. Agent tooling
+  leaves a lot of both behind - on one real project, four out of six.
+  `sftp.autosync.showEveryCheckout` brings them back. Where to search
+  beyond the folder holding the project is `sftp.autosync.searchPaths`. Outside a repository there is one candidate,
+  the project folder itself. One folder at a time, chosen deliberately; while
+  anything is syncing, this window's own upload-on-save stands down and says
+  so. While it runs it keeps looking, once a minute, for another checkout of
+  the same project being written in more recently than the one going to the
+  server, and offers to switch to it - which is the case that matters and the
+  one watching for a worktree to be *created* missed, since an agent picking
+  up a checkout that already exists creates nothing. Once per checkout, only
+  about ones the picker would offer, and only while something is already
+  syncing. Choosing one
+  offers to catch the server up first - the files that checkout has and the
+  deployed branch does not, worked out from git rather than from the server.
+  Connections that are autosyncing carry a badge in both explorers - one
+  badge for this window's own folder and another, in a warning colour, when
+  the folder being deployed is one this window does not have open, since that
+  is the case where your own saves are standing down.
+
+  What goes up is what git would keep: `git check-ignore` is asked about each
+  batch, so an `npm install` in a watched checkout no longer sends
+  `node_modules` to the server. Asked once per batch and once per directory
+  rather than once per file, which is the difference between 80 milliseconds
+  and four minutes for a big install.
+
+  Nothing is dropped any more. An upload that fails goes back in the queue
+  behind a cooldown that grows with each further failure; what is still
+  waiting when the window closes is written down and picked up when it opens
+  again. Stopping autosync says how many files were still waiting.
+
+  One writer per connection now holds across windows, not just within one.
+  Two editors on the same project shared the store that says what is syncing
+  but never heard about each other, so both would watch and - pointed at
+  different checkouts - both would write to the same remote path. A claim file
+  per connection settles it: a window that cannot take it asks whether to take
+  it over, and the one that loses it stands down and says so. `autosync.sh`
+  does this with a pidfile.
+
+  `.git`, `.vscode` and `.claude` are never uploaded, whatever the ignore
+  rules say. `.vscode` holds `sftp.json`, which holds the password for the
+  server it would be uploaded to.
+
+  Files removed from the branch are now removed from the server. Git's index
+  is what is watched, not the filesystem - a build clearing a folder, an editor
+  swapping a file out and back and a branch switch all make files disappear,
+  and none of them mean the file has left the project. The index is compared
+  every two seconds, at the cost of one `lstat` unless git actually wrote it,
+  and a linked worktree's own index is read rather than the repository's
+  shared one. The copy is kept before the file goes, as it is before an
+  overwrite. A folder that is not a checkout has no index to consult and still
+  follows `watcher.autoDelete`.
+
+  The catch-up now asks what it should cover. Where there is a branch, git
+  answers exactly as before. Where there is not - a plain folder, or a
+  checkout on a commit - the offer is by time: the last hour, 24 hours, 7
+  days, or everything - and "what is not committed yet", which assumes nothing
+  about what the server already has, the backfill `autosync.sh` does even in
+  its monitor-only mode. Every catch-up uploads newest-first, so the file you
+  just edited lands in a second rather than after the backlog. Catch-ups and restores upload through the connection's
+  own transfer machinery, so `concurrency`, `verifyTransfer` and `useTempFile`
+  apply to them as they do to every other upload.
+
+  `sftp.autosync.settleSeconds` and `sftp.autosync.retrySeconds` set the two
+  waits. A connection with a `context` now deploys the right folder of a
+  worktree rather than the checkout root.
+
+  Autosync survives quitting the editor. It never actually resumed before -
+  it asked which connections were syncing before any connection had been
+  built, so the answer was always none - and saving `sftp.json`, which throws
+  every connection away and makes new ones, left it bound to disposed
+  services. Both are fixed by binding after the connections exist and again
+  whenever they change. On resume, what was queued is picked up, and the
+  folder is asked what has been written since the connection was last
+  watching it, so changes made while the window was closed go up too. Uploads
+  only; a file deleted while nothing was watching leaves nothing to notice.
+- `Switch Autosync Worktree`, beside `Stop Autosync Worktree` while a
+  connection is syncing and in place of `Autosync Worktree`. In the Remote
+  Explorer which of the two appears is decided per connection rather than per
+  window - the tree item carries whether that connection is syncing - so a
+  workspace with twenty-eight connections no longer labels all of them by what
+  one of them is doing. `Stop` and the reveal commands became precise the same
+  way.
+- `Reveal Autosynced Folder in Finder` and `Reveal Autosynced Folder in
+  Terminal`, under the autosync entries in both explorers, and only while a
+  connection is syncing a folder this window does not have open. Nothing on
+  screen leads to that folder otherwise - the file explorer shows this
+  window's project, the Remote Explorer shows the server, and the branch name
+  is not a path. The terminal is the machine's own, not the built-in one.
+- Before autosync first writes over a file in a session, the server's copy is
+  fetched and kept - once per file per session, so the cost is one extra fetch
+  per file a session touches. If the server cannot be reached to make that
+  copy the file is not overwritten but retried, because that is exactly the
+  case where an overwrite would destroy the only copy of what was there.
+  `SFTP: Restore Server to an Earlier Point`, on a connection in the Remote
+  Explorer, puts a server back: pick a session and every file it or a later
+  one wrote over returns to the earliest copy from that moment, which is what
+  it was before anything in that window touched it. Files that were not on the
+  server then are removed, counted separately in the confirmation. Sessions are
+  swept after `sftp.autosync.backupDays` (30), whole sessions at a time.
 
 ## 2.0.0 - 2026-09-19
 
@@ -34,16 +181,6 @@ now diverges from upstream's.
   menu, on anything that has been downloaded: opens the system's file manager
   on the local copy. `Reveal in File Explorer` on Windows, `Open Containing
   Folder` on Linux.
-- `SFTP: Autosync Worktree` and `SFTP: Stop Autosync Worktree`, on a connection in
-  the Remote Explorer and on a folder in the file explorer: upload everything
-  that changes in a chosen folder, saved in this window or not. In a git
-  repository the folders on offer are its worktrees - a checkout the editor
-  does not have open - an agent's checkout of a branch, typically nowhere near
-  the workspace. One checkout at a time, chosen deliberately; while it is not
-  this window, this window's own uploads are paused and said to be. A worktree
-  that appears is offered once, never adopted. Choosing one offers to catch
-  the server up first - the files that checkout has and the deployed branch
-  does not, worked out from git rather than from the server.
 - `Reveal in Terminal`, on folders in both explorers: opens the machine's own
   terminal on that folder rather than the editor's built-in one, honouring
   `terminal.external.*Exec`.

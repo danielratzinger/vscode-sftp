@@ -94,19 +94,77 @@ On folders, in both explorers: opens the machine's own terminal on that folder �
 ### Autosync Worktree
 On a connection in the Remote Explorer, on a folder in the file explorer, or from the palette. Asks which folder this connection should deploy from, and then uploads everything that changes there — saved in this window or written by anything else. `Stop Autosync Worktree` sits beside it and appears only while something is syncing.
 
+`Switch Autosync Worktree` takes its place while that connection is syncing, beside `Stop` — the same picker under the name that fits once something is running. Two commands rather than one whose title changes, because a menu entry shows its command's title and a title is fixed.
+
+In the Remote Explorer this is decided **per connection**, not per window: the tree item carries whether that connection is syncing, so a workspace with twenty-eight connections does not label all of them by what one of them is doing. `Stop` and the reveal commands are now precise the same way. The file explorer has no such per-item handle, so there it still follows whether anything in the window is syncing.
+
 Where the project is a git repository the folders on offer are its worktrees, which is the case this was built for: an agent working on a branch gets its own checkout, usually nowhere near the workspace. Where it is not a repository — which is most connections — there is one candidate, the project folder itself, and choosing it is how you say "keep this on the server" without writing a `watcher` block into `sftp.json`.
 
 The list of worktrees comes from git's own metadata under `.git/worktrees` — every checkout of the repository, with the branch each is on, whether or not it is open in an editor. Nothing is scanned for and `git` need not be on the PATH.
 
+Clones are found too, because not all tooling adds a worktree — some of it clones the repository instead, and a clone is unrelated to yours as far as git is concerned: separate `.git`, separate everything, nothing recording that they are the same project. What relates them is the remote they came from, so that is what is matched, normalised — `https://github.com/x/y.git` and `git@github.com:x/y` are the same repository. Each clone's own worktrees then come from its metadata, exactly, as this one's do.
+
+Two kinds git reports are left out, with the count shown. A checkout sitting on a **commit rather than a branch**: nothing tracks it, so there is no branch to keep the server on and no git catch-up to offer, only the time-window one. And a checkout **nested inside another one's `.git`, `.vscode` or `.claude`**: the thing deployed there is the checkout around it, which is why those folders are never uploaded in the first place. Agent tooling leaves a lot of both behind — on one real project, four out of six.
+
+That second test is made against the other candidates rather than by looking for `.claude` in the path, so a project that happens to sit under a folder of that name is not caught by it. `sftp.autosync.showEveryCheckout` brings both kinds back; the folder this window has open is always offered whatever state it is in. A detached checkout that is shown is labelled by its folder and says `detached`, because a folder name where a branch name goes reads as a branch.
+
+That part is a search rather than a lookup, so it is bounded on every axis: the folder holding the project plus whatever `sftp.autosync.searchPaths` names, three levels deep, skipping `node_modules` and its kind, and only ever run when you open the list. Add the folder your tooling clones into — `~/intent/workspaces`, say — if it is not beside the project.
+
+The list is ordered by which folder was written in most recently, and says so: `edited just now`, `edited 3 hours ago`. That is the question behind it — which checkout is being worked in — and the answer is an indication rather than a record, which is why the time is shown and not only the order. It is read from the files, bounded the same way, and the folder each entry is in is under the branch name.
+
 **One writer.** A connection has one remote path, so it syncs from exactly one folder at a time. While it does, `uploadOnSave` for that connection stands down — two mechanisms uploading the same save is one upload too many, and the watcher sees everything a save does and more. The cost is that a save goes up when it has settled rather than the instant it is written. The log says so once rather than leaving you to wonder. `Stop Autosync Worktree`, or `Stop syncing` in the picker, hands it back.
 
-For a worktree, picking one usually happens after the work has started — an agent has been writing for twenty minutes before anybody looks — so you are offered the catch-up: the files that checkout has and the deployed branch does not, plus whatever is not committed there yet. Git answers that, not the server, so it costs no connection to work out. The count is shown before anything moves, and the upload can be cancelled while it runs.
+**What is uploaded is what git would keep.** A watcher is not upload-on-save: it sees every write by every process, so `npm install` in a watched checkout is forty thousand files heading for the server unless something stops them — and most `sftp.json` files have no `ignore` list at all. So git is asked, with `git check-ignore`, which consults the index and therefore never reports a tracked file as ignored. It is asked once per batch rather than once per file, and once per directory rather than once per file under it: everything below `node_modules` is settled by one answer about `node_modules`. The connection's own `ignore` rules still apply on top, and `.git` is never uploaded. One edge is given up deliberately — a file force-added inside an ignored directory is treated as ignored, because git says the directory is.
+
+**It survives quitting the editor.** Which folder a connection deploys from is remembered, and the watcher is set up again when the window comes back — after the connections exist, which is later than the extension starts and again every time `sftp.json` is saved. What was still queued is picked up and you are told it is being resumed.
+
+And what changed while nothing was watching is caught up on. A mark is moved forward every thirty seconds while a connection is syncing, and on resume the folder is asked what has been written since — the same question the time-window catch-up asks, against a moment that was recorded rather than chosen. Those files are queued and a notice says how many, with a `Stop` button that clears them before much has moved. Uploads only: a file deleted while the window was closed leaves nothing behind to notice.
+
+**The log is the transfer log.** Autosync uploads go through the connection's own transfer machinery, so each one writes the same `local ➞ remote /path` line to the SFTP output panel and moves the status bar exactly as a save does, carrying the connection name like every other line. There is no separate autosync log to go looking for. What autosync adds are the lines around it: which folder it started on, how many files a catch-up moved, how many are waiting to be retried, and deletions — which go through a handler that says nothing of its own.
+
+A failed upload is written down but does not raise a dialog, because the queue is going to try it again in a few seconds and a dialog per attempt per file would bury the editor. The status bar still says `failed`, and the line is in the panel. Catch-ups and restores are the same: one thing said at the end rather than one per file.
+
+**It keeps looking for somewhere busier.** While a connection is autosyncing, once a minute it asks the same question the picker answers: is another checkout of this project being written in more recently than the one going to the server? If one is, it offers to switch — `Sync it instead` — naming both and how long ago each was touched.
+
+That replaced watching for a worktree to be *created*, which missed the case that actually happens: an agent picks up a checkout that already existed, so nothing is created and nothing fires.
+
+Only while already autosyncing, because “deploy this one instead” needs something to be instead of. Only about checkouts the picker would offer, so the same two kinds are left out — detached, and nested in another checkout's scratch folder. Only when the other one was touched within the last half hour, since a checkout edited last week is not where the work is however it compares. And once per checkout: deciding not to switch is an answer, not something to ask again in a minute.
+
+It looks at everything the picker does — the worktrees of the checkout being deployed and the clones of it — not only the repository this window has open. Those are often different: the checkout in the window may have no worktrees at all while every one of them belongs to a clone somewhere else, which is the arrangement agent tooling produces and the case this exists for.
+
+**One writer, across windows as well as within one.** Inside a window a connection holds one folder and choosing another replaces it. Between windows that was not enforced at all: two editors share the store that says what is syncing but get no word when the other changes it, so both would watch, and if they were pointed at different checkouts both would write to the same remote path. There is now a claim file per connection, in the extension's storage — taken when a window starts syncing, touched every ten seconds, and treated as abandoned after forty. A window that cannot take it asks whether to take it over; the window that loses it stands down within a few seconds and says so. Same idea as `autosync.sh`'s pidfile, in the one place every window can see.
+
+**`.git`, `.vscode` and `.claude` are never uploaded**, whatever git or your `ignore` rules say. `.vscode` because it holds `sftp.json`, which holds the password for the very server this would put it on — relying on that being gitignored is relying on somebody having remembered. `.claude` because it is an agent's workspace, worktrees and all, and none of it is the deployment.
+
+**Deletions follow git's index, not the filesystem.** A file disappearing is not by itself a reason to take it off a live server — a build clears a folder, an editor swaps a file out and back, a branch switch rewrites half the tree. What git's index says is different: a file that has left `git ls-files` has left the project. So the index is compared every two seconds — one `lstat` to see whether git wrote it at all, and a `git ls-files` only when it did — and what has gone is removed from the server, after its copy is kept. A linked worktree's own index is read, not the repository's shared one.
+
+Outside a repository there is no index to consult, so a folder that is not a checkout falls back to watching for deletions and still needs `watcher.autoDelete`, as it always did.
+
+**Nothing is dropped.** A file that fails to upload goes back in the queue behind a cooldown that grows with each further failure, up to five minutes, so a server that is briefly refusing is waited out rather than hammered. `sftp.autosync.retrySeconds` sets the first wait. What is still waiting when the window closes is written down and picked up when it opens again, and you are told it is being resumed. Stopping autosync drops the queue and says how many files were in it, because nothing would drain it afterwards.
+
+**The server's copy is kept before it is written over.** Once per file per session — the point is the state before this run started, not before each save — which costs one extra fetch per file the session touches. If the server cannot be reached to make that copy the file is **not** overwritten; it goes back in the queue instead, because that is exactly the case where an overwrite would destroy the only copy of what was there. A file that was not on the server is recorded as having been absent, which is also a state to put back. Turn the whole thing off with `sftp.autosync.backupRemote`; sessions are swept after `sftp.autosync.backupDays` (30), whole sessions at a time so that one you can still see is one that can be restored in full. A file larger than `sftp.autosync.backupMaxMB` (20) is uploaded without a copy being kept — the copy passes through memory on its way to disk, and a database dump would take the window with it — and the log says so, naming the file, because that one has no way back.
+
+### Reveal Autosynced Folder in Finder / in Terminal
+On a connection in the Remote Explorer or a folder in the file explorer, directly under the autosync entries, and **only while a connection is syncing a folder this window does not have open**. On its own folder they would be two more ways to open the folder already open.
+
+That case is the one worth a command: the file explorer shows this window's project and the Remote Explorer shows the server, so nothing on screen leads to the checkout actually being deployed — the branch name in the picker is the only trace of it, and a branch name is not a path. Finder, File Explorer or the system's file manager by platform; the terminal is the machine's own, not the built-in one, honouring `terminal.external.*Exec`.
+
+A worktree removed by hand leaves the rest of git in place, so the folder may simply be gone; both say so rather than opening nothing.
+
+### Restore Server to an Earlier Point
+On a connection in the Remote Explorer, or from the palette. Lists the autosync sessions that kept anything, newest first, with how many files each holds and how long ago it was. Picking one puts back, for every file that session or a later one wrote over, the **earliest** copy from that moment on — which by construction is what the file was before the first thing in that window touched it.
+
+Files that were not on the server at the chosen moment are removed, since that is what putting them back means. The count of those is stated separately in the confirmation, because it is the one destructive part. Uploads go through the connection's own transfer machinery, so `concurrency`, `verifyTransfer` and `useTempFile` apply as they do everywhere else.
+
+Picking a folder usually happens after the work has started — an agent has been writing for twenty minutes before anybody looks — so you are offered a catch-up, and asked what it should cover. Where there is a branch, git answers exactly and for nothing: the files that checkout has and the deployed branch does not, plus whatever is not committed there yet. Where there is not — a plain project folder, or a checkout sitting on a commit rather than a branch — the only thing left to ask is the disk, so the offer is by time instead: changed in the last hour, the last 24 hours, the last 7 days, or everything in the folder. The count is shown before anything moves, and the upload can be cancelled while it runs.
+
+The catch-up uploads through the connection's own transfer machinery rather than a path of its own, so `concurrency`, `verifyTransfer`, `useTempFile` and the per-file retries are the same ones every other upload gets. Anything that still fails joins the retry queue.
 
 The comparison is against the branch this window's own worktree is on, because that is what has been going to this server until now. It is a guess at what is actually there — the exact answer needs the server, which is what `SFTP: Sync Local -> Remote` does — so the branch it compared against is named in the question.
 
 Files deleted on that branch are listed but not removed unless `watcher.autoDelete` is on, and it says so.
 
-A file must sit still for three seconds before it is uploaded — a build step writes a hundred files in a second, and a tool that writes without an atomic rename leaves a half-written one visible in between. Deletions follow `watcher.autoDelete`, as they do for the workspace: removing files from a deployment is not something to start doing because somebody picked a worktree. The connection's own `ignore` rules apply, evaluated against the checkout's root, and `.git` is never uploaded.
+A file must sit still for three seconds before it is uploaded — a build step writes a hundred files in a second, and a tool that writes without an atomic rename leaves a half-written one visible in between. `sftp.autosync.settleSeconds` changes that. Deletions in a checkout follow git's index, as described above; in a plain folder they follow `watcher.autoDelete`. The connection's own `ignore` rules apply, evaluated against the checkout's root, and `.git` is never uploaded.
 
 A plain folder has nothing to catch up against — git can say what a branch changed and knows nothing about an ordinary directory — so it is watched from the moment you choose it.
 
@@ -428,6 +486,22 @@ with it.
   to connect once in VS Code, rather than opening a dialog behind whatever
   application you are actually looking at.
 - Reach anything not open in the editor.
+
+## Host keys
+
+Every connection is checked against the key the server presents, before a password reaches the wire. Until this existed the extension checked nothing: whatever answered on port 22 got the password out of `sftp.json`. That was survivable when connections happened because somebody pressed save; autosync opens them on its own, repeatedly, on whatever network the machine woke up on.
+
+Trust is read from OpenSSH's own `known_hosts` first, so a host you have already accepted in a terminal is never asked about again, and then from this extension's own store. The two are kept apart deliberately — adding lines to somebody's `~/.ssh/known_hosts` is not a thing to do uninvited.
+
+Three outcomes, and they are not the same question:
+
+- **A host with nothing on record** shows its fingerprint and asks once. Answering no refuses the connection; nothing has been sent at that point.
+- **A key that has changed** is refused and says so, with the old and new fingerprints side by side and `Update the stored key` as the way through — because the innocent explanation is common (a server rebuilt, keys rotated) and the other one is not (something answering in the server's place, which would be handed that connection's password).
+- **A key marked `@revoked`** is refused outright. That decision was already taken by whoever wrote the line; there is nothing to ask.
+
+One question per host however many connections are waiting on it — 156 connections here share 26 hosts, and several open at once.
+
+`StrictHostKeyChecking` and `UserKnownHostsFile` in your ssh config are honoured, which they were not before: the extension read that file but mapped only six directives and went straight past these two. `no` and `off` turn checking off for that host; `accept-new` takes a new host without asking and still refuses a changed one. Per connection, `"hostVerification": false` in `sftp.json` does the same, and `sftp.hostVerification` turns it off everywhere.
 
 ## Alt commands
 An alternative command can be found when pressing `Alt` while opening a menu.
