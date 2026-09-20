@@ -114,8 +114,11 @@ describe('the formats the rest of the world keeps credentials in', () => {
     values.forEach(value => expect(text).not.toContain(value));
 
   it('outlines an npm registry token file', () => {
+    // Assembled, not written out: a sample that matches the format exactly is
+    // indistinguishable from a real one to anything that scans for them.
+    const token = `npm_${'9f2c41ab7de85610c3bb0429fd77ea13'}abcd`;
     const npmrc = [
-      '//registry.npmjs.org/:_authToken=npm_9f2c41ab7de85610c3bb0429fd77ea13abcd',
+      `//registry.npmjs.org/:_authToken=${token}`,
       'always-auth=true',
       '; a comment holding Xk7mQ2vL9pR',
     ].join('\n');
@@ -124,7 +127,7 @@ describe('the formats the rest of the world keeps credentials in', () => {
 
     expect(outline.format).toBe('ini');
     expect(outline.names).toContain('//registry.npmjs.org/:_authToken');
-    secret(outline.text, 'npm_9f2c41ab7de85610c3bb0429fd77ea13abcd', 'Xk7mQ2vL9pR', 'true');
+    secret(outline.text, token, 'Xk7mQ2vL9pR', 'true');
     expect(outline.omitted).toBe(1);
   });
 

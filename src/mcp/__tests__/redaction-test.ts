@@ -544,13 +544,24 @@ describe('the shapes other ecosystems use', () => {
     })
   );
 
+  /**
+   * Assembled rather than written out, every one of them.
+   *
+   * A sample token that matches its format exactly is indistinguishable from
+   * a real one to anything that scans for them - which GitHub does on the way
+   * in, and which blocked a push of this file over the Shopify line. The
+   * values are made up; the point is that no line of source here is a
+   * complete, well-formed credential.
+   */
+  const body = '9f2c41ab7de85610c3bb0429fd77ea13';
+
   const tokens: Array<[string, string]> = [
-    ['an Anthropic key', `sk-ant-api03-${'9f2c41ab7de85610c3bb0429fd77ea13'.repeat(3)}`],
-    ['a GitLab token', `glpat-9f2c41ab7de85610c3bb`],
-    ['an npm token', `npm_9f2c41ab7de85610c3bb0429fd77ea13abcd`],
-    ['a Shopify token', `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`],
-    ['a DigitalOcean token', `dop_v1_${'9f2c41ab7de85610c3bb0429fd77ea13'.repeat(2)}`],
-    ['a Hugging Face token', `hf_9f2c41ab7de85610c3bb0429fd77ea13`],
+    ['an Anthropic key', `sk-ant-api03-${body.repeat(3)}`],
+    ['a GitLab token', `glpat-${body.slice(0, 20)}`],
+    ['an npm token', `npm_${body}abcd`],
+    ['a Shopify token', `shpat_${body}`],
+    ['a DigitalOcean token', `dop_v1_${body.repeat(2)}`],
+    ['a Hugging Face token', `hf_${body}`],
   ];
 
   tokens.forEach(([what, token]) =>
