@@ -5,7 +5,12 @@ import * as path from 'path';
 import upath from '../src/core/upath';
 import FTPFileSystem from '../src/core/fs/ftpFileSystem';
 import { execFileSync } from 'child_process';
-import { probeFtps, Support, withTls } from '../src/core/ftpsProbe';
+import {
+  probeFtps,
+  Support,
+  verifyFtpsSession,
+  withTls,
+} from '../src/core/ftpsProbe';
 import { startFtpServer, RunningFtpServer } from './ftpServer';
 
 /**
@@ -260,5 +265,56 @@ describe('FTP against a real server', () => {
     expect(waited).toBeLessThan(20000);
     expect(error === undefined || error instanceof Object).toBe(true);
     fileSystem.end();
+  });
+});
+
+describe('a server that offers TLS but cannot carry data over it', () => {
+  it('is not upgraded, because the test is a listing rather than an offer', async () => {
+    // The failure this guards against: control encrypts, the data connection
+    // does not, and a plain-FTP setup that worked stops working. Here the
+    // server advertises AUTH TLS with no certificate to back it, so the
+    // session cannot be established at all - which is what the check is for.
+    const pretending = await startFtpServer(root);
+    (pretending as any).offersTlsWithoutMeaningIt = true;
+
+    const worked = await verifyFtpsSession({
+      host: '127.0.0.1',
+      port: pretending.port,
+      user: 'tester',
+      password: 'anything',
+      timeout: 4000,
+    });
+
+    expect(worked).toBe(false);
+    await pretending.close();
+  });
+
+  it('confirms a server that really can', async () => {
+    const certificates = path.join(os.tmpdir(), 'ftps-e2e');
+    fse.ensureDirSync(certificates);
+    const key = path.join(certificates, 'key.pem');
+    const cert = path.join(certificates, 'cert.pem');
+    if (!fs.existsSync(cert)) {
+      execFileSync('openssl', [
+        'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
+        '-keyout', key, '-out', cert, '-days', '2', '-subj', '/CN=127.0.0.1',
+      ]);
+    }
+
+    const real = await startFtpServer(root, {
+      key: fs.readFileSync(key),
+      cert: fs.readFileSync(cert),
+    });
+
+    const worked = await verifyFtpsSession({
+      host: '127.0.0.1',
+      port: real.port,
+      user: 'tester',
+      password: 'anything',
+      timeout: 8000,
+    });
+
+    expect(worked).toBe(true);
+    await real.close();
   });
 });

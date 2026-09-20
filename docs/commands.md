@@ -282,8 +282,17 @@ short, rather than failing or running on.
 Plain FTP sends `USER` and `PASS` as readable text — but a great many hosts
 accept FTPS without anyone configuring it. So before connecting to a server
 configured as plain FTP, the extension asks it (with `FEAT`, before sending any
-credential) whether it accepts `AUTH TLS`, and uses TLS when it does. The
-answer is remembered per server for a week, so this costs one extra connection
+credential) whether it accepts `AUTH TLS` — and if it says yes, *tries it*:
+logs in over TLS and lists a directory before deciding.
+
+That second step matters. FTP runs commands over one connection and listings and
+file contents over another, and encryption can succeed on the first while
+failing on the second — a firewall that watched the control channel for `PASV`
+is blinded by TLS, and some servers require the data connection to resume the
+control session. A server that advertises `AUTH TLS` but cannot carry a listing
+over it is left exactly as configured, with a line in the log saying why.
+
+The answer is remembered per server for a week, so this costs one extra login
 the first time and nothing afterwards. An upgraded connection does **not**
 verify the certificate: it protects the password from anyone watching the
 network, not from whoever answers. `"secure": true` in `sftp.json` is what buys

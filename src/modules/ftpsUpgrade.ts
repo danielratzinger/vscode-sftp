@@ -1,7 +1,12 @@
 import * as vscode from 'vscode';
 import logger from '../logger';
 import { getUserSetting } from '../host';
-import { probeFtps, Support, withTls } from '../core/ftpsProbe';
+import {
+  probeFtps,
+  Support,
+  verifyFtpsSession,
+  withTls,
+} from '../core/ftpsProbe';
 
 /**
  * Turning a plain FTP connection into an encrypted one, without being asked.
@@ -75,11 +80,42 @@ export async function upgradeIfPossible(option: any): Promise<any> {
     let support = recall(key);
 
     if (support === undefined) {
+      // Cheap first: a server that does not offer TLS at all is settled
+      // without a login.
       support = await probeFtps({
         host: option.host,
         port: option.port,
         timeout: option.connectTimeout,
       });
+
+      // Offered is not the same as working. FTP runs commands over one
+      // connection and listings and file contents over another, and
+      // encryption can succeed on the first and fail on the second - so the
+      // second test is a real session: log in over TLS and list a directory,
+      // which is exactly what would break.
+      if (support === Support.Tls) {
+        const works = await verifyFtpsSession({
+          host: option.host,
+          port: option.port,
+          user: option.username,
+          password:
+            typeof option.password === 'string' ? option.password : undefined,
+          path: option.remotePath,
+          timeout: option.connectTimeout,
+        });
+
+        if (!works) {
+          support = Support.ControlOnly;
+          logger.info(
+            `[security] ${key} offers FTPS, but listing a directory over it ` +
+              'did not work, so the connection stays as configured. That is ' +
+              'usually a firewall that cannot see PASV once the control ' +
+              'channel is encrypted, or a server that wants the data ' +
+              'connection to reuse the control session.'
+          );
+        }
+      }
+
       await remember(key, support);
     }
 

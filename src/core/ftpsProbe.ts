@@ -16,8 +16,10 @@ import * as net from 'net';
  */
 
 export const enum Support {
-  /** `FEAT` listed AUTH TLS. */
+  /** TLS worked, including a listing over the data connection. */
   Tls = 'tls',
+  /** `AUTH TLS` is offered, but the data connection did not work. */
+  ControlOnly = 'control-only',
   /** The server answered and did not offer it. */
   None = 'none',
   /** No usable answer; assume nothing. */
@@ -136,4 +138,83 @@ export function withTls(option: any, support: Support): any {
     secureOptions: { rejectUnauthorized: false, ...(option.secureOptions || {}) },
     secureByUpgrade: true,
   };
+}
+
+/**
+ * Whether FTPS *works* here, not whether it is advertised.
+ *
+ * The two are not the same, and the difference is the reason this exists.
+ * FTP runs commands over one connection and listings and file contents over
+ * another, and encryption can succeed on the first and fail on the second:
+ * a firewall that watched the control channel for `PASV` is blinded by TLS;
+ * vsftpd asks by default that the data connection resume the control
+ * connection's TLS session, which Node does not do; and a server that closes
+ * a data socket without a TLS `close_notify` can leave a transfer hanging
+ * where a short listing survived.
+ *
+ * So the test is a real session: log in over TLS and list a directory, which
+ * uses both connections exactly as the extension will. A server that manages
+ * that is a server this can be upgraded to.
+ */
+export function verifyFtpsSession(option: {
+  host: string;
+  port?: number;
+  user?: string;
+  password?: string;
+  path?: string;
+  timeout?: number;
+}): Promise<boolean> {
+  // Required here rather than at the top: this module is loaded to decide
+  // whether to probe at all, and the client is only needed when one runs.
+  // tslint:disable-next-line:no-var-requires variable-name
+  const Client = require('ftp');
+
+  return new Promise<boolean>(resolve => {
+    let settled = false;
+    const client = new Client();
+
+    const finish = (worked: boolean) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+
+      try {
+        client.destroy();
+      } catch (error) {
+        // Nothing depends on a tidy goodbye.
+      }
+      resolve(worked);
+    };
+
+    const timer = setTimeout(() => finish(false), option.timeout || 15000);
+    if (typeof (timer as any).unref === 'function') {
+      (timer as any).unref();
+    }
+
+    client.on('error', () => finish(false));
+    client.on('close', () => finish(false));
+    client.on('ready', () => {
+      // The listing is the point: it is the data connection.
+      client.list(option.path || '/', (error: any) => {
+        clearTimeout(timer as any);
+        finish(!error);
+      });
+    });
+
+    try {
+      client.connect({
+        host: option.host,
+        port: option.port || 21,
+        user: option.user,
+        password: option.password,
+        secure: true,
+        secureOptions: { rejectUnauthorized: false },
+        connTimeout: option.timeout || 15000,
+        pasvTimeout: option.timeout || 15000,
+      });
+    } catch (error) {
+      finish(false);
+    }
+  });
 }

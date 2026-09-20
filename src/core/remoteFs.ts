@@ -110,23 +110,6 @@ class KeepAliveRemoteFs {
       passphraseManager: option.passphraseManager,
     });
 
-    // Ask the server whether it would rather speak TLS before deciding that
-    // this is a cleartext connection at all.
-    const connectionOption = await upgradeIfPossible(option);
-    if (connectionOption.secure && !option.secure) {
-      connectOption.secure = connectionOption.secure;
-      connectOption.secureOptions = connectionOption.secureOptions;
-    }
-
-    // Before the socket, not after: a password sent in the clear cannot be
-    // taken back once it has gone.
-    if (!(await confirmExposure(connectionOption))) {
-      this.invalid('cancelled');
-      throw new Error(
-        'Cancelled: the password would have been sent in cleartext.'
-      );
-    }
-
     app.sftpBarItem.showMsg('connecting...', connectOption.connectTimeout);
     // Assigned in the same tick, so a second caller waits on this attempt
     // instead of starting its own.
@@ -162,6 +145,21 @@ class KeepAliveRemoteFs {
 
     if (resolved.passphrase !== undefined) {
       connectOption.passphrase = resolved.passphrase;
+    }
+
+    // Now that the password is known: ask the server whether it would rather
+    // speak TLS, which needs a login to test properly, and only then decide
+    // whether this is a cleartext connection at all.
+    const upgraded = await upgradeIfPossible(connectOption);
+    if (upgraded.secure && !connectOption.secure) {
+      connectOption.secure = upgraded.secure;
+      connectOption.secureOptions = upgraded.secureOptions;
+    }
+
+    if (!(await confirmExposure(connectOption))) {
+      throw new Error(
+        'Cancelled: the password would have been sent in cleartext.'
+      );
     }
 
     // The clients have no use for these, and they shouldn't reach a debug log.
