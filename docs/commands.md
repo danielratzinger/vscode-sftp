@@ -98,7 +98,11 @@ An agent working on a branch gets its own git worktree, usually nowhere near the
 
 **One writer.** A connection has one remote path, so it syncs from exactly one checkout at a time. While that is not this window, saves here are not uploaded and the log says so once rather than leaving you to wonder. `Stop syncing` in the same picker hands the connection back to this window.
 
-Switching does not push anything: the remote still holds whatever the previous branch left, and nothing moves until a file changes in the newly chosen checkout. `SFTP: Sync Local -> Remote` pushes the whole branch when you want that, and shows what it will do first.
+Picking one usually happens after the work has started — an agent has been writing for twenty minutes before anybody looks — so you are offered the catch-up: the files that checkout has and the deployed branch does not, plus whatever is not committed there yet. Git answers that, not the server, so it costs no connection to work out. The count is shown before anything moves, and the upload can be cancelled while it runs.
+
+The comparison is against the branch this window's own worktree is on, because that is what has been going to this server until now. It is a guess at what is actually there — the exact answer needs the server, which is what `SFTP: Sync Local -> Remote` does — so the branch it compared against is named in the question.
+
+Files deleted on that branch are listed but not removed unless `watcher.autoDelete` is on, and it says so.
 
 A file must sit still for three seconds before it is uploaded — a build step writes a hundred files in a second, and a tool that writes without an atomic rename leaves a half-written one visible in between. Deletions follow `watcher.autoDelete`, as they do for the workspace: removing files from a deployment is not something to start doing because somebody picked a worktree. The connection's own `ignore` rules apply, evaluated against the checkout's root, and `.git` is never uploaded.
 

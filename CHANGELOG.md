@@ -38,7 +38,9 @@ now diverges from upstream's.
   does not have open - an agent's checkout of a branch, typically nowhere near
   the workspace. One checkout at a time, chosen deliberately; while it is not
   this window, this window's own uploads are paused and said to be. A worktree
-  that appears is offered once, never adopted.
+  that appears is offered once, never adopted. Choosing one offers to catch
+  the server up first - the files that checkout has and the deployed branch
+  does not, worked out from git rather than from the server.
 - `Reveal in Terminal`, on folders in both explorers: opens the machine's own
   terminal on that folder rather than the editor's built-in one, honouring
   `terminal.external.*Exec`.

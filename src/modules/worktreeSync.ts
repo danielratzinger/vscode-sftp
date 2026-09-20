@@ -12,6 +12,7 @@ import {
   worktreeRegistryOf,
   worktreesOf,
 } from '../core/worktrees';
+import { changesIn } from '../core/worktreeChanges';
 
 /**
  * Deploying from a checkout the editor does not have open.
@@ -266,6 +267,102 @@ async function remember(service: FileService, chosen?: Chosen): Promise<void> {
   }
 }
 
+/**
+ * Everything the checkout has moved on by, uploaded now.
+ *
+ * Picking a worktree usually happens after the work has started: an agent has
+ * been writing for twenty minutes before anybody looks. Watching from that
+ * moment leaves all of it behind, and the way to find out what was missed is
+ * git, not the server - one question about the branch, answered without a
+ * connection.
+ *
+ * Offered, with the count, rather than done: 174 files is a deploy, and a
+ * deploy is not something to start because somebody chose from a list.
+ */
+async function offerToCatchUp(
+  service: FileService,
+  chosen: Chosen,
+  base?: string
+): Promise<void> {
+  const changes = await changesIn(chosen.root, base);
+  const mine = (file: string) =>
+    !isGitPlumbing(chosen.root, file) &&
+    !ignoredInWorktree(service, chosen.root, file);
+
+  const toUpload = changes.changed.filter(mine);
+  const toDelete = changes.deleted.filter(mine);
+  const autoDelete = Boolean(
+    (service.getConfig() as any).watcher &&
+      (service.getConfig() as any).watcher.autoDelete
+  );
+
+  if (toUpload.length === 0) {
+    return;
+  }
+
+  const against = changes.base
+    ? ` that ${changes.base} does not`
+    : ' that are not committed';
+  const alsoGone =
+    toDelete.length > 0 && !autoDelete
+      ? ` ${toDelete.length} deleted there stay on the server; "watcher.autoDelete" is off.`
+      : '';
+
+  const answer = await vscode.window.showInformationMessage(
+    `${chosen.branch || chosen.root} has ${toUpload.length} file` +
+      `${toUpload.length === 1 ? '' : 's'}${against}. Upload them now?` +
+      alsoGone,
+    `Upload ${toUpload.length}`,
+    'Not now'
+  );
+
+  if (answer !== `Upload ${toUpload.length}`) {
+    return;
+  }
+
+  const where = connectionLabel(service.getConfig() as any);
+  await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: `Catching ${where} up to ${chosen.branch || chosen.root}`,
+      cancellable: true,
+    },
+    async (progress, token) => {
+      let done = 0;
+
+      for (const file of toUpload) {
+        if (token.isCancellationRequested) {
+          logger.info(`[worktree] catch-up stopped after ${done} of ${toUpload.length}.`);
+          return;
+        }
+
+        progress.report({
+          increment: 100 / toUpload.length,
+          message: `${done + 1} of ${toUpload.length}: ${path.relative(chosen.root, file)}`,
+        });
+
+        await upload(service, chosen.root, file);
+        done += 1;
+      }
+
+      if (autoDelete) {
+        for (const file of toDelete) {
+          if (token.isCancellationRequested) {
+            return;
+          }
+          await remove(service, chosen.root, file);
+        }
+      }
+
+      logger.info(
+        `[worktree] caught up: ${done} uploaded` +
+          (autoDelete && toDelete.length ? `, ${toDelete.length} removed` : '') +
+          '.'
+      );
+    }
+  );
+}
+
 /** The command: which checkout should this connection deploy from? */
 export async function chooseWorktree(service: FileService): Promise<void> {
   const found = await worktreesOf(service.baseDir);
@@ -315,14 +412,19 @@ export async function chooseWorktree(service: FileService): Promise<void> {
       : undefined
   );
 
-  if (picked.worktree) {
-    vscode.window.showInformationMessage(
-      `Syncing ${picked.worktree.branch || picked.worktree.name} to ` +
-        `${connectionLabel(service.getConfig() as any)}. Nothing is uploaded ` +
-        'until a file changes there; use "SFTP: Sync Local -> Remote" to push ' +
-        'the whole branch now.'
-    );
+  if (!picked.worktree) {
+    return;
   }
+
+  // What the window's own worktree is on is what has been going to this
+  // server until now, so it is the best guess at what is there.
+  const deployed = found.find(one => one.isMain);
+
+  await offerToCatchUp(
+    service,
+    { root: picked.worktree.root, branch: picked.worktree.branch },
+    deployed && deployed.branch
+  ).catch(error => logger.debug(`could not work out the catch-up: ${error.message}`));
 }
 
 /**
