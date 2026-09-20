@@ -536,6 +536,9 @@ describe('notes that outlive the id they were filed under', () => {
   const HERE = { workspace: '/work/site', protocol: 'sftp', host: 'staging.example.com',
                  port: 22, username: 'deploy', remotePath: '/srv/app' };
 
+  /** Who exists right now, which is what makes an orphan an orphan. */
+  const only = (id: string, identity: any = HERE) => [{ id, identity }];
+
   const store = (over: any = {}) =>
     JSON.stringify({
       files: { '/srv/app/index.php': { summary: 'entry point', mtime: 1, size: 1, updated: Date.now() } },
@@ -546,7 +549,7 @@ describe('notes that outlive the id they were filed under', () => {
   it('takes back a store left under an old id', async () => {
     vol.fromJSON({ '/cache/oldid/notes.json': store() });
 
-    const from = await adopt('/cache', 'newid', HERE, () => false);
+    const from = await adopt('/cache', 'newid', HERE, only('newid'));
 
     expect(from).toBe('oldid');
     expect((await load('/cache', 'newid')).files['/srv/app/index.php'].summary).toBe(
@@ -559,7 +562,7 @@ describe('notes that outlive the id they were filed under', () => {
   it('records whose notes they are when it takes them', async () => {
     vol.fromJSON({ '/cache/oldid/notes.json': store() });
 
-    await adopt('/cache', 'newid', HERE, () => false);
+    await adopt('/cache', 'newid', HERE, only('newid'));
 
     expect((await load('/cache', 'newid')).connection).toEqual(HERE);
   });
@@ -569,16 +572,23 @@ describe('notes that outlive the id they were filed under', () => {
     // its folder keeps it.
     vol.fromJSON({ '/cache/theirs/notes.json': store() });
 
-    expect(await adopt('/cache', 'mine', HERE, id => id === 'theirs')).toBeUndefined();
+    expect(
+      await adopt('/cache', 'mine', HERE, [
+        { id: 'mine', identity: HERE },
+        { id: 'theirs', identity: HERE },
+      ])
+    ).toBeUndefined();
     expect(vol.existsSync('/cache/theirs/notes.json')).toBe(true);
   });
 
-  it('leaves alone a store belonging to a different connection', async () => {
+  it('leaves alone a store belonging to a different project', async () => {
     vol.fromJSON({
-      '/cache/oldid/notes.json': store({ connection: { ...HERE, host: 'elsewhere.example.com' } }),
+      '/cache/oldid/notes.json': store({
+        connection: { ...HERE, workspace: '/work/elsewhere', remotePath: '/srv/other' },
+      }),
     });
 
-    expect(await adopt('/cache', 'newid', HERE, () => false)).toBeUndefined();
+    expect(await adopt('/cache', 'newid', HERE, only('newid'))).toBeUndefined();
   });
 
   it('does nothing when this connection already has notes of its own', async () => {
@@ -589,15 +599,15 @@ describe('notes that outlive the id they were filed under', () => {
       }),
     });
 
-    expect(await adopt('/cache', 'newid', HERE, () => false)).toBeUndefined();
+    expect(await adopt('/cache', 'newid', HERE, only('newid'))).toBeUndefined();
     expect((await load('/cache', 'newid')).files['/srv/app/other.php'].summary).toBe('mine');
   });
 
   it('ignores an empty store, and a cache that is not there', async () => {
     vol.fromJSON({ '/cache/oldid/notes.json': JSON.stringify({ files: {}, connection: HERE }) });
 
-    expect(await adopt('/cache', 'newid', HERE, () => false)).toBeUndefined();
-    expect(await adopt('/nowhere', 'newid', HERE, () => false)).toBeUndefined();
+    expect(await adopt('/cache', 'newid', HERE, only('newid'))).toBeUndefined();
+    expect(await adopt('/nowhere', 'newid', HERE, only('newid'))).toBeUndefined();
   });
 
   it('takes a project note back too', async () => {
@@ -609,8 +619,99 @@ describe('notes that outlive the id they were filed under', () => {
       }),
     });
 
-    await adopt('/cache', 'newid', HERE, () => false);
+    await adopt('/cache', 'newid', HERE, only('newid'));
 
     expect((await load('/cache', 'newid')).overview!.summary).toBe('the scraper pipeline');
+  });
+});
+
+describe('notes when a connection is reconfigured', () => {
+  // Everything here is the same deployment reached differently. The notes
+  // describe files at a path in a project; the rest is how you get there.
+  const WAS = { workspace: '/work/site', protocol: 'ftp', host: 'old.example.com',
+                port: 21, username: 'deploy', remotePath: '/httpdocs' };
+
+  const left = (connection: any = WAS) =>
+    JSON.stringify({
+      files: { '/httpdocs/index.php': { summary: 'entry point', mtime: 1, size: 1, updated: Date.now() } },
+      connection,
+    });
+
+  const nowAt = (over: any) => ({ ...WAS, ...over });
+
+  const survives: Array<[string, any]> = [
+    ['a new hostname', nowAt({ host: 'new.example.com' })],
+    ['an IP becoming a name', nowAt({ host: '92.205.171.87' })],
+    ['a different port', nowAt({ port: 2121 })],
+    ['a renamed account', nowAt({ username: 'deploy2' })],
+    ['a move from FTP to SFTP', nowAt({ protocol: 'sftp', port: 22 })],
+    ['all of it at once', nowAt({ protocol: 'sftp', host: 'new.example.com', port: 22, username: 'other' })],
+  ];
+
+  survives.forEach(([what, identity]) =>
+    it(`survives ${what}`, async () => {
+      vol.fromJSON({ '/cache/oldid/notes.json': left() });
+
+      const from = await adopt('/cache', 'newid', identity, [
+        { id: 'newid', identity },
+      ]);
+
+      expect(from).toBe('oldid');
+      expect((await load('/cache', 'newid')).files['/httpdocs/index.php'].summary).toBe(
+        'entry point'
+      );
+    })
+  );
+
+  it('does not move a password, because a password moves nothing', async () => {
+    // Neither the id nor the identity has ever contained one, so there is
+    // nothing to adopt: the notes never left.
+    vol.fromJSON({ '/cache/sameid/notes.json': left() });
+
+    const from = await adopt('/cache', 'sameid', WAS, [{ id: 'sameid', identity: WAS }]);
+
+    expect(from).toBeUndefined();
+    expect((await load('/cache', 'sameid')).files['/httpdocs/index.php']).toBeDefined();
+  });
+
+  it('refuses when two connections could both claim the notes', async () => {
+    // Half of these configurations share a workspace and a `/httpdocs`, so a
+    // tie is the normal case, not a corner one - and adopting another
+    // project's notes is worse than losing your own.
+    vol.fromJSON({ '/cache/oldid/notes.json': left() });
+
+    const mine = nowAt({ host: 'one.example.com' });
+    const theirs = nowAt({ host: 'two.example.com', username: 'someone' });
+
+    const from = await adopt('/cache', 'mineid', mine, [
+      { id: 'mineid', identity: mine },
+      { id: 'theirsid', identity: theirs },
+    ]);
+
+    expect(from).toBeUndefined();
+    expect(vol.existsSync('/cache/oldid/notes.json')).toBe(true);
+  });
+
+  it('refuses when two orphans could both be this connection’s', async () => {
+    vol.fromJSON({
+      '/cache/one/notes.json': left(),
+      '/cache/two/notes.json': left(nowAt({ host: 'another.example.com' })),
+    });
+
+    const identity = nowAt({ host: 'new.example.com' });
+
+    expect(
+      await adopt('/cache', 'newid', identity, [{ id: 'newid', identity }])
+    ).toBeUndefined();
+  });
+
+  it('will not cross projects, whatever else matches', async () => {
+    vol.fromJSON({ '/cache/oldid/notes.json': left(nowAt({ workspace: '/work/other' })) });
+
+    const identity = nowAt({ host: 'new.example.com' });
+
+    expect(
+      await adopt('/cache', 'newid', identity, [{ id: 'newid', identity }])
+    ).toBeUndefined();
   });
 });

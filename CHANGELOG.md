@@ -36,8 +36,11 @@ now diverges from upstream's.
   `credentials.yml.enc`, `*.tfvars`, `*.ppk` and `*.kdbx`. INI and YAML are
   outlined like the rest, so these answer with their names too.
 - A note store records which connection it belongs to, and a connection that
-  no longer answers to the id its notes were filed under - after a rename, or
-  a change to how ids are derived - takes them back at startup. Cached files
+  no longer answers to the id its notes were filed under takes them back at
+  startup - after a rename, a new hostname, a different port, a renamed
+  account, a move from FTP to SFTP, or a change to how ids are derived. A
+  password was never part of either, so changing one moves nothing. Where two
+  connections could claim the same notes, neither gets them. Cached files
   can be fetched twice; a note is the only thing in that cache that cannot.
 - `note` without a path records what a whole project is for, which `overview`
   and `servers` then report. `overview` could only repeat what composer.json

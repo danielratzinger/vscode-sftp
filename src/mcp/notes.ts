@@ -118,17 +118,47 @@ export async function save(
 }
 
 /**
+ * The same deployment, whatever it is reached by.
+ *
+ * A password is in neither the id nor the identity, so changing one moves
+ * nothing. A host, a port or an account is in both: change any of them and
+ * the notes are filed under an id nothing looks for again. But the notes
+ * describe files at a path in a project, and that is what has not changed -
+ * the rest is how you get there. A server moves to a new box, an IP becomes a
+ * DNS name, an account is renamed: same files, same notes.
+ */
+function sameDeployment(
+  a: ConnectionIdentity | undefined,
+  b: ConnectionIdentity | undefined
+): boolean {
+  return Boolean(
+    a && b && a.workspace === b.workspace && a.remotePath === b.remotePath
+  );
+}
+
+export interface Connection {
+  id: string;
+  identity: ConnectionIdentity;
+}
+
+/**
  * Finds a note store this connection left behind under an id it no longer
  * has, and moves it here.
  *
- * Only from a folder that is nobody's current id: two connections can differ
- * by name alone, and the one that still answers to its folder keeps it.
+ * Never from a folder that is somebody's current id: two connections can
+ * differ by name alone, and the one that still answers to its folder keeps
+ * it. Where the match is on the deployment rather than the whole identity it
+ * has to be unambiguous in both directions - one orphan that could be this
+ * connection's, and one connection that orphan could belong to - because
+ * adopting another project's notes is worse than losing your own. Half of
+ * these connections share a workspace and a `/httpdocs`, so that is not a
+ * theoretical tie.
  */
 export async function adopt(
   cacheRoot: string,
   connectionId: string,
   connection: ConnectionIdentity,
-  isCurrentId: (id: string) => boolean
+  everyone: Connection[]
 ): Promise<string | undefined> {
   const here = await load(cacheRoot, connectionId);
   if (Object.keys(here.files).length > 0 || here.overview) {
@@ -142,25 +172,46 @@ export async function adopt(
     return undefined;
   }
 
+  const current = everyone.map(one => one.id);
+  const orphans: Array<{ folder: string; store: NoteStore }> = [];
+
   for (const folder of folders) {
-    if (folder === connectionId || isCurrentId(folder)) {
+    if (folder === connectionId || current.indexOf(folder) !== -1) {
       continue;
     }
 
-    const theirs = await load(cacheRoot, folder);
-    if (!sameConnection(theirs.connection, connection)) {
+    const store = await load(cacheRoot, folder);
+    if (Object.keys(store.files).length === 0 && !store.overview) {
       continue;
     }
-    if (Object.keys(theirs.files).length === 0 && !theirs.overview) {
-      continue;
+    if (!store.connection) {
+      continue; // Written before stores said whose they were.
     }
 
-    await save(cacheRoot, connectionId, theirs, connection);
-    await fse.remove(storePath(cacheRoot, folder));
-    return folder;
+    orphans.push({ folder, store });
   }
 
-  return undefined;
+  const take = async (found: { folder: string; store: NoteStore }) => {
+    await save(cacheRoot, connectionId, found.store, connection);
+    await fse.remove(storePath(cacheRoot, found.folder));
+    return found.folder;
+  };
+
+  const exact = orphans.filter(one => sameConnection(one.store.connection, connection));
+  if (exact.length > 0) {
+    return take(exact[0]);
+  }
+
+  const moved = orphans.filter(one => sameDeployment(one.store.connection, connection));
+  if (moved.length !== 1) {
+    return undefined;
+  }
+
+  const claimants = everyone.filter(one =>
+    sameDeployment(one.identity, moved[0].store.connection)
+  );
+
+  return claimants.length === 1 ? take(moved[0]) : undefined;
 }
 
 export const enum NoteState {

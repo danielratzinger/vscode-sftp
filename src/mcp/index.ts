@@ -452,8 +452,10 @@ function firstWorkspaceName(): string | undefined {
 async function reuniteNotes(): Promise<void> {
   const services = (getAllFileService() as unknown) as ServiceLike[];
   const root = path.join(cacheRoot, 'mcp-cache');
-  const current = services.map(stableId);
-  const isCurrent = (id: string) => current.indexOf(id) !== -1;
+  const everyone = services.map(service => ({
+    id: stableId(service),
+    identity: identityOf(service.workspace, service.getConfig()),
+  }));
 
   for (const service of services) {
     try {
@@ -461,7 +463,7 @@ async function reuniteNotes(): Promise<void> {
         root,
         stableId(service),
         identityOf(service.workspace, service.getConfig()),
-        isCurrent
+        everyone
       );
 
       if (from) {
