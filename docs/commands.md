@@ -279,9 +279,19 @@ tree walk that reaches it returns what it found so far and says it was cut
 short, rather than failing or running on.
 ### Before a password goes out in the clear
 
-Plain FTP sends `USER` and `PASS` as readable text. Before connecting to a
-server that would receive a password that way, the extension says so and waits
-— once per server, with the option to allow it for good on that server.
+Plain FTP sends `USER` and `PASS` as readable text — but a great many hosts
+accept FTPS without anyone configuring it. So before connecting to a server
+configured as plain FTP, the extension asks it (with `FEAT`, before sending any
+credential) whether it accepts `AUTH TLS`, and uses TLS when it does. The
+answer is remembered per server for a week, so this costs one extra connection
+the first time and nothing afterwards. An upgraded connection does **not**
+verify the certificate: it protects the password from anyone watching the
+network, not from whoever answers. `"secure": true` in `sftp.json` is what buys
+verification, and an upgrade never overrides what you configured. Turn the
+whole thing off with `sftp.upgradePlainFtp`.
+
+When the server genuinely cannot do TLS, the extension says so and waits — once
+per server, with the option to allow it for good on that server.
 
 SFTP is never warned about: it authenticates inside the SSH transport. Neither
 is FTPS (`"secure": true`), which negotiates TLS before sending anything, and

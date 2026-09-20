@@ -120,6 +120,11 @@
           "default": "ask",
           "markdownDescription": "What to do when downloading a single file would replace a local copy whose timestamp is newer than the server’s. `Download` in the Alt menu always downloads, whatever this says."
         },
+        "sftp.upgradePlainFtp": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Ask a plain FTP server whether it accepts FTPS, and use it when it does. Many hosts accept TLS without anyone configuring it, and the alternative is a password sent as readable text. The certificate is not verified on an upgraded connection — set `\"secure\": true` in `sftp.json` for that. The answer is remembered per server for a week."
+        },
         "sftp.warnOnCleartextPassword": {
           "type": "boolean",
           "default": true,

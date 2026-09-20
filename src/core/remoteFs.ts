@@ -6,6 +6,7 @@ import {
 } from './credentialResolver';
 import app from '../app';
 import { confirmExposure } from '../modules/passwordExposure';
+import { upgradeIfPossible } from '../modules/ftpsUpgrade';
 import { ConnectOption } from './remote-client/remoteClient';
 import FileSystem from './fs/fileSystem';
 import RemoteFileSystem from './fs/remoteFileSystem';
@@ -109,9 +110,17 @@ class KeepAliveRemoteFs {
       passphraseManager: option.passphraseManager,
     });
 
+    // Ask the server whether it would rather speak TLS before deciding that
+    // this is a cleartext connection at all.
+    const connectionOption = await upgradeIfPossible(option);
+    if (connectionOption.secure && !option.secure) {
+      connectOption.secure = connectionOption.secure;
+      connectOption.secureOptions = connectionOption.secureOptions;
+    }
+
     // Before the socket, not after: a password sent in the clear cannot be
     // taken back once it has gone.
-    if (!(await confirmExposure(option))) {
+    if (!(await confirmExposure(connectionOption))) {
       this.invalid('cancelled');
       throw new Error(
         'Cancelled: the password would have been sent in cleartext.'

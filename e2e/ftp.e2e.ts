@@ -5,6 +5,7 @@ import * as path from 'path';
 import upath from '../src/core/upath';
 import FTPFileSystem from '../src/core/fs/ftpFileSystem';
 import { execFileSync } from 'child_process';
+import { probeFtps, Support, withTls } from '../src/core/ftpsProbe';
 import { startFtpServer, RunningFtpServer } from './ftpServer';
 
 /**
@@ -60,6 +61,69 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await server.close();
+});
+
+describe('finding out whether a plain server would rather speak TLS', () => {
+  it('sees the offer, and takes it', async () => {
+    const certificates = path.join(os.tmpdir(), 'ftps-e2e');
+    fse.ensureDirSync(certificates);
+    const key = path.join(certificates, 'key.pem');
+    const cert = path.join(certificates, 'cert.pem');
+    if (!fs.existsSync(cert)) {
+      execFileSync('openssl', [
+        'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
+        '-keyout', key, '-out', cert, '-days', '2', '-subj', '/CN=127.0.0.1',
+      ]);
+    }
+
+    const offering = await startFtpServer(root, {
+      key: fs.readFileSync(key),
+      cert: fs.readFileSync(cert),
+    });
+
+    const support = await probeFtps({ host: '127.0.0.1', port: offering.port });
+    expect(support).toBe(Support.Tls);
+
+    // The configuration says plain FTP; what actually connects is FTPS.
+    const option = withTls(
+      { protocol: 'ftp', host: '127.0.0.1', port: offering.port, password: 'p' },
+      support
+    );
+    expect(option.secure).toBe(true);
+
+    const fileSystem = new FTPFileSystem(upath, {
+      clientOption: {
+        host: '127.0.0.1',
+        port: offering.port,
+        username: 'tester',
+        password: 'anything',
+        secure: option.secure,
+        secureOptions: option.secureOptions,
+        connectTimeout: 8000,
+        debug: () => undefined,
+      },
+    } as any);
+
+    await fileSystem.connect((fileSystem as any).client._option, {
+      askForPasswd: async () => undefined,
+    });
+
+    expect((await fileSystem.list('/')).map(entry => entry.name)).toContain(
+      'index.php'
+    );
+
+    fileSystem.end();
+    await offering.close();
+  });
+
+  it('leaves a server that cannot do it alone', async () => {
+    // The plain server from the outer fixture advertises no AUTH TLS.
+    const support = await probeFtps({ host: '127.0.0.1', port: server.port });
+
+    expect(support).toBe(Support.None);
+    const option = { protocol: 'ftp', host: '127.0.0.1', password: 'p' };
+    expect(withTls(option, support)).toBe(option);
+  });
 });
 
 describe('FTPS', () => {

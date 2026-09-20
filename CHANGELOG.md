@@ -45,6 +45,12 @@ now diverges from upstream's.
 - `operationTimeout`: a command must answer within it, and a transfer must
   not go silent for longer than it.
 - Hidden files in FTP listings, via `LIST -a` with a fallback.
+- Plain FTP connections are upgraded to FTPS when the server accepts it,
+  which many do without anyone configuring it. The server is asked with
+  `FEAT` before any credential is sent, and the answer is remembered per
+  server. An upgraded connection is encrypted but does not verify the
+  certificate; `"secure": true` still means what it meant. Off with
+  `sftp.upgradePlainFtp`.
 - A check before connecting to a server that would receive the password as
   readable text: plain FTP sends `USER` and `PASS` unencrypted, and the
   connection now waits for an answer rather than sending it. SFTP and FTPS are

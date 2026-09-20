@@ -201,7 +201,11 @@ export async function startFtpServer(
         case 'SYST':
           return say('215 UNIX Type: L8');
         case 'FEAT':
-          control.write('211-Features\r\n MDTM\r\n SIZE\r\n UTF8\r\n211 End\r\n');
+          control.write(
+            '211-Features\r\n MDTM\r\n SIZE\r\n UTF8\r\n' +
+              (secure ? ' AUTH TLS\r\n PBSZ\r\n PROT\r\n' : '') +
+              '211 End\r\n'
+          );
           return;
         case 'OPTS':
           return say('200 Ok');

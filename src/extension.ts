@@ -9,6 +9,7 @@ import { initMcp } from './mcp';
 import { initReplacedFiles } from './modules/replacedFiles';
 import { checkForOtherSftpExtensions } from './modules/otherSftpExtensions';
 import { initPasswordExposure } from './modules/passwordExposure';
+import { initFtpsUpgrade } from './modules/ftpsUpgrade';
 import { reportError } from './helper';
 import fileActivityMonitor from './modules/fileActivityMonitor';
 import { tryLoadConfigs } from './modules/config';
@@ -47,6 +48,12 @@ export async function activate(context: vscode.ExtensionContext) {
     initReplacedFiles(context);
   } catch (error) {
     reportError(error, 'initReplacedFiles');
+  }
+
+  try {
+    initFtpsUpgrade(context);
+  } catch (error) {
+    reportError(error, 'initFtpsUpgrade');
   }
 
   try {
