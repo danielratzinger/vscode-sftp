@@ -765,7 +765,9 @@ describe('asking for a description where the file is read', () => {
     expect(result.structured.hint).toBeUndefined();
   });
 
-  it('says nothing once the file has a description', async () => {
+  it('invites a better description once the file has one', async () => {
+    // A file does not have to change for what is known about it to: the first
+    // description is written from one reading for one purpose.
     const files = { '/srv/app/big.php': BIG };
     const tools = createTools(serving(files));
 
@@ -778,8 +780,40 @@ describe('asking for a description where the file is read', () => {
       server: 'Staging', path: '/srv/app/big.php',
     });
 
-    expect(result.structured.hint).toBeUndefined();
     expect(result.text).toContain('the big one');
+    expect(result.structured.hint).toContain('does not say');
+
+    // Once, though.
+    const again: any = await tools.find(t => t.name === 'read')!.run({
+      server: 'Staging', path: '/srv/app/big.php',
+    });
+    expect(again.structured.hint).toBeUndefined();
+  });
+
+  it('refuses a description too long for the line it lives on', async () => {
+    const files = { '/srv/app/big.php': BIG };
+    const tools = createTools(serving(files));
+
+    const result: any = await tools.find(t => t.name === 'note')!.run({
+      server: 'Staging',
+      path: '/srv/app/big.php',
+      summary: 'x'.repeat(400),
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.text).toContain('300 is the limit');
+  });
+
+  it('gives a project description more room than a file one', async () => {
+    // It is read on its own rather than beside eight hundred paths.
+    const tools = createTools(serving({ '/srv/app/big.php': BIG }));
+
+    const result: any = await tools.find(t => t.name === 'note')!.run({
+      server: 'Staging',
+      summary: 'x'.repeat(400),
+    });
+
+    expect(result.isError).toBeFalsy();
   });
 
   it('still returns the file, whatever it asks for', async () => {
@@ -861,6 +895,8 @@ describe('a description whose file has moved on', () => {
     });
 
     expect(result.structured.note.state).toBe('current');
-    expect(result.structured.hint).toBeUndefined();
+    // What it no longer asks for is a correction; it may still invite a
+    // better line, which is a different request.
+    expect(result.structured.hint || '').not.toContain('older version');
   });
 });

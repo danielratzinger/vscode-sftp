@@ -1343,7 +1343,9 @@ export function createTools(
       'without one it describes the whole project and appears in `servers` ' +
       'and `overview`, which is where to put what a server is actually for. ' +
       'Writes only to this machine, never to the server. Describe the ' +
-      'purpose, not the contents.',
+      'purpose, not the contents - and replace what is there when you learn ' +
+      'more, which is what it is for: a description is worth what the last ' +
+      'person to read the file knew.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1371,7 +1373,22 @@ export function createTools(
         return errorResult('A summary is required.');
       }
 
-      if (args.path === undefined || args.path === '') {
+      const summary = args.summary.trim();
+      const describingProject = args.path === undefined || args.path === '';
+      const longest = describingProject ? LONGEST_PROJECT_NOTE : LONGEST_FILE_NOTE;
+
+      if (summary.length > longest) {
+        return errorResult(
+          `That description is ${summary.length} characters; ${longest} is the ` +
+            `limit for ${describingProject ? 'a project' : 'a file'}. ` +
+            (describingProject
+              ? 'Say what the project does and how its parts fit together.'
+              : 'A file\u2019s description shares a line with its path in `tree`, ' +
+                'so it has to say what the file is for and stop.')
+        );
+      }
+
+      if (describingProject) {
         const root = context.cacheOption(service).cacheRoot;
         const key = stableId(service);
         const held = await loadNotes(root, key);
@@ -1379,14 +1396,14 @@ export function createTools(
         await saveNotes(
           root,
           key,
-          putOverview(held, args.summary.trim()),
+          putOverview(held, summary),
           identityOf(service.workspace, service.getConfig())
         );
 
         return {
           text:
             `Noted what ${service.getConfig().name || service.name} is: ` +
-            `${args.summary.trim()}\n` +
+            `${summary}\n` +
             '`servers` and `overview` will say so from now on.',
         };
       }
@@ -1419,14 +1436,14 @@ export function createTools(
       await saveNotes(
         cacheRoot,
         id,
-        putNote(store, target, args.summary.trim(), {
+        putNote(store, target, summary, {
           mtime: remoteStat.mtime,
           size: remoteStat.size,
         }),
         identityOf(service.workspace, service.getConfig())
       );
 
-      return { text: `Noted: ${target} \u2014 ${args.summary.trim()}` };
+      return { text: `Noted: ${target} \u2014 ${summary}` };
     },
   };
 
@@ -2061,6 +2078,20 @@ function describeConnectionLine(
 const WORTH_DESCRIBING = 2000;
 
 /**
+ * How long a description may be.
+ *
+ * A file's appears on its line in `tree`, beside eight hundred others, so it
+ * has to stay a line: a paragraph there costs more attention than it repays,
+ * and a tree of paragraphs is the thing nobody reads. A project's is read on
+ * its own, in `overview` and in the listing, so it can afford a few sentences.
+ *
+ * Refused rather than truncated. Half a description reads like a whole one
+ * and says something else.
+ */
+const LONGEST_FILE_NOTE = 300;
+const LONGEST_PROJECT_NOTE = 1500;
+
+/**
  * Asked once per file per window, so a second read of the same file is not a
  * second request. Bounded by the files actually read.
  */
@@ -2080,9 +2111,7 @@ function askForANote(
   described: { state: NoteState },
   size: number
 ): string {
-  const describable =
-    described.state === NoteState.None || described.state === NoteState.Stale;
-  if (!describable || size < WORTH_DESCRIBING) {
+  if (size < WORTH_DESCRIBING) {
     return '';
   }
 
@@ -2101,6 +2130,18 @@ function askForANote(
     return (
       'The description above is of an older version of this file. You have ' +
       'just read the current one: if it no longer fits, `note` replaces it.'
+    );
+  }
+
+  // A file does not have to change for what is known about it to. The first
+  // description is written from one reading of a file for one purpose; the
+  // second time somebody reads it they are there for something else, and know
+  // something that line does not say.
+  if (described.state === NoteState.Current) {
+    return (
+      'If reading it has told you something its description does not say, ' +
+      '`note` replaces that line - a description is worth what the last ' +
+      'person to read the file knew, not what the first one did.'
     );
   }
 
