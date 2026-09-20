@@ -280,35 +280,32 @@ short, rather than failing or running on.
 ### Before a password goes out in the clear
 
 Plain FTP sends `USER` and `PASS` as readable text — but a great many hosts
-accept FTPS without anyone configuring it. So before connecting to a server
-configured as plain FTP, the extension asks it (with `FEAT`, before sending any
-credential) whether it accepts `AUTH TLS` — and if it says yes, *tries it*:
-logs in over TLS and lists a directory before deciding.
+accept FTPS without anyone configuring it. So a connection configured as plain
+FTP is *attempted* over TLS, and kept that way for as long as it keeps working.
 
-That second step matters. FTP runs commands over one connection and listings and
+Nothing is predicted, because asking a server what it supports is a weaker
+question than it appears. FTP runs commands over one connection and listings and
 file contents over another, and encryption can succeed on the first while
 failing on the second — a firewall that watched the control channel for `PASV`
-is blinded by TLS, and some servers require the data connection to resume the
-control session. A server that advertises `AUTH TLS` but cannot carry a listing
-over it is left exactly as configured, with a line in the log saying why.
+is blinded once it is encrypted, and some servers want the data connection to
+resume the control session. A server will advertise `AUTH TLS` in either case.
 
-The answer is remembered per server for a week, so this costs one extra login
-the first time and nothing afterwards. An upgraded connection does **not**
-verify the certificate: it protects the password from anyone watching the
-network, not from whoever answers. `"secure": true` in `sftp.json` is what buys
-verification, and an upgrade never overrides what you configured. Turn the
-whole thing off with `sftp.upgradePlainFtp`.
+So the upgrade is abandoned for that server the moment anything goes wrong with
+it: at the handshake, at a listing, or three files into a download. The
+connection is remade as configured, the log says what happened, and TLS is not
+tried again on that server for a day. Failures that are about the request rather
+than the transport — a missing file, a permission — are not treated as evidence.
+A *hang* is: a data connection that never completes its handshake is the same
+signal as one that fails.
+
+An upgraded connection does **not** verify the certificate: it protects the
+password from anyone watching the network, not from whoever answers.
+`"secure": true` in `sftp.json` is what buys verification, and an upgrade never
+overrides what you configured. Turn the whole thing off with
+`sftp.upgradePlainFtp`.
 
 When the server genuinely cannot do TLS, the extension says so and waits — once
 per server, with the option to allow it for good on that server.
-
-SFTP is never warned about: it authenticates inside the SSH transport. Neither
-is FTPS (`"secure": true`), which negotiates TLS before sending anything, and
-whose client errors out rather than continuing unprotected if the server refuses.
-Adding `"secureOptions": { "rejectUnauthorized": false }` is noted in the log
-rather than warned about: the password cannot be read off the network, but the
-certificate is accepted from whoever presents it.
-
 Turn the question off with `sftp.warnOnCleartextPassword`.
 
 ### Credentials are withheld

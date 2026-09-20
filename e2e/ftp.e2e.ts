@@ -6,11 +6,10 @@ import upath from '../src/core/upath';
 import FTPFileSystem from '../src/core/fs/ftpFileSystem';
 import { execFileSync } from 'child_process';
 import {
-  probeFtps,
-  Support,
-  verifyFtpsSession,
+  isUpgradeTrouble,
+  looksLikeTlsTrouble,
   withTls,
-} from '../src/core/ftpsProbe';
+} from '../src/core/ftpsPolicy';
 import { startFtpServer, RunningFtpServer } from './ftpServer';
 
 /**
@@ -68,66 +67,90 @@ afterEach(async () => {
   await server.close();
 });
 
-describe('finding out whether a plain server would rather speak TLS', () => {
-  it('sees the offer, and takes it', async () => {
-    const certificates = path.join(os.tmpdir(), 'ftps-e2e');
-    fse.ensureDirSync(certificates);
-    const key = path.join(certificates, 'key.pem');
-    const cert = path.join(certificates, 'cert.pem');
-    if (!fs.existsSync(cert)) {
-      execFileSync('openssl', [
-        'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
-        '-keyout', key, '-out', cert, '-days', '2', '-subj', '/CN=127.0.0.1',
-      ]);
-    }
+function certificates() {
+  const directory = path.join(os.tmpdir(), 'ftps-e2e');
+  fse.ensureDirSync(directory);
+  const key = path.join(directory, 'key.pem');
+  const cert = path.join(directory, 'cert.pem');
+  if (!fs.existsSync(cert)) {
+    execFileSync('openssl', [
+      'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
+      '-keyout', key, '-out', cert, '-days', '2', '-subj', '/CN=127.0.0.1',
+    ]);
+  }
 
-    const offering = await startFtpServer(root, {
-      key: fs.readFileSync(key),
-      cert: fs.readFileSync(cert),
-    });
+  return { key: fs.readFileSync(key), cert: fs.readFileSync(cert) };
+}
 
-    const support = await probeFtps({ host: '127.0.0.1', port: offering.port });
-    expect(support).toBe(Support.Tls);
+function connectWith(option: any, port: number, operationTimeout?: number) {
+  const fileSystem = new FTPFileSystem(upath, {
+    operationTimeout,
+    clientOption: {
+      host: '127.0.0.1',
+      port,
+      username: 'tester',
+      password: 'anything',
+      connectTimeout: 8000,
+      debug: () => undefined,
+      secure: option.secure,
+      secureOptions: option.secureOptions,
+    },
+  } as any);
 
-    // The configuration says plain FTP; what actually connects is FTPS.
-    const option = withTls(
-      { protocol: 'ftp', host: '127.0.0.1', port: offering.port, password: 'p' },
-      support
-    );
-    expect(option.secure).toBe(true);
-
-    const fileSystem = new FTPFileSystem(upath, {
-      clientOption: {
-        host: '127.0.0.1',
-        port: offering.port,
-        username: 'tester',
-        password: 'anything',
-        secure: option.secure,
-        secureOptions: option.secureOptions,
-        connectTimeout: 8000,
-        debug: () => undefined,
-      },
-    } as any);
-
-    await fileSystem.connect((fileSystem as any).client._option, {
+  return fileSystem
+    .connect((fileSystem as any).client._option, {
       askForPasswd: async () => undefined,
-    });
+    })
+    .then(() => fileSystem);
+}
 
-    expect((await fileSystem.list('/')).map(entry => entry.name)).toContain(
-      'index.php'
-    );
+describe('trying TLS on a connection configured as plain FTP', () => {
+  const plain = { protocol: 'ftp', host: '127.0.0.1', password: 'p' };
 
+  it('works, when the server can carry it', async () => {
+    const offering = await startFtpServer(root, certificates());
+
+    const fileSystem = await connectWith(withTls(plain), offering.port);
+    const entries = await fileSystem.list('/');
+
+    expect(entries.map(entry => entry.name)).toContain('index.php');
     fileSystem.end();
     await offering.close();
   });
 
-  it('leaves a server that cannot do it alone', async () => {
-    // The plain server from the outer fixture advertises no AUTH TLS.
-    const support = await probeFtps({ host: '127.0.0.1', port: server.port });
+  it('fails at the handshake when the server cannot, which is the signal to fall back', async () => {
+    // The outer server has no certificate, so AUTH TLS is refused. The
+    // attempt costs one connection and tells the truth immediately.
+    const error = await connectWith(withTls(plain), server.port).catch(e => e);
 
-    expect(support).toBe(Support.None);
-    const option = { protocol: 'ftp', host: '127.0.0.1', password: 'p' };
-    expect(withTls(option, support)).toBe(option);
+    expect(error).toBeInstanceOf(Error);
+    expect(looksLikeTlsTrouble(error)).toBe(true);
+  });
+
+  it('hangs at the listing when only the data connection is broken', async () => {
+    // The case worth fearing, and the one that does not announce itself:
+    // control encrypts, `PROT P` is agreed, and the data connection arrives
+    // in the clear anyway. Logging in works. The listing does not fail - it
+    // waits, because the client is holding a TLS handshake against a server
+    // that is talking plaintext. Only the operation deadline ends it, which
+    // is why silence counts as evidence alongside an error.
+    const pretending = await startFtpServer(root, certificates());
+    pretending.misbehave({ breakDataTls: true });
+
+    const fileSystem = await connectWith(withTls(plain), pretending.port, 3000);
+
+    const started = Date.now();
+    const error = await fileSystem.list('/').catch(e => e);
+
+    expect(error).toBeInstanceOf(Error);
+    expect(Date.now() - started).toBeLessThan(20000);
+    // Not TLS trouble by its message - it is a timeout - but on a connection
+    // nobody asked to be encrypted, that is the same signal.
+    expect(looksLikeTlsTrouble(error)).toBe(false);
+    expect(isUpgradeTrouble(error)).toBe(true);
+
+    fileSystem.end();
+    await pretending.close();
   });
 });
 
@@ -135,21 +158,7 @@ describe('FTPS', () => {
   it('upgrades the connection with AUTH TLS and works the same', async () => {
     // The configuration this was reported against: secure with a certificate
     // nobody verifies, which is the common shape on shared hosting.
-    const certificates = path.join(os.tmpdir(), 'ftps-e2e');
-    fse.ensureDirSync(certificates);
-    const key = path.join(certificates, 'key.pem');
-    const cert = path.join(certificates, 'cert.pem');
-    if (!fs.existsSync(cert)) {
-      execFileSync('openssl', [
-        'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
-        '-keyout', key, '-out', cert, '-days', '2', '-subj', '/CN=127.0.0.1',
-      ]);
-    }
-
-    const secureServer = await startFtpServer(root, {
-      key: fs.readFileSync(key),
-      cert: fs.readFileSync(cert),
-    });
+    const secureServer = await startFtpServer(root, certificates());
 
     const fileSystem = new FTPFileSystem(upath, {
       clientOption: {
@@ -265,56 +274,5 @@ describe('FTP against a real server', () => {
     expect(waited).toBeLessThan(20000);
     expect(error === undefined || error instanceof Object).toBe(true);
     fileSystem.end();
-  });
-});
-
-describe('a server that offers TLS but cannot carry data over it', () => {
-  it('is not upgraded, because the test is a listing rather than an offer', async () => {
-    // The failure this guards against: control encrypts, the data connection
-    // does not, and a plain-FTP setup that worked stops working. Here the
-    // server advertises AUTH TLS with no certificate to back it, so the
-    // session cannot be established at all - which is what the check is for.
-    const pretending = await startFtpServer(root);
-    (pretending as any).offersTlsWithoutMeaningIt = true;
-
-    const worked = await verifyFtpsSession({
-      host: '127.0.0.1',
-      port: pretending.port,
-      user: 'tester',
-      password: 'anything',
-      timeout: 4000,
-    });
-
-    expect(worked).toBe(false);
-    await pretending.close();
-  });
-
-  it('confirms a server that really can', async () => {
-    const certificates = path.join(os.tmpdir(), 'ftps-e2e');
-    fse.ensureDirSync(certificates);
-    const key = path.join(certificates, 'key.pem');
-    const cert = path.join(certificates, 'cert.pem');
-    if (!fs.existsSync(cert)) {
-      execFileSync('openssl', [
-        'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
-        '-keyout', key, '-out', cert, '-days', '2', '-subj', '/CN=127.0.0.1',
-      ]);
-    }
-
-    const real = await startFtpServer(root, {
-      key: fs.readFileSync(key),
-      cert: fs.readFileSync(cert),
-    });
-
-    const worked = await verifyFtpsSession({
-      host: '127.0.0.1',
-      port: real.port,
-      user: 'tester',
-      password: 'anything',
-      timeout: 8000,
-    });
-
-    expect(worked).toBe(true);
-    await real.close();
   });
 });

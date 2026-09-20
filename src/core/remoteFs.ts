@@ -6,7 +6,12 @@ import {
 } from './credentialResolver';
 import app from '../app';
 import { confirmExposure } from '../modules/passwordExposure';
-import { upgradeIfPossible } from '../modules/ftpsUpgrade';
+import {
+  noteUpgradeFailed,
+  noteUpgradeWorked,
+  upgradeIfWorthTrying,
+} from '../modules/ftpsUpgrade';
+import { isUpgradeTrouble } from './ftpsPolicy';
 import { ConnectOption } from './remote-client/remoteClient';
 import FileSystem from './fs/fileSystem';
 import RemoteFileSystem from './fs/remoteFileSystem';
@@ -25,6 +30,12 @@ function hashOption(opiton) {
 
 class KeepAliveRemoteFs {
   private isValid: boolean = false;
+  /** True while this connection is TLS that nobody configured. */
+  private _secureByUpgrade: boolean = false;
+  /** Rebuilds the file system, for the second attempt after a failed upgrade. */
+  private _makeFs: () => RemoteFileSystem;
+  private _option: any;
+  private _watched: RemoteFileSystem | null = null;
 
   private pendingPromise: Promise<RemoteFileSystem> | null;
 
@@ -43,9 +54,11 @@ class KeepAliveRemoteFs {
       passphraseManager?: string | boolean;
     }
   ): Promise<RemoteFileSystem> {
+    this._option = option;
+
     if (this.isValid) {
       this.pendingPromise = null;
-      return Promise.resolve(this.fs);
+      return Promise.resolve(this._watching());
     }
 
     if (this.pendingPromise) {
@@ -93,8 +106,13 @@ class KeepAliveRemoteFs {
       connectionLimit: option.connectionLimit,
       operationTimeout: option.operationTimeout,
     };
-    this.fs = new FsConstructor(upath, fsOption);
-    this.fs.onDisconnected(this.invalid.bind(this));
+    this._makeFs = () => {
+      const made = new FsConstructor(upath, fsOption) as RemoteFileSystem;
+      made.onDisconnected(this.invalid.bind(this));
+      return made;
+    };
+    this._secureByUpgrade = false;
+    this.fs = this._makeFs();
 
     const credentials = createCredentialResolver({
       protocol: option.protocol,
@@ -117,7 +135,7 @@ class KeepAliveRemoteFs {
       () => {
         app.sftpBarItem.reset();
         this.isValid = true;
-        return this.fs;
+        return this._watching();
       },
       err => {
         this.fs.end();
@@ -147,13 +165,33 @@ class KeepAliveRemoteFs {
       connectOption.passphrase = resolved.passphrase;
     }
 
-    // Now that the password is known: ask the server whether it would rather
-    // speak TLS, which needs a login to test properly, and only then decide
-    // whether this is a cleartext connection at all.
-    const upgraded = await upgradeIfPossible(connectOption);
-    if (upgraded.secure && !connectOption.secure) {
-      connectOption.secure = upgraded.secure;
-      connectOption.secureOptions = upgraded.secureOptions;
+    // The clients have no use for these, and they shouldn't reach a debug log.
+    delete connectOption.passwordCommand;
+    delete connectOption.passphraseCommand;
+    delete connectOption.passwordManager;
+    delete connectOption.passphraseManager;
+
+    // TLS is attempted rather than predicted. If the server cannot manage it,
+    // the failure happens here, before anything has been asked of it, and the
+    // connection is simply made again as configured.
+    const attempt = upgradeIfWorthTrying(connectOption);
+    const upgrading = attempt !== connectOption;
+
+    if (upgrading) {
+      try {
+        await this.fs.connect(attempt, {
+          askForPasswd: (message, context) => credentials.ask(message, context),
+        });
+        noteUpgradeWorked(connectOption);
+        this._secureByUpgrade = true;
+        await credentials.commit();
+        return;
+      } catch (error) {
+        noteUpgradeFailed(connectOption, error.message);
+        // A fresh client: the one that failed the handshake is not reusable.
+        this.fs.end();
+        this.fs = this._makeFs();
+      }
     }
 
     if (!(await confirmExposure(connectOption))) {
@@ -161,12 +199,6 @@ class KeepAliveRemoteFs {
         'Cancelled: the password would have been sent in cleartext.'
       );
     }
-
-    // The clients have no use for these, and they shouldn't reach a debug log.
-    delete connectOption.passwordCommand;
-    delete connectOption.passphraseCommand;
-    delete connectOption.passwordManager;
-    delete connectOption.passphraseManager;
 
     try {
       await this.fs.connect(connectOption, {
@@ -180,10 +212,73 @@ class KeepAliveRemoteFs {
     await credentials.commit();
   }
 
+  /**
+   * The file system, or a view of it that notices TLS going wrong.
+   *
+   * Only wrapped when this connection is encrypted because the extension
+   * decided so: a configured connection behaves exactly as it always did, and
+   * a plain one has nothing to watch for.
+   */
+  private _watching(): RemoteFileSystem {
+    if (!this._secureByUpgrade) {
+      return this.fs;
+    }
+    if (this._watched) {
+      return this._watched;
+    }
+
+    const self = this;
+    this._watched = new Proxy(this.fs, {
+      get(target: any, property: PropertyKey) {
+        const value = target[property];
+        if (typeof value !== 'function') {
+          return value;
+        }
+
+        return (...args: any[]) => {
+          const answer = value.apply(target, args);
+
+          // Only asynchronous work can fail in the way this is watching for.
+          if (!answer || typeof answer.then !== 'function') {
+            return answer;
+          }
+
+          return answer.then(undefined, (error: any) => {
+            self.noteTrouble(self._option, error);
+            throw error;
+          });
+        };
+      },
+    }) as RemoteFileSystem;
+
+    return this._watched;
+  }
+
   invalid(reason: string) {
+    this._watched = null;
     this.pendingPromise = null;
     this.fs.end();
     this.isValid = false;
+  }
+
+  /**
+   * Something went wrong on a connection this upgraded by itself.
+   *
+   * The connection is dropped and the server is not tried over TLS again for
+   * a while, so the next use reconnects as configured. The error itself still
+   * reaches the caller - the transfer layer treats it as transient and tries
+   * again, by which point the reconnection has already happened.
+   */
+  noteTrouble(option: any, error: any): boolean {
+    if (!this._secureByUpgrade || !isUpgradeTrouble(error)) {
+      return false;
+    }
+
+    noteUpgradeFailed(option || this._option, error && error.message);
+    this._secureByUpgrade = false;
+    this.invalid('tls');
+
+    return true;
   }
 
   end() {

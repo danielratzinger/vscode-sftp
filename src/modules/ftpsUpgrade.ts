@@ -1,145 +1,112 @@
 import * as vscode from 'vscode';
 import logger from '../logger';
 import { getUserSetting } from '../host';
-import {
-  probeFtps,
-  Support,
-  verifyFtpsSession,
-  withTls,
-} from '../core/ftpsProbe';
+import { Support, withTls } from '../core/ftpsPolicy';
 
 /**
- * Turning a plain FTP connection into an encrypted one, without being asked.
+ * What is known about each server's willingness to speak TLS.
  *
- * The upgrade is opportunistic, in the sense the word has in mail: the
- * alternative is not a verified connection, it is a password in plain view,
- * so an encrypted connection to a server whose certificate nobody checked is
- * strictly better than what would otherwise happen. It is not as good as
- * `"secure": true` in the configuration, which verifies the certificate, and
- * the log says which of the two happened.
- *
- * The answer is remembered per host so this costs one extra connection the
- * first time and nothing afterwards.
+ * Nothing here predicts anything. A server is tried, and remembered as
+ * failed the moment something goes wrong on an upgraded connection - at
+ * login, at a listing, or in the middle of a transfer. A failure is kept for
+ * a day rather than for ever, because the usual causes are a firewall rule or
+ * a missing certificate, and both get fixed.
  */
 
 const REMEMBERED = 'sftp.ftpsSupport';
-const TTL = 7 * 24 * 60 * 60 * 1000;
+const FORGET_FAILURE_AFTER = 24 * 60 * 60 * 1000;
 
 let storage: vscode.Memento | undefined;
-const thisSession: { [key: string]: Support } = {};
 
 export function initFtpsUpgrade(context: vscode.ExtensionContext): void {
   storage = context.globalState;
 }
 
-function keyFor(host: string, port?: number): string {
-  return `${host}:${port || 21}`;
+export function keyFor(option: { host?: string; port?: number }): string {
+  return `${option.host || ''}:${option.port || 21}`;
 }
 
-function recall(key: string): Support | undefined {
-  if (thisSession[key]) {
-    return thisSession[key];
+function kept(): { [key: string]: { support: Support; at: number } } {
+  return storage ? storage.get(REMEMBERED, {}) : {};
+}
+
+function recall(key: string): Support {
+  const entry = kept()[key];
+  if (!entry) {
+    return Support.Untried;
   }
 
-  const kept = storage
-    ? storage.get<{ [key: string]: { support: Support; at: number } }>(REMEMBERED, {})
-    : {};
-  const entry = kept[key];
+  if (entry.support === Support.Failed && Date.now() - entry.at > FORGET_FAILURE_AFTER) {
+    return Support.Untried;
+  }
 
-  // Servers change. A remembered "no" should not outlive a certificate being
-  // installed by more than a few days.
-  return entry && Date.now() - entry.at < TTL ? entry.support : undefined;
+  return entry.support;
 }
 
-async function remember(key: string, support: Support): Promise<void> {
-  thisSession[key] = support;
+function remember(key: string, support: Support): void {
   if (!storage) {
     return;
   }
 
-  const kept = storage.get<any>(REMEMBERED, {});
-  kept[key] = { support, at: Date.now() };
-  await storage.update(REMEMBERED, kept);
+  const all = kept();
+  all[key] = { support, at: Date.now() };
+  storage.update(REMEMBERED, all);
+}
+
+function enabled(): boolean {
+  return getUserSetting('sftp').get<boolean>('upgradePlainFtp', true);
 }
 
 /**
- * Returns the connection option to use, which is the one given unless the
- * server turns out to accept TLS.
+ * The option to connect with: the configured one, or the same with TLS added
+ * where that is worth attempting.
  */
-export async function upgradeIfPossible(option: any): Promise<any> {
+export function upgradeIfWorthTrying(option: any): any {
   try {
-    if (
-      option.protocol !== 'ftp' ||
-      option.secure ||
-      !getUserSetting('sftp').get<boolean>('upgradePlainFtp', true)
-    ) {
+    if (option.protocol !== 'ftp' || option.secure || !enabled()) {
       return option;
     }
 
-    const key = keyFor(option.host, option.port);
-    let support = recall(key);
-
-    if (support === undefined) {
-      // Cheap first: a server that does not offer TLS at all is settled
-      // without a login.
-      support = await probeFtps({
-        host: option.host,
-        port: option.port,
-        timeout: option.connectTimeout,
-      });
-
-      // Offered is not the same as working. FTP runs commands over one
-      // connection and listings and file contents over another, and
-      // encryption can succeed on the first and fail on the second - so the
-      // second test is a real session: log in over TLS and list a directory,
-      // which is exactly what would break.
-      if (support === Support.Tls) {
-        const works = await verifyFtpsSession({
-          host: option.host,
-          port: option.port,
-          user: option.username,
-          password:
-            typeof option.password === 'string' ? option.password : undefined,
-          path: option.remotePath,
-          timeout: option.connectTimeout,
-        });
-
-        if (!works) {
-          support = Support.ControlOnly;
-          logger.info(
-            `[security] ${key} offers FTPS, but listing a directory over it ` +
-              'did not work, so the connection stays as configured. That is ' +
-              'usually a firewall that cannot see PASV once the control ' +
-              'channel is encrypted, or a server that wants the data ' +
-              'connection to reuse the control session.'
-          );
-        }
-      }
-
-      await remember(key, support);
-    }
-
-    const upgraded = withTls(option, support);
-    if (upgraded === option) {
+    const key = keyFor(option);
+    if (recall(key) === Support.Failed) {
       return option;
     }
 
-    logger.info(
-      `[security] ${key} accepts FTPS; connecting with TLS instead of plain ` +
-        'FTP. The certificate is not verified - set "secure": true in ' +
-        'sftp.json for that.'
-    );
-
-    return upgraded;
+    return withTls(option);
   } catch (error) {
-    logger.debug(`could not probe for FTPS: ${error.message}`);
+    logger.debug(`could not decide about FTPS: ${error.message}`);
     return option;
   }
 }
 
-/** Forgets what was learned, for a server that has changed. */
+/** Called when an upgraded connection worked, so the log says so once. */
+export function noteUpgradeWorked(option: any): void {
+  const key = keyFor(option);
+  if (recall(key) === Support.Working) {
+    return;
+  }
+
+  remember(key, Support.Working);
+  logger.info(
+    `[security] ${key} accepts FTPS; using it instead of plain FTP. The ` +
+      'certificate is not verified - set "secure": true in sftp.json for that.'
+  );
+}
+
+/** Called when an upgraded connection let us down, at any point. */
+export function noteUpgradeFailed(option: any, reason: string): void {
+  const key = keyFor(option);
+  remember(key, Support.Failed);
+  logger.warn(
+    `[security] ${key} did not work over TLS (${reason}); falling back to the ` +
+      'connection as configured. Plain FTP sends the password as readable ' +
+      'text. This is usually a firewall that cannot see PASV once the control ' +
+      'channel is encrypted, or a server that wants the data connection to ' +
+      'reuse the control session.'
+  );
+}
+
 export function forgetFtpsSupport(): void {
-  Object.keys(thisSession).forEach(key => delete thisSession[key]);
   if (storage) {
     storage.update(REMEMBERED, {});
   }

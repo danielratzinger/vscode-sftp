@@ -26,6 +26,16 @@ export interface Misbehaviour {
   refuseListAll?: boolean;
   /** Never answer this command, to see what waits forever. */
   stallCommand?: string;
+  /**
+   * Agree to `PROT P` and then serve the data connection in the clear.
+   *
+   * The failure that matters most here: the control connection encrypts, the
+   * client expects TLS on the data connection, and the bytes arriving are not
+   * TLS. A firewall or a server that cannot reuse the control session looks
+   * like this from the client's side - commands fine, listings and transfers
+   * broken.
+   */
+  breakDataTls?: boolean;
 }
 
 export interface RunningFtpServer {
@@ -119,7 +129,7 @@ export async function startFtpServer(
 
       const data = net.createServer(socket => {
         dataSocket =
-          protectData && secure
+          protectData && secure && !misbehaviour.breakDataTls
             ? new tls.TLSSocket(socket, {
                 isServer: true,
                 secureContext: tls.createSecureContext({

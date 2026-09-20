@@ -1,4 +1,5 @@
 import { isOperationTimeout } from './operationTimeout';
+import { looksLikeTlsTrouble } from '../ftpsPolicy';
 
 /**
  * Socket-level failures. A transfer that dies this way says nothing about the
@@ -32,6 +33,13 @@ export function isTransientError(error: any): boolean {
   // A stall says nothing about the file either, and the connection it happened
   // on has already been retired, so the next attempt gets a fresh one.
   if (isOperationTimeout(error)) {
+    return true;
+  }
+
+  // Nor does TLS failing on a connection the extension upgraded by itself:
+  // that connection has been abandoned, and the next attempt is made as the
+  // configuration asked for.
+  if (looksLikeTlsTrouble(error)) {
     return true;
   }
 
