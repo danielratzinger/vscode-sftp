@@ -166,7 +166,7 @@
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "Extra file names never served to an MCP client, on top of the built-in list (`.env*`, `wp-config.php`, `.htpasswd`, private keys and similar). A denied file is reported as existing, with its contents withheld."
+          "markdownDescription": "Extra file names never served to an MCP client, on top of the built-in list (`.env*`, `wp-config.php`, `.htpasswd`, private keys and similar). No value from a denied file is ever served or written to this machine. Where its names can be told from its values with certainty - an env file, a JSON credentials file - the names alone are served, so an agent can see which settings exist without seeing one of them. Anything else is refused outright."
         },
         "sftp.mcp.redactAssignments": {
           "type": "boolean",

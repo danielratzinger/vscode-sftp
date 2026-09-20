@@ -30,6 +30,14 @@ now diverges from upstream's.
 
 ### Added
 
+- A denied file can now answer with the names in it. `.env` and a JSON
+  credentials file are served as their keys with every value withheld -
+  including the values that look harmless - so an agent can see that
+  `STRIPE_SECRET_KEY` is configured without seeing it. Read into memory over
+  the socket and dropped: nothing is written to this machine. A file whose
+  names cannot be told from its values with certainty, such as a private key
+  or `.htpasswd`, is refused exactly as before.
+
 - An MCP server inside the editor, offering the configured connections to
   local AI clients as twelve read-only tools: listings, file reads, text and
   path search, a tree annotated with what each file is for, earlier versions,

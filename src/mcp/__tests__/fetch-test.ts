@@ -615,3 +615,71 @@ describe('a search that could not read anything', () => {
     expect(result.text).toContain('1 file could not be read');
   });
 });
+
+describe('reading a file that is entirely a credential', () => {
+  const ENV = [
+    '# the old key was Xk7mQ2vL9pR',
+    'APP_ENV=production',
+    'STRIPE_SECRET_KEY=sk_live_51H8xQ2vL9pRabcdefghij',
+  ].join('\n');
+
+  const serving = (text: string, name: string) =>
+    createContext({
+      remoteFs: async () =>
+        ({
+          list: async () => [],
+          lstat: async () => ({
+            type: FileType.File,
+            size: Buffer.byteLength(text),
+            mtime: REMOTE_MTIME,
+          }),
+          readFile: async () => Buffer.from(text),
+        } as any),
+      localPathFor: () => `/work/site/${name}`,
+    } as any);
+
+  it('answers with the names in it, and none of the values', async () => {
+    place({});
+    const context = serving(ENV, '.env');
+
+    const result: any = await tool(context, 'read').run({
+      server: 'Staging',
+      path: '/srv/app/.env',
+    });
+
+    expect(result.isError).toBeFalsy();
+    expect(result.structured.content).toContain('STRIPE_SECRET_KEY');
+    expect(result.text).not.toContain('sk_live_51H8xQ2vL9pRabcdefghij');
+    expect(result.text).not.toContain('production');
+    // The comment could hold a value of its own.
+    expect(result.text).not.toContain('Xk7mQ2vL9pR');
+  });
+
+  it('writes nothing to this machine', async () => {
+    place({});
+    const context = serving(ENV, '.env');
+
+    await tool(context, 'read').run({ server: 'Staging', path: '/srv/app/.env' });
+
+    // The reason the deny check came before the fetch in the first place: a
+    // copy of production credentials on the laptop is the same problem one
+    // step removed.
+    expect(vol.existsSync('/work/site/.env')).toBe(false);
+    expect(vol.existsSync('/cache/.env')).toBe(false);
+    expect(context.written).toEqual([]);
+  });
+
+  it('still refuses a file whose names cannot be told from its values', async () => {
+    place({});
+    const context = serving('-----BEGIN PRIVATE KEY-----\nXk7mQ2vL9pR\n', 'id_rsa');
+
+    const result: any = await tool(context, 'read').run({
+      server: 'Staging',
+      path: '/srv/app/id_rsa',
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.text).not.toContain('Xk7mQ2vL9pR');
+    expect(vol.existsSync('/work/site/id_rsa')).toBe(false);
+  });
+});

@@ -33,6 +33,7 @@ const SERVER_FILES: { [name: string]: string } = {
   ].join('\n'),
   'README.md': '# The shop\n\nA test fixture.\n',
   '.env': 'SECRET=never served\n',
+  'id_rsa': '-----BEGIN PRIVATE KEY-----\nnever served either\n-----END PRIVATE KEY-----\n',
   'app/boot.php': ['<?php', 'function run() { echo "hello"; }'].join('\n'),
   'app/big.log': 'x'.repeat(300 * 1024),
 };
@@ -246,11 +247,23 @@ describe('the whole stack against a real server', () => {
     );
   });
 
-  it('never serves a denied file', async () => {
+  it('serves the names in a denied file and none of its values', async () => {
     const result = await tool('read', { server: 'Fixture', path: '/.env' });
 
-    expect(result.isError).toBe(true);
+    expect(result.isError).toBeFalsy();
+    expect(textOf(result)).toContain('SECRET');
+    expect(textOf(result)).not.toContain('never served');
+    // Read into memory over the socket and dropped: a copy of production
+    // credentials on this machine is the same problem one step removed.
     expect(fs.existsSync(path.join(workspace, '.env'))).toBe(false);
+  });
+
+  it('refuses a denied file whose names it cannot tell from its values', async () => {
+    const result = await tool('read', { server: 'Fixture', path: '/id_rsa' });
+
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).not.toContain('PRIVATE KEY');
+    expect(fs.existsSync(path.join(workspace, 'id_rsa'))).toBe(false);
   });
 
   it('searches the real tree and finds a line', async () => {

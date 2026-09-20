@@ -549,6 +549,19 @@ Pointing an agent at a production document root means `.env`, `wp-config.php`,
    `id_rsa*`, `.netrc`, `.git-credentials`, `.htpasswd`. Return a stub so the
    model knows the file exists and stops looking. Highest precision: these files
    are entirely secret. Enforced at cache-write time so they never land on disk.
+
+   The refusal takes something useful with it, though: *which* settings a
+   project expects is not a secret, and an agent that cannot see
+   `STRIPE_SECRET_KEY` exists cannot tell you the deploy is missing it. So
+   where the names in one of these files can be separated from the values with
+   certainty - an env file, a JSON credentials file - the names are served and
+   the values are not. One rule makes that safe: no character of any value is
+   ever emitted, including the values that look harmless. That removes every
+   judgement about which values are safe to show, and leaves a mistake in the
+   parser able to mis-name a setting but never to leak one. The bytes are read
+   into memory and dropped; nothing is written. Anything the parser does not
+   understand outright - a key file, `.htpasswd`, `.netrc`, whose account names
+   are half of a credential - is refused exactly as before.
 2. **Redact high-confidence token patterns** in what is served — `AKIA…`,
    `ghp_`/`github_pat_`, `sk_live_`, `xox[baprs]-`, `AIza…`, `SG.`, PEM blocks,
    JWTs. A few dozen hand-written rules, auditable and ours to maintain.

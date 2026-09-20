@@ -24,6 +24,7 @@ import {
   WalkResult,
 } from './search';
 import { Budget, createBudget, UNLIMITED } from './budget';
+import { describeOutline, outlineOf } from './outline';
 import { diff as diffOf } from './diff';
 import {
   contentOf,
@@ -660,14 +661,40 @@ export function createTools(
         return errorResult(`${target} is a directory. Use \`list\`.`);
       }
 
-      // Checked before the fetch, so a denied file never reaches the cache
-      // either: a copy of production credentials on the laptop is the same
-      // problem one step removed.
+      const limit = sizeLimit();
+
+      // A denied file is never materialised: a copy of production credentials
+      // on the laptop is the same problem one step removed. What it can give
+      // is the names in it, read into memory and dropped again - see
+      // `outline.ts` for why that is safe and the refusal is not the only
+      // useful answer.
       if (isDenied(target, context.deniedFiles ? context.deniedFiles() : [])) {
-        return errorResult(deniedMessage(target));
+        if (remoteStat.size > limit) {
+          return errorResult(deniedMessage(target));
+        }
+
+        const bytes = await remote.readFile(target).catch(() => undefined);
+        const outline =
+          bytes === undefined
+            ? undefined
+            : outlineOf(target, bytes.toString('utf8'));
+
+        if (!outline) {
+          return errorResult(deniedMessage(target));
+        }
+
+        return {
+          text: `${describeOutline(target, outline)}\n\n${outline.text}`,
+          structured: {
+            path: target,
+            content: outline.text,
+            state: 'withheld',
+            source: 'names-only',
+            redacted: ['denied-file'],
+          },
+        };
       }
 
-      const limit = sizeLimit();
       if (remoteStat.size > limit) {
         return errorResult(
           `${target} is ${describeSize(remoteStat.size)}, over the ` +
