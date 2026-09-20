@@ -20,11 +20,67 @@ export interface Note {
   updated: number;
 }
 
+/**
+ * Which connection a note store belongs to, written beside the notes.
+ *
+ * A store lives in a folder named after the connection's id, and that id is
+ * derived - from where the connection points, and from what it is called. So
+ * renaming a connection, or changing how the id is derived at all, files its
+ * notes under a name nothing looks for again. Cached files can be fetched
+ * twice; a note is the only thing here that cannot.
+ *
+ * The name is deliberately not part of this. It is part of the id, so a
+ * rename produces a new folder - and this is exactly what lets the new folder
+ * find the old one.
+ */
+export interface ConnectionIdentity {
+  workspace: string;
+  protocol: string;
+  host: string;
+  port: number;
+  username: string;
+  remotePath: string;
+}
+
 export interface NoteStore {
   /** Keyed by remote path. */
   files: { [remotePath: string]: Note };
   /** What the project is, as a whole. */
   overview?: Note;
+  /** Whose notes these are, for finding them again. */
+  connection?: ConnectionIdentity;
+}
+
+export function identityOf(
+  workspace: string,
+  config: any
+): ConnectionIdentity {
+  return {
+    workspace: workspace || '',
+    protocol: (config && config.protocol) || '',
+    host: (config && config.host) || '',
+    port: (config && config.port) || 0,
+    username: (config && config.username) || '',
+    remotePath: (config && config.remotePath) || '',
+  };
+}
+
+export function sameConnection(
+  a: ConnectionIdentity | undefined,
+  b: ConnectionIdentity | undefined
+): boolean {
+  if (!a || !b) {
+    return false;
+  }
+
+  return (
+    a.workspace === b.workspace &&
+    a.protocol === b.protocol &&
+    a.host === b.host &&
+    a.port === b.port &&
+    a.username === b.username &&
+    a.remotePath === b.remotePath
+  );
 }
 
 const EMPTY: NoteStore = { files: {} };
@@ -49,11 +105,62 @@ export async function load(
 export async function save(
   cacheRoot: string,
   connectionId: string,
-  store: NoteStore
+  store: NoteStore,
+  connection?: ConnectionIdentity
 ): Promise<void> {
   const file = storePath(cacheRoot, connectionId);
   await fse.ensureDir(path.dirname(file));
-  await fse.writeFile(file, JSON.stringify(store, null, 2), 'utf8');
+  await fse.writeFile(
+    file,
+    JSON.stringify(connection ? { ...store, connection } : store, null, 2),
+    'utf8'
+  );
+}
+
+/**
+ * Finds a note store this connection left behind under an id it no longer
+ * has, and moves it here.
+ *
+ * Only from a folder that is nobody's current id: two connections can differ
+ * by name alone, and the one that still answers to its folder keeps it.
+ */
+export async function adopt(
+  cacheRoot: string,
+  connectionId: string,
+  connection: ConnectionIdentity,
+  isCurrentId: (id: string) => boolean
+): Promise<string | undefined> {
+  const here = await load(cacheRoot, connectionId);
+  if (Object.keys(here.files).length > 0 || here.overview) {
+    return undefined; // Already has notes of its own.
+  }
+
+  let folders: string[];
+  try {
+    folders = await fse.readdir(cacheRoot);
+  } catch (error) {
+    return undefined;
+  }
+
+  for (const folder of folders) {
+    if (folder === connectionId || isCurrentId(folder)) {
+      continue;
+    }
+
+    const theirs = await load(cacheRoot, folder);
+    if (!sameConnection(theirs.connection, connection)) {
+      continue;
+    }
+    if (Object.keys(theirs.files).length === 0 && !theirs.overview) {
+      continue;
+    }
+
+    await save(cacheRoot, connectionId, theirs, connection);
+    await fse.remove(storePath(cacheRoot, folder));
+    return folder;
+  }
+
+  return undefined;
 }
 
 export const enum NoteState {

@@ -5,7 +5,7 @@ import { createTools, ToolContext } from '../tools';
 import { stableId } from '../identity';
 import { ServiceLike } from '../exposure';
 import { FileType } from '../../core/fs';
-import { factsFrom, load, NoteState, prune, put, viewOf } from '../notes';
+import { adopt, factsFrom, load, NoteState, prune, put, viewOf } from '../notes';
 
 const MTIME = 2000000;
 
@@ -524,5 +524,93 @@ describe('what the project is', () => {
 
     const after: any = await tool('overview').run({ server: 'Staging' });
     expect(after.structured.narrative).toBe(summary);
+  });
+});
+
+describe('notes that outlive the id they were filed under', () => {
+  // A store lives in a folder named after the connection's id, and that id is
+  // derived - from where the connection points and what it is called. Rename
+  // the connection, or change how the id is derived, and the notes are filed
+  // under a name nothing looks for again. Two folders of cached files were
+  // orphaned that way this morning; next time it could be notes.
+  const HERE = { workspace: '/work/site', protocol: 'sftp', host: 'staging.example.com',
+                 port: 22, username: 'deploy', remotePath: '/srv/app' };
+
+  const store = (over: any = {}) =>
+    JSON.stringify({
+      files: { '/srv/app/index.php': { summary: 'entry point', mtime: 1, size: 1, updated: Date.now() } },
+      connection: HERE,
+      ...over,
+    });
+
+  it('takes back a store left under an old id', async () => {
+    vol.fromJSON({ '/cache/oldid/notes.json': store() });
+
+    const from = await adopt('/cache', 'newid', HERE, () => false);
+
+    expect(from).toBe('oldid');
+    expect((await load('/cache', 'newid')).files['/srv/app/index.php'].summary).toBe(
+      'entry point'
+    );
+    // Moved, not copied: two stores for one connection is how they diverge.
+    expect(vol.existsSync('/cache/oldid/notes.json')).toBe(false);
+  });
+
+  it('records whose notes they are when it takes them', async () => {
+    vol.fromJSON({ '/cache/oldid/notes.json': store() });
+
+    await adopt('/cache', 'newid', HERE, () => false);
+
+    expect((await load('/cache', 'newid')).connection).toEqual(HERE);
+  });
+
+  it('leaves alone a store that still belongs to somebody', async () => {
+    // Two connections can differ by name alone. The one that still answers to
+    // its folder keeps it.
+    vol.fromJSON({ '/cache/theirs/notes.json': store() });
+
+    expect(await adopt('/cache', 'mine', HERE, id => id === 'theirs')).toBeUndefined();
+    expect(vol.existsSync('/cache/theirs/notes.json')).toBe(true);
+  });
+
+  it('leaves alone a store belonging to a different connection', async () => {
+    vol.fromJSON({
+      '/cache/oldid/notes.json': store({ connection: { ...HERE, host: 'elsewhere.example.com' } }),
+    });
+
+    expect(await adopt('/cache', 'newid', HERE, () => false)).toBeUndefined();
+  });
+
+  it('does nothing when this connection already has notes of its own', async () => {
+    vol.fromJSON({
+      '/cache/oldid/notes.json': store(),
+      '/cache/newid/notes.json': store({
+        files: { '/srv/app/other.php': { summary: 'mine', mtime: 1, size: 1, updated: Date.now() } },
+      }),
+    });
+
+    expect(await adopt('/cache', 'newid', HERE, () => false)).toBeUndefined();
+    expect((await load('/cache', 'newid')).files['/srv/app/other.php'].summary).toBe('mine');
+  });
+
+  it('ignores an empty store, and a cache that is not there', async () => {
+    vol.fromJSON({ '/cache/oldid/notes.json': JSON.stringify({ files: {}, connection: HERE }) });
+
+    expect(await adopt('/cache', 'newid', HERE, () => false)).toBeUndefined();
+    expect(await adopt('/nowhere', 'newid', HERE, () => false)).toBeUndefined();
+  });
+
+  it('takes a project note back too', async () => {
+    vol.fromJSON({
+      '/cache/oldid/notes.json': JSON.stringify({
+        files: {},
+        overview: { summary: 'the scraper pipeline', mtime: 0, size: 0, updated: Date.now() },
+        connection: HERE,
+      }),
+    });
+
+    await adopt('/cache', 'newid', HERE, () => false);
+
+    expect((await load('/cache', 'newid')).overview!.summary).toBe('the scraper pipeline');
   });
 });

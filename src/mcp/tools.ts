@@ -43,6 +43,7 @@ import { outsideMessage, resolveWithin } from './paths';
 import {
   factsFrom,
   forget as forgetNote,
+  identityOf,
   load as loadNotes,
   NoteState,
   overviewOf,
@@ -1248,7 +1249,12 @@ export function createTools(
       if (survivors.removed.length > 0 && !found.truncated) {
         // Only when the walk was complete: a truncated one would look like
         // half the server had been deleted.
-        await saveNotes(cacheRoot, stableId(service), survivors.store);
+        await saveNotes(
+          cacheRoot,
+          stableId(service),
+          survivors.store,
+          identityOf(service.workspace, service.getConfig())
+        );
       }
 
       if (!found.truncated) {
@@ -1359,7 +1365,12 @@ export function createTools(
         const key = stableId(service);
         const held = await loadNotes(root, key);
 
-        await saveNotes(root, key, putOverview(held, args.summary.trim()));
+        await saveNotes(
+          root,
+          key,
+          putOverview(held, args.summary.trim()),
+          identityOf(service.workspace, service.getConfig())
+        );
 
         return {
           text:
@@ -1400,7 +1411,8 @@ export function createTools(
         putNote(store, target, args.summary.trim(), {
           mtime: remoteStat.mtime,
           size: remoteStat.size,
-        })
+        }),
+        identityOf(service.workspace, service.getConfig())
       );
 
       return { text: `Noted: ${target} \u2014 ${args.summary.trim()}` };
@@ -1440,13 +1452,23 @@ export function createTools(
           return outside(service, args.path);
         }
 
-        await saveNotes(cacheRoot, id, forgetNote(store, target));
+        await saveNotes(
+          cacheRoot,
+          id,
+          forgetNote(store, target),
+          identityOf(service.workspace, service.getConfig())
+        );
         return { text: `Forgot the description of ${target}.` };
       }
 
       const count = Object.keys(store.files).length;
       const hadOverview = Boolean(store.overview);
-      await saveNotes(cacheRoot, id, forgetNote(store));
+      await saveNotes(
+        cacheRoot,
+        id,
+        forgetNote(store),
+        identityOf(service.workspace, service.getConfig())
+      );
 
       return {
         text:

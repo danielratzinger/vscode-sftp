@@ -35,6 +35,10 @@ now diverges from upstream's.
   `credentials` file, `kubeconfig`, Rails `secrets.yml` and
   `credentials.yml.enc`, `*.tfvars`, `*.ppk` and `*.kdbx`. INI and YAML are
   outlined like the rest, so these answer with their names too.
+- A note store records which connection it belongs to, and a connection that
+  no longer answers to the id its notes were filed under - after a rename, or
+  a change to how ids are derived - takes them back at startup. Cached files
+  can be fetched twice; a note is the only thing in that cache that cannot.
 - `note` without a path records what a whole project is for, which `overview`
   and `servers` then report. `overview` could only repeat what composer.json
   said about itself, and said nothing at all about a project without one.

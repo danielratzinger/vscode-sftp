@@ -10,6 +10,7 @@ import { ServiceLike } from './exposure';
 import { startServer, StartedServer } from './server';
 import { suppressWrite } from '../modules/writeSuppression';
 import { pruneOldConnectionFolders } from './cache';
+import { adopt as adoptNotes, identityOf } from './notes';
 import { DEFAULT_PORT, isAddressInUse, whoHasThePort } from './leader';
 import { DEFAULT_WALK } from './search';
 import { historyRootFrom } from './localHistory';
@@ -440,11 +441,49 @@ function firstWorkspaceName(): string | undefined {
  * Started and stopped by the setting, so turning it off releases the port and
  * takes the connection details away rather than leaving a stale file behind.
  */
+/**
+ * Notes written under an id a connection no longer has - because it was
+ * renamed, or because the way an id is derived changed under it - moved to
+ * where that connection looks now.
+ *
+ * At startup rather than on demand, and it adopts nothing for a connection
+ * that has not loaded yet: the worst case is that it happens next time.
+ */
+async function reuniteNotes(): Promise<void> {
+  const services = (getAllFileService() as unknown) as ServiceLike[];
+  const root = path.join(cacheRoot, 'mcp-cache');
+  const current = services.map(stableId);
+  const isCurrent = (id: string) => current.indexOf(id) !== -1;
+
+  for (const service of services) {
+    try {
+      const from = await adoptNotes(
+        root,
+        stableId(service),
+        identityOf(service.workspace, service.getConfig()),
+        isCurrent
+      );
+
+      if (from) {
+        logger
+          .for(connectionLabel(service.getConfig() as any))
+          .info(`[mcp] took back the notes filed under ${from}.`);
+      }
+    } catch (error) {
+      // One connection's notes are not worth failing the others over.
+    }
+  }
+}
+
 export function initMcp(context: vscode.ExtensionContext) {
   cacheRoot = context.globalStoragePath;
 
-  // Once, at startup: folders left by the numbering this replaced. See
-  // `identity.ts`.
+  // Once, at startup: notes filed under an id this connection no longer has,
+  // and folders left by the numbering this all replaced. See `identity.ts`.
+  reuniteNotes().catch(error =>
+    logger.debug(`could not look for orphaned notes: ${error.message}`)
+  );
+
   pruneOldConnectionFolders(
     path.join(cacheRoot, 'mcp-cache'),
     ((getAllFileService() as unknown) as ServiceLike[]).map(stableId)
