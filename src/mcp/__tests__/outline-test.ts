@@ -108,3 +108,93 @@ describe('outlining a file that is entirely a credential', () => {
     expect(outlineOf('/srv/app/credentials.json', '{ "key": "Xk7mQ2vL9pR"')).toBeUndefined();
   });
 });
+
+describe('the formats the rest of the world keeps credentials in', () => {
+  const secret = (text: string, ...values: string[]) =>
+    values.forEach(value => expect(text).not.toContain(value));
+
+  it('outlines an npm registry token file', () => {
+    const npmrc = [
+      '//registry.npmjs.org/:_authToken=npm_9f2c41ab7de85610c3bb0429fd77ea13abcd',
+      'always-auth=true',
+      '; a comment holding Xk7mQ2vL9pR',
+    ].join('\n');
+
+    const outline = outlineOf('/home/deploy/.npmrc', npmrc)!;
+
+    expect(outline.format).toBe('ini');
+    expect(outline.names).toContain('//registry.npmjs.org/:_authToken');
+    secret(outline.text, 'npm_9f2c41ab7de85610c3bb0429fd77ea13abcd', 'Xk7mQ2vL9pR', 'true');
+    expect(outline.omitted).toBe(1);
+  });
+
+  it('outlines a pip configuration, sections and all', () => {
+    const pypirc = ['[distutils]', 'index-servers = pypi', '', '[pypi]', 'username = __token__',
+      'password = pypi-AgEIcHlwaS5vcmcXk7mQ2vL9pR'].join('\n');
+
+    const outline = outlineOf('/home/deploy/.pypirc', pypirc)!;
+
+    expect(outline.text).toContain('[pypi]');
+    expect(outline.names).toContain('password');
+    secret(outline.text, 'pypi-AgEIcHlwaS5vcmcXk7mQ2vL9pR', '__token__');
+  });
+
+  it('outlines a MySQL client file', () => {
+    const cnf = ['[client]', 'user=root', 'password=Xk7mQ2vL9pR'].join('\n');
+    const outline = outlineOf('/root/.my.cnf', cnf)!;
+
+    expect(outline.names).toEqual(['user', 'password']);
+    secret(outline.text, 'Xk7mQ2vL9pR', 'root');
+  });
+
+  it('outlines Terraform variables', () => {
+    const tfvars = ['db_password = "Xk7mQ2vL9pR"', 'region      = "eu-central-1"'].join('\n');
+    const outline = outlineOf('/srv/app/terraform.tfvars', tfvars)!;
+
+    expect(outline.names).toEqual(['db_password', 'region']);
+    secret(outline.text, 'Xk7mQ2vL9pR', 'eu-central-1');
+  });
+
+  it('outlines a kubeconfig without its certificates', () => {
+    const kubeconfig = [
+      'apiVersion: v1',
+      'clusters:',
+      '- cluster:',
+      '    certificate-authority-data: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tXk7mQ2vL9pR',
+      '    server: https://k8s.internal:6443',
+      '  name: production',
+      'users:',
+      '- name: deploy',
+      '  user:',
+      '    token: Xk7mQ2vL9pRtoken',
+    ].join('\n');
+
+    const outline = outlineOf('/home/deploy/kubeconfig', kubeconfig)!;
+
+    expect(outline.format).toBe('yaml');
+    expect(outline.names).toContain('certificate-authority-data');
+    expect(outline.names).toContain('token');
+    secret(
+      outline.text,
+      'LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tXk7mQ2vL9pR',
+      'Xk7mQ2vL9pRtoken',
+      'production',
+      'k8s.internal'
+    );
+  });
+
+  it('does not read a URL inside a value as a key', () => {
+    // YAML's own rule: a key's colon is followed by a space or the line ends.
+    // Without it `https://k8s.internal` reads as a key called `https`, and a
+    // fragment of a value would be emitted.
+    const outline = outlineOf('/srv/app/secrets.yml', 'endpoint: https://k8s.internal:6443')!;
+
+    expect(outline.names).toEqual(['endpoint']);
+    expect(outline.text).not.toContain('https');
+  });
+
+  it('refuses a file of the right name whose contents are something else', () => {
+    expect(outlineOf('/srv/app/secrets.yml', 'just prose, no keys at all')).toBeUndefined();
+    expect(outlineOf('/home/deploy/.npmrc', 'nothing here either')).toBeUndefined();
+  });
+});

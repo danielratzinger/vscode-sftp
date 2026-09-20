@@ -30,6 +30,11 @@ now diverges from upstream's.
 
 ### Added
 
+- The denied-files list covers the credential files of other ecosystems:
+  `.npmrc`, `.pypirc`, `.my.cnf`, `.s3cfg`, `.boto`, `.dockercfg`, an AWS
+  `credentials` file, `kubeconfig`, Rails `secrets.yml` and
+  `credentials.yml.enc`, `*.tfvars`, `*.ppk` and `*.kdbx`. INI and YAML are
+  outlined like the rest, so these answer with their names too.
 - A denied file can now answer with the names in it. `.env` and a JSON
   credentials file are served as their keys with every value withheld -
   including the values that look harmless - so an agent can see that

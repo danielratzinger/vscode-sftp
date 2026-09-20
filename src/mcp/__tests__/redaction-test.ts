@@ -580,3 +580,33 @@ describe('the shapes other ecosystems use', () => {
     expect(redact(code).text).toBe(code);
   });
 });
+
+describe('the files that are credentials outside PHP and SSH', () => {
+  const denied = [
+    ['an npm token file', '/home/deploy/.npmrc'],
+    ['a pip configuration', '/home/deploy/.pypirc'],
+    ['a MySQL client file', '/root/.my.cnf'],
+    ['an s3cmd configuration', '/home/deploy/.s3cfg'],
+    ['a boto configuration', '/home/deploy/.boto'],
+    ['a docker registry login', '/home/deploy/.dockercfg'],
+    ['an AWS credentials file', '/home/deploy/.aws/credentials'],
+    ['a kubeconfig', '/home/deploy/kubeconfig'],
+    ['Rails secrets', '/srv/app/config/secrets.yml'],
+    ['encrypted Rails credentials', '/srv/app/config/credentials.yml.enc'],
+    ['Terraform variables', '/srv/app/terraform.tfvars'],
+    ['Terraform variables loaded automatically', '/srv/app/prod.auto.tfvars'],
+    ['a PuTTY key', '/home/deploy/deploy.ppk'],
+    ['a password database', '/home/deploy/vault.kdbx'],
+  ];
+
+  denied.forEach(([what, path]) =>
+    it(`refuses ${what}`, () => expect(isDenied(path)).toBe(true))
+  );
+
+  it('still serves the ordinary files that live beside them', () => {
+    ['/srv/app/config.yml', '/srv/app/composer.json', '/srv/app/main.tf',
+     '/home/deploy/id_rsa.pub', '/srv/app/README.md'].forEach(path =>
+      expect(isDenied(path)).toBe(false)
+    );
+  });
+});

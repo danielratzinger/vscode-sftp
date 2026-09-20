@@ -546,7 +546,10 @@ Pointing an agent at a production document root means `.env`, `wp-config.php`,
 `.htpasswd` and stray private keys. Three layers, most reliable first:
 
 1. **Never serve a deny-list of filenames** — `.env*`, `wp-config.php`, `*.pem`,
-   `id_rsa*`, `.netrc`, `.git-credentials`, `.htpasswd`. Return a stub so the
+   `id_rsa*`, `.netrc`, `.git-credentials`, `.htpasswd`, and the same
+   idea outside PHP and SSH: `.npmrc`, `.pypirc`, `.my.cnf`, `.s3cfg`, `.boto`,
+   `.dockercfg`, an AWS `credentials` file, `kubeconfig`, Rails `secrets.yml`,
+   `*.tfvars`, `*.ppk`, `*.kdbx`. Return a stub so the
    model knows the file exists and stops looking. Highest precision: these files
    are entirely secret. Enforced at cache-write time so they never land on disk.
 

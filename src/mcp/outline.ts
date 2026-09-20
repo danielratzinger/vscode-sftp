@@ -22,7 +22,7 @@
 export const WITHHELD = '[value withheld]';
 
 export interface Outline {
-  format: 'dotenv' | 'json';
+  format: 'dotenv' | 'json' | 'ini' | 'yaml';
   /** The file as names, with every value replaced. */
   text: string;
   names: string[];
@@ -64,6 +64,86 @@ function dotenv(text: string): Outline | undefined {
   }
 
   return { format: 'dotenv', text: lines.join('\n').trim(), names, omitted };
+}
+
+/** `[section]` then `name = value`: npm, pip, the MySQL client, s3cmd, boto. */
+const INI_SECTION = /^\s*(\[[^\]\n]*\])\s*$/;
+const INI_LINE = /^\s*([^=;#[\]\n]+?)\s*=/;
+
+function ini(text: string): Outline | undefined {
+  const names: string[] = [];
+  const lines: string[] = [];
+  let omitted = 0;
+  let seen = 0;
+
+  for (const line of text.split(/\r?\n/)) {
+    if (line.trim() === '') {
+      lines.push('');
+      continue;
+    }
+
+    const section = line.match(INI_SECTION);
+    if (section) {
+      // A section header names a registry or a profile, which is a name like
+      // any other here.
+      lines.push(section[1]);
+      continue;
+    }
+
+    const match = line.match(INI_LINE);
+    if (!match) {
+      omitted += 1;
+      continue;
+    }
+
+    seen += 1;
+    names.push(match[1]);
+    lines.push(`${match[1]} = ${WITHHELD}`);
+  }
+
+  return seen === 0
+    ? undefined
+    : { format: 'ini', text: lines.join('\n').trim(), names, omitted };
+}
+
+/**
+ * A key line in YAML, on YAML's own rule: a colon followed by a space or the
+ * end of the line.
+ *
+ * Without that rule `https://example.com` inside a value reads as a key called
+ * `https`, and a fragment of a value would be emitted - which is the one thing
+ * this module promises never to do.
+ */
+const YAML_LINE = /^(\s*)(-\s+)?([A-Za-z0-9_.][A-Za-z0-9_.\/-]*):(?:\s|$)/;
+
+function yaml(text: string): Outline | undefined {
+  const names: string[] = [];
+  const lines: string[] = [];
+  let omitted = 0;
+  let seen = 0;
+
+  for (const line of text.split(/\r?\n/)) {
+    if (line.trim() === '') {
+      lines.push('');
+      continue;
+    }
+
+    const match = line.match(YAML_LINE);
+    if (!match) {
+      // A list item, a block scalar's body, a comment, a continuation. Any of
+      // them can be a value, so none of them are kept.
+      omitted += 1;
+      continue;
+    }
+
+    seen += 1;
+    names.push(match[3]);
+    lines.push(`${match[1]}${match[2] || ''}${match[3]}: ${WITHHELD}`);
+  }
+
+  return seen === 0
+    ? undefined
+    : { format: 'yaml', text: lines.join('\n').trim(), names, omitted };
 }
 
 function outlineValue(value: any, names: string[], indent: string): string {
@@ -139,6 +219,22 @@ export function outlineOf(fsPath: string, text: string): Outline | undefined {
 
   if (name.endsWith('.json')) {
     return json(text);
+  }
+
+  if (name.endsWith('.yml') || name.endsWith('.yaml') || name === 'kubeconfig') {
+    return yaml(text);
+  }
+
+  if (
+    name.endsWith('rc') ||
+    name.endsWith('.cnf') ||
+    name.endsWith('.cfg') ||
+    name.endsWith('.ini') ||
+    name.endsWith('.tfvars') ||
+    name === '.boto' ||
+    name === 'credentials'
+  ) {
+    return ini(text);
   }
 
   // A key file has no names in it, and `.htpasswd` and `.netrc` carry account

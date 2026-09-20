@@ -36,10 +36,29 @@ export const DENIED_FILES = [
   'id_dsa',
   'id_ecdsa',
   'id_ed25519',
+  // The same idea outside PHP and SSH. Each of these is a file whose whole
+  // job is to hold a credential: a registry token, a database password, a
+  // cluster's client certificate, a Rails secret.
+  'credentials',
+  'credentials.yml.enc',
+  '.npmrc',
+  '.pypirc',
+  '.my.cnf',
+  '.s3cfg',
+  '.boto',
+  '.dockercfg',
+  'kubeconfig',
+  'secrets.yml',
+  'secrets.yaml',
 ];
 
 /** Extensions that are keys whatever they are called. */
-const DENIED_EXTENSIONS = ['pem', 'key', 'p12', 'pfx', 'jks', 'keystore'];
+const DENIED_EXTENSIONS = [
+  'pem', 'key', 'p12', 'pfx', 'jks', 'keystore', 'ppk', 'kdbx',
+  // `terraform.tfvars`, `prod.auto.tfvars`: the variables a deploy is given,
+  // which is where its passwords are.
+  'tfvars',
+];
 
 interface Rule {
   name: string;
