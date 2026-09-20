@@ -13,6 +13,7 @@ import {
 } from './serviceManager';
 import { reportError, isValidFile, isConfigFile, isInWorkspace } from '../helper';
 import connectionLabel from '../core/connectionLabel';
+import { sayIfPaused } from './worktreeSync';
 import { downloadFile, uploadFile } from '../fileHandlers';
 
 let workspaceWatcher: vscode.Disposable;
@@ -42,6 +43,13 @@ async function handleConfigSave(uri: vscode.Uri) {
 async function handleFileSave(uri: vscode.Uri) {
   const fileService = getFileService(uri);
   if (!fileService) {
+    return;
+  }
+
+  // A connection has one writer. While another checkout owns it, a save here
+  // is not uploaded - and is said not to be, once, rather than looking like a
+  // transfer that silently failed.
+  if (sayIfPaused(fileService)) {
     return;
   }
 

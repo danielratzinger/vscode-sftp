@@ -14,6 +14,7 @@ import { initReplacedFiles } from './modules/replacedFiles';
 import { checkForOtherSftpExtensions } from './modules/otherSftpExtensions';
 import { initPasswordExposure } from './modules/passwordExposure';
 import { initFtpsUpgrade } from './modules/ftpsUpgrade';
+import { initWorktreeSync } from './modules/worktreeSync';
 import { reportError } from './helper';
 import fileActivityMonitor from './modules/fileActivityMonitor';
 import { tryLoadConfigs } from './modules/config';
@@ -28,7 +29,7 @@ async function setupWorkspaceFolder(dir) {
   });
 }
 
-function setup(workspaceFolders: vscode.WorkspaceFolder[]) {
+function setup(workspaceFolders: readonly vscode.WorkspaceFolder[]) {
   fileActivityMonitor.init();
   const pendingInits = workspaceFolders.map(folder => setupWorkspaceFolder(folder.uri.fsPath));
 
@@ -56,6 +57,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   try {
     initFtpsUpgrade(context);
+  initWorktreeSync(context);
   } catch (error) {
     reportError(error, 'initFtpsUpgrade');
   }

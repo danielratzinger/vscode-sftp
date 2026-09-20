@@ -91,6 +91,19 @@ On folders, in both explorers: opens the machine's own terminal on that folder �
 
 `openInTerminal` is the editor's command for the external terminal and `openInIntegratedTerminal` for the built-in one. They are separate commands, so `terminal.explorerKind` — which decides which of the two the *editor* offers in its own menus — does not redirect this one. Whatever is set in `terminal.external.osxExec`, `terminal.external.windowsExec` or `terminal.external.linuxExec` is the terminal that opens.
 
+### Sync Worktree
+On a connection in the Remote Explorer, or from the palette. Asks which checkout of the repository this connection should deploy from, and then watches that one instead of the folder this window has open.
+
+An agent working on a branch gets its own git worktree, usually nowhere near the workspace. The list comes from git's own metadata under `.git/worktrees` — every checkout of the repository, with the branch each is on, whether or not it is open in an editor. Nothing is scanned for and `git` need not be on the PATH.
+
+**One writer.** A connection has one remote path, so it syncs from exactly one checkout at a time. While that is not this window, saves here are not uploaded and the log says so once rather than leaving you to wonder. `Stop syncing` in the same picker hands the connection back to this window.
+
+Switching does not push anything: the remote still holds whatever the previous branch left, and nothing moves until a file changes in the newly chosen checkout. `SFTP: Sync Local -> Remote` pushes the whole branch when you want that, and shows what it will do first.
+
+A file must sit still for three seconds before it is uploaded — a build step writes a hundred files in a second, and a tool that writes without an atomic rename leaves a half-written one visible in between. Deletions follow `watcher.autoDelete`, as they do for the workspace: removing files from a deployment is not something to start doing because somebody picked a worktree. The connection's own `ignore` rules apply, evaluated against the checkout's root, and `.git` is never uploaded.
+
+When a worktree appears that was not there before, you are asked once whether to deploy it instead. Never adopted on its own.
+
 ### Clear Local Folder
 Sits under `Download Scripts` in the Remote Explorer's menu, on folders and on a connection's root — nowhere else, and only where something has been downloaded — and not on anything whose local copy sits in a repository. Clearing a folder is for a download that has to start from nothing, and nothing in a working copy is that: the files are tracked, the history is beside them, and what the command would delete is not what a download would put back. The search for one walks up from the folder and stops at the workspace — a repository above the folder the editor has open is not this extension's business. Deletes the contents of the *local* copy of that folder and never touches the server.
 

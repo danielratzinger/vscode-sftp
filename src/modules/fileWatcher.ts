@@ -6,7 +6,12 @@ import { upload, removeRemote } from '../fileHandlers';
 import { WatcherService, TransferDirection } from '../core';
 import app from '../app';
 import StatusBarItem from '../ui/statusBarItem';
-import { connectionNameFor, getRunningTransformTasks } from './serviceManager';
+import {
+  connectionNameFor,
+  getFileService,
+  getRunningTransformTasks,
+} from './serviceManager';
+import { sayIfPaused } from './worktreeSync';
 import { wasWrittenByUs } from './writeSuppression';
 
 const watchers: {
@@ -42,6 +47,11 @@ function doUpload() {
     }
 
     const fspath = uri.fsPath;
+    const owner = getFileService(uri);
+    if (owner && sayIfPaused(owner)) {
+      return;
+    }
+
     await withConnection(connectionNameFor(uri), async () => {
       logger.info(`[watcher/updated] ${fspath}`);
       try {
@@ -59,6 +69,11 @@ function doDelete() {
   deleteQueue.clear();
   files.forEach(async uri => {
     const fspath = uri.fsPath;
+    const owner = getFileService(uri);
+    if (owner && sayIfPaused(owner)) {
+      return;
+    }
+
     await withConnection(connectionNameFor(uri), async () => {
       logger.info(`[watcher/removed] ${fspath}`);
       try {

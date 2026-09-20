@@ -34,6 +34,11 @@ now diverges from upstream's.
   menu, on anything that has been downloaded: opens the system's file manager
   on the local copy. `Reveal in File Explorer` on Windows, `Open Containing
   Folder` on Linux.
+- `SFTP: Sync Worktree` deploys a connection from a git worktree the editor
+  does not have open - an agent's checkout of a branch, typically nowhere near
+  the workspace. One checkout at a time, chosen deliberately; while it is not
+  this window, this window's own uploads are paused and said to be. A worktree
+  that appears is offered once, never adopted.
 - `Reveal in Terminal`, on folders in both explorers: opens the machine's own
   terminal on that folder rather than the editor's built-in one, honouring
   `terminal.external.*Exec`.
