@@ -42,8 +42,9 @@ now diverges from upstream's.
   password was never part of either, so changing one moves nothing. Where two
   connections could claim the same notes, neither gets them. Cached files
   can be fetched twice; a note is the only thing in that cache that cannot.
-- `read` asks for a description when a substantial file has none - once per
-  file, where the understanding is. The only prompt used to be in `tree`,
+- `read` asks for a description when a substantial file has none, and for a
+  correction when the one it has describes an older version - once each, where
+  the understanding is. The only prompt used to be in `tree`,
   which is where you go before you understand anything.
 - `note` without a path records what a whole project is for, which `overview`
   and `servers` then report. `overview` could only repeat what composer.json

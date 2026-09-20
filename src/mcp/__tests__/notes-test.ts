@@ -790,3 +790,77 @@ describe('asking for a description where the file is read', () => {
     expect(result.structured.content).toBe(BIG);
   });
 });
+
+describe('a description whose file has moved on', () => {
+  // Nothing rewrites a note by itself: an inferred description of a file
+  // nobody read is a guess. What a stale one gets is asked for, at the moment
+  // somebody has just read the version that made it stale.
+  const BIG = 'x'.repeat(4000);
+  const MOVED = MTIME + 60000;
+
+  const serving = (size: number, mtime: number): any => ({
+    services: () => [STAGING],
+    exposure: () => ({ exposedByDefault: true }),
+    cacheOption: () => ({ cacheRoot: '/cache', materialize: false }),
+    remoteFs: async () => ({
+      list: async () => [],
+      lstat: async () => ({ type: FileType.File, size, mtime }),
+      readFile: async () => BIG,
+    }),
+  });
+
+  beforeEach(() => forgetWhatWasAsked());
+
+  it('asks for a correction once the file has changed', async () => {
+    const before = createTools(serving(BIG.length, MTIME));
+    await before.find(t => t.name === 'note')!.run({
+      server: 'Staging', path: '/srv/app/big.php', summary: 'what it used to do',
+    });
+
+    // Same file, later version.
+    const after = createTools(serving(BIG.length, MOVED));
+    const result: any = await after.find(t => t.name === 'read')!.run({
+      server: 'Staging', path: '/srv/app/big.php',
+    });
+
+    expect(result.structured.note.state).toBe('stale');
+    expect(result.structured.note.summary).toBe('what it used to do');
+    expect(result.structured.hint).toContain('older version of this file');
+    // The old description is still shown: roughly right beats nothing.
+    expect(result.text).toContain('what it used to do');
+  });
+
+  it('asks again after a note it once asked about goes stale', async () => {
+    const fresh = createTools(serving(BIG.length, MTIME));
+    const first: any = await fresh.find(t => t.name === 'read')!.run({
+      server: 'Staging', path: '/srv/app/big.php',
+    });
+    expect(first.structured.hint).toContain('Nothing describes this file yet');
+
+    await fresh.find(t => t.name === 'note')!.run({
+      server: 'Staging', path: '/srv/app/big.php', summary: 'what it used to do',
+    });
+
+    const after = createTools(serving(BIG.length, MOVED));
+    const second: any = await after.find(t => t.name === 'read')!.run({
+      server: 'Staging', path: '/srv/app/big.php',
+    });
+
+    expect(second.structured.hint).toContain('older version of this file');
+  });
+
+  it('stops asking once the description is put right', async () => {
+    const after = createTools(serving(BIG.length, MOVED));
+    await after.find(t => t.name === 'note')!.run({
+      server: 'Staging', path: '/srv/app/big.php', summary: 'what it does now',
+    });
+    forgetWhatWasAsked();
+
+    const result: any = await after.find(t => t.name === 'read')!.run({
+      server: 'Staging', path: '/srv/app/big.php',
+    });
+
+    expect(result.structured.note.state).toBe('current');
+    expect(result.structured.hint).toBeUndefined();
+  });
+});

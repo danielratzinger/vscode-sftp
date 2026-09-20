@@ -2080,15 +2080,29 @@ function askForANote(
   described: { state: NoteState },
   size: number
 ): string {
-  if (described.state !== NoteState.None || size < WORTH_DESCRIBING) {
+  const describable =
+    described.state === NoteState.None || described.state === NoteState.Stale;
+  if (!describable || size < WORTH_DESCRIBING) {
     return '';
   }
 
-  const key = `${connectionId}|${remotePath}`;
+  // Keyed by the state as well: a file asked about while it had no note is
+  // worth asking about again once its note has gone stale.
+  const key = `${connectionId}|${remotePath}|${described.state}`;
   if (alreadyAsked[key]) {
     return '';
   }
   alreadyAsked[key] = true;
+
+  // Nothing ever rewrites a note by itself - an inferred description of a file
+  // nobody read is a guess, and a confident wrong summary is worse than none.
+  // What a changed file gets is this, at the moment somebody has just read it.
+  if (described.state === NoteState.Stale) {
+    return (
+      'The description above is of an older version of this file. You have ' +
+      'just read the current one: if it no longer fits, `note` replaces it.'
+    );
+  }
 
   return (
     'Nothing describes this file yet. If you now know what it is for, ' +
