@@ -19,7 +19,9 @@ import {
   searchPaths,
   searchText,
   walk,
+  WalkLimit,
   WalkOption,
+  WalkResult,
 } from './search';
 import { Budget, createBudget, UNLIMITED } from './budget';
 import { diff as diffOf } from './diff';
@@ -983,7 +985,8 @@ export function createTools(
           failed,
           outOfTime,
           nextOffset: next,
-          truncated: found.truncated,
+          walk: found,
+          depth: option.maxDepth,
           more: matches.length > ordered.length,
         }),
         structured: {
@@ -1014,7 +1017,13 @@ export function createTools(
       properties: {
         server: { type: 'string', description: 'An id from `servers`.' },
         dir: { type: 'string', description: 'Where to start. Defaults to the remote root.' },
-        depth: { type: 'integer', description: 'How far down to go. Default 3.' },
+        depth: {
+          type: 'integer',
+          description:
+            'How many directory levels to list, counting dir as the first: ' +
+            '1 lists only what is in dir, 2 adds its subdirectories, and so ' +
+            'on. Default 3.',
+        },
         offset: {
           type: 'integer',
           description:
@@ -1042,6 +1051,8 @@ export function createTools(
       total: numberField,
       nextOffset: numberField,
       truncated: booleanField,
+      stoppedBy: { type: 'array', items: stringField },
+      depth: numberField,
       files: {
         type: 'array',
         items: objectSchema({
@@ -1068,10 +1079,10 @@ export function createTools(
         return outside(service, args.dir);
       }
       const treeBudget = budgetFor();
-      const option = {
-        ...base,
-        maxDepth: clamp(args.depth, 3, base.maxDepth),
-      };
+      // At least one level: a depth of zero would list nothing at all and
+      // report a limit for it, which is never what anybody meant to ask.
+      const askedDepth = Math.max(1, clamp(args.depth, 3, base.maxDepth));
+      const option = { ...base, maxDepth: askedDepth };
       const from = offsetOf(args.offset, Number.MAX_SAFE_INTEGER);
       const found = await manifestOf(
         service,
@@ -1168,7 +1179,7 @@ export function createTools(
           (from > 0 || next !== undefined
             ? `, showing ${from + 1}-${from + page.length}`
             : '') +
-          (found.truncated ? ' (walk hit its limit; narrow it with dir)' : '') +
+          (found.truncated ? ` (${limitsOf(found, askedDepth)})` : '') +
           '.\n' +
           (describedCount < found.files.length
             ? 'Record what a file is for with note as you learn it.\n'
@@ -1185,6 +1196,8 @@ export function createTools(
           total: selected.length,
           nextOffset: next,
           truncated: found.truncated,
+          stoppedBy: found.stoppedBy,
+          depth: found.depth,
           files: page.map(file => ({
             path: file.path,
             size: file.size,
@@ -1792,6 +1805,32 @@ function clamp(value: any, fallback: number, max: number): number {
   return Math.max(0, Math.min(max, Math.round(asked)));
 }
 
+/**
+ * Why a walk stopped, in the words of what to do about it.
+ *
+ * The three limits have nothing in common but the fact that they cut the
+ * listing short: one wants a bigger number, one wants a smaller question, and
+ * one wants to be asked again. A single sentence covering all three told the
+ * reader only that something was missing.
+ */
+function limitsOf(found: { stoppedBy: WalkLimit[] }, asked: number): string {
+  const said: string[] = [];
+
+  if (found.stoppedBy.indexOf('files') !== -1) {
+    said.push('the file limit was reached, so narrow it with dir');
+  }
+  if (found.stoppedBy.indexOf('time') !== -1) {
+    said.push('it ran out of time, so ask again or narrow it with dir');
+  }
+  if (found.stoppedBy.indexOf('depth') !== -1) {
+    said.push(
+      `there are directories below depth ${asked}, so raise depth to see them`
+    );
+  }
+
+  return said.join('; ') || 'a limit was reached';
+}
+
 function describeSearch(
   matches: Match[],
   paths: { path: string }[],
@@ -1803,7 +1842,8 @@ function describeSearch(
     failed?: number;
     outOfTime?: boolean;
     nextOffset?: number;
-    truncated: boolean;
+    walk: WalkResult;
+    depth: number;
     more: boolean;
   }
 ): string {
@@ -1831,8 +1871,8 @@ function describeSearch(
   if (about.outOfTime) {
     lines.push('The search ran out of time before every file was read.');
   }
-  if (about.truncated) {
-    lines.push('The walk hit its limit; narrow it with dir for the rest.');
+  if (about.walk && about.walk.truncated) {
+    lines.push(`Not every file was listed: ${limitsOf(about.walk, about.depth)}.`);
   }
   if (about.more) {
     lines.push('More matches exist; raise max_matches to see them.');

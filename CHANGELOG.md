@@ -71,6 +71,11 @@ now diverges from upstream's.
 
 ### Changed
 
+- A walk's `depth` counts the directory it starts in as the first level, the
+  way `find -maxdepth` and `tree -L` do, so `depth: 1` lists one directory.
+  It also no longer ends the whole walk: reaching the limit in one branch used
+  to stop everything after it, which quietly hid shallow directories that were
+  listed later.
 - FTP transfers use a pool of control connections, and SFTP transfers are
   pipelined, instead of moving one file at a time with one request in flight.
 - A server whose clock disagrees with this machine is measured once and
@@ -84,6 +89,9 @@ now diverges from upstream's.
   the function rather than passing it.
 - The webpack build failed on two constants used without being imported.
 - `getFileSystemPath` took a URI while its callers pass a path string.
+- A tree or search that stopped early said only that it had “hit its limit”.
+  It now says which limit - depth, file count or time - because the way out of
+  each is a different one.
 
 ---
 

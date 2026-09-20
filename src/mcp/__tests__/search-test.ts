@@ -101,14 +101,57 @@ describe('walk', () => {
     expect(result.files.map(f => f.path).join()).not.toContain('node_modules');
   });
 
-  it('stops at its limits and says so', async () => {
+  it('stops at its limits and says which one', async () => {
     const result = await walk(async dir => entriesOf(dir), '/srv/app', {
       ...DEFAULT_WALK,
       maxFiles: 1,
     });
 
     expect(result.truncated).toBe(true);
+    expect(result.stoppedBy).toEqual(['files']);
     expect(result.files.length).toBeLessThanOrEqual(1);
+  });
+
+  it('counts the starting directory as the first level', async () => {
+    // What `find -maxdepth 1` means by it: this directory, nothing below.
+    const result = await walk(async dir => entriesOf(dir), '/srv/app', {
+      ...DEFAULT_WALK,
+      maxDepth: 1,
+    });
+
+    expect(result.files.map(f => f.path)).toEqual(['/srv/app/index.php']);
+    expect(result.stoppedBy).toEqual(['depth']);
+    expect(result.depth).toBe(1);
+  });
+
+  it('carries on past a branch the depth limit cut off', async () => {
+    // The limit prunes the branch it is reached in. It used to end the walk,
+    // so a deep folder hid every shallow one listed after it.
+    const tree: { [dir: string]: string[] } = {
+      '/srv': ['deep', 'later'],
+      '/srv/deep': ['further'],
+      '/srv/deep/further': ['buried.php'],
+      '/srv/later': ['visible.php'],
+    };
+    const listing = async (dir: string) =>
+      (tree[dir] || []).map(name => ({
+        name,
+        fspath: `${dir}/${name}`,
+        type: tree[`${dir}/${name}`] ? FileType.Directory : FileType.File,
+        size: 1,
+        mtime: MTIME,
+        atime: MTIME,
+        mode: 0o644,
+      }));
+
+    const result = await walk(listing as any, '/srv', {
+      ...DEFAULT_WALK,
+      maxDepth: 2,
+      excludeExtensions: [],
+    });
+
+    expect(result.files.map(f => f.path)).toEqual(['/srv/later/visible.php']);
+    expect(result.stoppedBy).toEqual(['depth']);
   });
 
   it('carries on past a directory it cannot read', async () => {
@@ -267,5 +310,47 @@ describe('a walk that runs out of time', () => {
 
     expect(result.truncated).toBe(false);
     expect(result.files).toHaveLength(2);
+  });
+});
+
+describe('how deep the tree goes', () => {
+  it('lists only the given directory at depth 1', async () => {
+    const result: any = await tool(createContext(), 'tree').run({
+      server: '1',
+      depth: 1,
+    });
+
+    expect(result.structured.files.map((f: any) => f.path)).toEqual([
+      '/srv/app/index.php',
+    ]);
+    expect(result.structured.stoppedBy).toEqual(['depth']);
+    // The way out of this limit is a number, and the text says which one.
+    expect(result.text).toContain('below depth 1');
+    expect(result.text).toContain('raise depth');
+  });
+
+  it('reaches into subdirectories by default', async () => {
+    const result: any = await tool(createContext(), 'tree').run({ server: '1' });
+
+    expect(result.structured.files.map((f: any) => f.path)).toContain(
+      '/srv/app/src/Session.php'
+    );
+    expect(result.structured.truncated).toBe(false);
+  });
+
+  it('tells the file limit apart from the depth limit', async () => {
+    const context = createContext({
+      walkOption: () => ({
+        maxDepth: 8,
+        maxFiles: 1,
+        excludeFolders: [],
+        excludeExtensions: [],
+      }),
+    } as any);
+    const result: any = await tool(context, 'tree').run({ server: '1' });
+
+    expect(result.structured.stoppedBy).toEqual(['files']);
+    expect(result.text).toContain('narrow it with dir');
+    expect(result.text).not.toContain('raise depth');
   });
 });

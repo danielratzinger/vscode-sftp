@@ -11,6 +11,8 @@ import {
 const result = (paths: string[]) => ({
   files: paths.map(path => ({ path, size: 1, mtime: 0 })),
   truncated: false,
+  stoppedBy: [],
+  depth: 1,
   directories: 1,
 });
 

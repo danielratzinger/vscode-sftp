@@ -204,7 +204,7 @@
         "sftp.mcp.maxDepth": {
           "type": "number",
           "default": 8,
-          "markdownDescription": "How deep below the search root to descend. Each directory is one round trip."
+          "markdownDescription": "How many directory levels a walk may list, counting the starting directory as the first: `1` lists only what is in it and goes no further. The `tree` tool's own `depth` cannot exceed this. Each directory listed is one round trip."
         }
       }
     },

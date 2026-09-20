@@ -20,7 +20,11 @@ export interface Manifest {
 }
 
 export interface WalkOption {
-  /** Directories below this are not descended into. */
+  /**
+   * How many levels of directory to list, counting the starting one as the
+   * first: 1 lists what is in the given directory and descends no further,
+   * which is what `find -maxdepth 1` and `tree -L 1` both mean by it.
+   */
   maxDepth: number;
   /** Stops the walk once this many files are known. */
   maxFiles: number;
@@ -41,10 +45,21 @@ export const DEFAULT_WALK: WalkOption = {
   excludeExtensions: DEFAULT_EXCLUDED_EXTENSIONS,
 };
 
+/** Why a walk stopped early. Each one has a different way out of it. */
+export type WalkLimit = 'depth' | 'files' | 'time';
+
 export interface WalkResult {
   files: Manifest[];
   /** True when a limit stopped the walk before it finished. */
   truncated: boolean;
+  /**
+   * Which limits it hit. Saying only that something was cut leaves the reader
+   * to guess whether to ask for more depth, a narrower directory, or the same
+   * question again - three different answers to what used to be one sentence.
+   */
+  stoppedBy: WalkLimit[];
+  /** The deepest level reached, on the same count as `maxDepth`. */
+  depth: number;
   directories: number;
 }
 
@@ -60,17 +75,34 @@ export async function walk(
 ): Promise<WalkResult> {
   const files: Manifest[] = [];
   const excluded = option.excludeFolders.map(name => name.toLowerCase());
+  const stoppedBy: WalkLimit[] = [];
   let directories = 0;
-  let truncated = false;
+  let deepest = 0;
+  // Set by the limits that apply to the walk as a whole. Depth is not one of
+  // them: it prunes the branch it is reached in and nothing else. Treating it
+  // as the end of the walk - which is what a single `truncated` flag invited -
+  // meant one deep folder cut off every shallow one listed after it.
+  let exhausted = false;
+
+  const stop = (limit: WalkLimit) => {
+    if (stoppedBy.indexOf(limit) === -1) {
+      stoppedBy.push(limit);
+    }
+  };
 
   async function visit(dir: string, depth: number): Promise<void> {
-    if (truncated || depth > option.maxDepth) {
-      truncated = truncated || depth > option.maxDepth;
+    if (exhausted) {
+      return;
+    }
+
+    if (depth > option.maxDepth) {
+      stop('depth');
       return;
     }
 
     if (option.stopWhen && option.stopWhen()) {
-      truncated = true;
+      stop('time');
+      exhausted = true;
       return;
     }
 
@@ -83,10 +115,12 @@ export async function walk(
     }
 
     directories += 1;
+    deepest = Math.max(deepest, depth);
 
     for (const entry of entries) {
       if (files.length >= option.maxFiles) {
-        truncated = true;
+        stop('files');
+        exhausted = true;
         return;
       }
 
@@ -113,9 +147,15 @@ export async function walk(
     }
   }
 
-  await visit(root, 0);
+  await visit(root, 1);
 
-  return { files, truncated, directories };
+  return {
+    files,
+    truncated: stoppedBy.length > 0,
+    stoppedBy,
+    depth: deepest,
+    directories,
+  };
 }
 
 export interface Match {
