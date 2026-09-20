@@ -218,6 +218,10 @@ Set `sftp.debug` to `true` in your settings and reload. The log is in
 **View → Output → sftp**, and every MCP tool call is logged there too — which
 is how you see what an agent actually read, rather than what it says it read.
 
+Each line says which connection it is about — `[info:staging]`, by the `name`
+in `sftp.json` or the host if it has none — so a timeout or a clock warning
+belongs to a server rather than to the extension in general.
+
 ## Testing
 
 ```bash

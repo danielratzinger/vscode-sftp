@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import logger from '../logger';
+import logger, { withConnection } from '../logger';
 import { realpathSync } from 'fs';
 import app from '../app';
 import StatusBarItem from '../ui/statusBarItem';
@@ -12,6 +12,7 @@ import {
   disposeFileService,
 } from './serviceManager';
 import { reportError, isValidFile, isConfigFile, isInWorkspace } from '../helper';
+import connectionLabel from '../core/connectionLabel';
 import { downloadFile, uploadFile } from '../fileHandlers';
 
 let workspaceWatcher: vscode.Disposable;
@@ -48,13 +49,15 @@ async function handleFileSave(uri: vscode.Uri) {
   if (config.uploadOnSave) {
     const fspath = await realpathSync.native(uri.fsPath);
     uri = vscode.Uri.file(fspath);
-    logger.info(`[file-save] ${fspath}`);
-    try {
-      await uploadFile(uri);
-    } catch (error) {
-      logger.error(error, `download ${fspath}`);
-      app.sftpBarItem.updateStatus(StatusBarItem.Status.error);
-    }
+    await withConnection(connectionLabel(config), async () => {
+      logger.info(`[file-save] ${fspath}`);
+      try {
+        await uploadFile(uri);
+      } catch (error) {
+        logger.error(error, `upload ${fspath}`);
+        app.sftpBarItem.updateStatus(StatusBarItem.Status.error);
+      }
+    });
   }
 }
 
@@ -72,13 +75,15 @@ async function downloadOnOpen(uri: vscode.Uri) {
     }
 
     const fspath = uri.fsPath;
-    logger.info(`[file-open] ${fspath}`);
-    try {
-      await downloadFile(uri);
-    } catch (error) {
-      logger.error(error, `download ${fspath}`);
-      app.sftpBarItem.updateStatus(StatusBarItem.Status.error);
-    }
+    await withConnection(connectionLabel(config), async () => {
+      logger.info(`[file-open] ${fspath}`);
+      try {
+        await downloadFile(uri);
+      } catch (error) {
+        logger.error(error, `download ${fspath}`);
+        app.sftpBarItem.updateStatus(StatusBarItem.Status.error);
+      }
+    });
   }
 }
 

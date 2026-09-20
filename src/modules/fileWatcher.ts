@@ -1,12 +1,12 @@
 import * as vscode from 'vscode';
 import * as debounce from 'lodash.debounce';
-import logger from '../logger';
+import logger, { withConnection } from '../logger';
 import { isValidFile, fileDepth } from '../helper';
 import { upload, removeRemote } from '../fileHandlers';
 import { WatcherService, TransferDirection } from '../core';
 import app from '../app';
 import StatusBarItem from '../ui/statusBarItem';
-import { getRunningTransformTasks } from './serviceManager';
+import { connectionNameFor, getRunningTransformTasks } from './serviceManager';
 import { wasWrittenByUs } from './writeSuppression';
 
 const watchers: {
@@ -37,18 +37,20 @@ function doUpload() {
     // with, which the check above misses because the task is long gone by the
     // time this debounce fires.
     if (wasWrittenByUs(uri.fsPath)) {
-      logger.info(`[watcher/ours] ${uri.fsPath}`);
+      logger.for(connectionNameFor(uri)).info(`[watcher/ours] ${uri.fsPath}`);
       return;
     }
 
     const fspath = uri.fsPath;
-    logger.info(`[watcher/updated] ${fspath}`);
-    try {
-      await upload(uri);
-    } catch (error) {
-      logger.error(error, `upload ${fspath}`);
-      app.sftpBarItem.updateStatus(StatusBarItem.Status.error);
-    }
+    await withConnection(connectionNameFor(uri), async () => {
+      logger.info(`[watcher/updated] ${fspath}`);
+      try {
+        await upload(uri);
+      } catch (error) {
+        logger.error(error, `upload ${fspath}`);
+        app.sftpBarItem.updateStatus(StatusBarItem.Status.error);
+      }
+    });
   });
 }
 
@@ -57,13 +59,15 @@ function doDelete() {
   deleteQueue.clear();
   files.forEach(async uri => {
     const fspath = uri.fsPath;
-    logger.info(`[watcher/removed] ${fspath}`);
-    try {
-      await removeRemote(uri);
-    } catch (error) {
-      logger.error(error, `remove ${fspath}`);
-      app.sftpBarItem.updateStatus(StatusBarItem.Status.error);
-    }
+    await withConnection(connectionNameFor(uri), async () => {
+      logger.info(`[watcher/removed] ${fspath}`);
+      try {
+        await removeRemote(uri);
+      } catch (error) {
+        logger.error(error, `remove ${fspath}`);
+        app.sftpBarItem.updateStatus(StatusBarItem.Status.error);
+      }
+    });
   });
 }
 

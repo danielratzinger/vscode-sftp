@@ -1,7 +1,8 @@
 import { Uri } from 'vscode';
 import app from '../app';
 import { UResource, FileService, ServiceConfig } from '../core';
-import logger from '../logger';
+import logger, { withConnection } from '../logger';
+import connectionLabel from '../core/connectionLabel';
 import { getFileService } from '../modules/serviceManager';
 
 interface FileHandlerConfig {
@@ -88,6 +89,17 @@ export default function createFileHandler<T>(
 ): (ctx: FileHandlerContext | Uri, option?: Partial<T>) => Promise<void> {
   async function fileHandle(ctx: Uri | FileHandlerContext, option?: T) {
     const handleCtx = ctx instanceof Uri ? handleCtxFromUri(ctx) : ctx;
+
+    // Named here rather than at the connection: this knows which of the
+    // configured connections the user asked for, and everything the handler
+    // goes on to do - the connection, the transfer, the retries - is logged
+    // from inside it.
+    return withConnection(connectionLabel(handleCtx.config as any), () =>
+      run(handleCtx, option)
+    );
+  }
+
+  async function run(handleCtx: FileHandlerContext, option?: T) {
     const { target } = handleCtx;
 
     const invokeOption = handlerOption.transformOption

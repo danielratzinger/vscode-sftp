@@ -13,6 +13,7 @@ import { DEFAULT_PORT, isAddressInUse, whoHasThePort } from './leader';
 import { DEFAULT_WALK } from './search';
 import { historyRootFrom } from './localHistory';
 import { readBackup } from '../core/overwriteBackup';
+import connectionLabel from '../core/connectionLabel';
 import { connectionKeyFor, versionsOf } from '../modules/replacedFiles';
 import { exposedConnections } from './exposure';
 import { localiseCall, PeerRegistry, targetOf, unqualify } from './peers';
@@ -124,6 +125,19 @@ function toolContext(): ToolContext {
   };
 }
 
+/** The connection an id refers to, for the log rather than for the answer. */
+function calledOn(id: any): string | undefined {
+  if (typeof id !== 'string' || id === '') {
+    return undefined;
+  }
+
+  const service = ((getAllFileService() as unknown) as ServiceLike[]).find(
+    one => String(one.id) === id
+  );
+
+  return service ? connectionLabel(service.getConfig() as any) : undefined;
+}
+
 function auditCall(name: string, args: any, result: ToolResult | null, error?: Error) {
   const server = args && args.server ? ` server=${args.server}` : '';
   const target = args && args.path ? ` path=${args.path}` : '';
@@ -131,7 +145,9 @@ function auditCall(name: string, args: any, result: ToolResult | null, error?: E
 
   // When this reaches production servers, "what did the agent actually read?"
   // needs an answer.
-  logger.info(`[mcp] ${name}${server}${target} -> ${outcome}`);
+  logger
+    .for(calledOn(args && args.server))
+    .info(`[mcp] ${name}${server}${target} -> ${outcome}`);
 }
 
 export async function startMcpServer(): Promise<void> {

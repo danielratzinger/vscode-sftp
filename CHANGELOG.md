@@ -71,6 +71,9 @@ now diverges from upstream's.
 
 ### Changed
 
+- Log lines name the connection they are about: `[info:staging]` rather than
+  `[info]`. With more than one server configured, a timeout, a clock offset or
+  a refused upgrade said nothing about whose it was.
 - A walk's `depth` counts the directory it starts in as the first level, the
   way `find -maxdepth` and `tree -L` do, so `depth: 1` lists one directory.
   It also no longer ends the whole walk: reaching the limit in one branch used

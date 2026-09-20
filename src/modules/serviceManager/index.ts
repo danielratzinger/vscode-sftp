@@ -5,6 +5,7 @@ import logger from '../../logger';
 import { simplifyPath, reportError } from '../../helper';
 import { UResource, FileService, TransferTask } from '../../core';
 import { validateConfig } from '../config';
+import connectionLabel from '../../core/connectionLabel';
 import watcherService from '../fileWatcher';
 import Trie from './trie';
 
@@ -93,7 +94,9 @@ export function createFileService(config: any, workspace: string) {
   const normalizedBasePath = getBasePath(config.context, workspace);
   const service = new FileService(normalizedBasePath, workspace, config);
 
-  logger.info(`config at ${normalizedBasePath}`, maskConfig(config));
+  logger
+    .for(connectionLabel(config))
+    .info(`config at ${normalizedBasePath}`, maskConfig(config));
 
   serviceManager.add(normalizedBasePath, service);
   service.name = config.name;
@@ -139,6 +142,18 @@ export function getFileService(uri: Uri): FileService {
   }
 
   return fileService;
+}
+
+/**
+ * What the log should call the connection a file belongs to.
+ *
+ * For the lines written before a handler runs - a watcher noticing a save,
+ * and the error that comes back if the upload fails - which are the ones
+ * somebody reads when an upload did not happen.
+ */
+export function connectionNameFor(uri: Uri): string | undefined {
+  const service = getFileService(uri);
+  return service ? connectionLabel(service.getConfig() as any) : undefined;
 }
 
 export function disposeFileService(fileService: FileService) {

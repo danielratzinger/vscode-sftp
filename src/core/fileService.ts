@@ -18,6 +18,7 @@ import { FileSystem } from './fs';
 import Scheduler from './scheduler';
 import { DEFAULT_CONNECTION_LIMIT } from './fs/ftpFileSystem';
 import { createRemoteIfNoneExist, removeRemoteFs } from './remoteFs';
+import connectionLabel from './connectionLabel';
 import TransferTask from './transferTask';
 import localFs from './localFs';
 
@@ -536,7 +537,10 @@ export default class FileService {
   }
 
   async getRemoteFileSystem(config: ServiceConfig): Promise<FileSystem> {
-    const fileSystem = await createRemoteIfNoneExist(getHostInfo(config));
+    const fileSystem = await createRemoteIfNoneExist(
+      getHostInfo(config),
+      connectionLabel(config)
+    );
 
     // Only once the connection is up, so a password that doesn't work is
     // never the one that gets saved.

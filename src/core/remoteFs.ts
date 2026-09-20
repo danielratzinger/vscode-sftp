@@ -1,5 +1,6 @@
 import upath from './upath';
-import logger from '../logger';
+import logger, { withConnection } from '../logger';
+import connectionLabel from './connectionLabel';
 import {
   CredentialResolver,
   createCredentialResolver,
@@ -15,6 +16,7 @@ import { isUpgradeTrouble } from './ftpsPolicy';
 import { ConnectOption } from './remote-client/remoteClient';
 import FileSystem from './fs/fileSystem';
 import RemoteFileSystem from './fs/remoteFileSystem';
+import { watched } from './fs/watched';
 // Directly, not through `./fs`: the barrel is part of a cycle, and a
 // re-exported class read through one can be `undefined` by the time it is
 // called.
@@ -30,6 +32,8 @@ function hashOption(opiton) {
 
 class KeepAliveRemoteFs {
   private isValid: boolean = false;
+  /** What the logs call this connection. */
+  private _name?: string;
   /** True while this connection is TLS that nobody configured. */
   private _secureByUpgrade: boolean = false;
   /** Rebuilds the file system, for the second attempt after a failed upgrade. */
@@ -52,9 +56,11 @@ class KeepAliveRemoteFs {
       passphrase?: string | boolean;
       passwordManager?: string | boolean;
       passphraseManager?: string | boolean;
-    }
+    },
+    name?: string
   ): Promise<RemoteFileSystem> {
     this._option = option;
+    this._name = this._name || name || connectionLabel(option as any);
 
     if (this.isValid) {
       this.pendingPromise = null;
@@ -131,7 +137,9 @@ class KeepAliveRemoteFs {
     app.sftpBarItem.showMsg('connecting...', connectOption.connectTimeout);
     // Assigned in the same tick, so a second caller waits on this attempt
     // instead of starting its own.
-    this.pendingPromise = this._connect(credentials, connectOption).then(
+    this.pendingPromise = withConnection(this._name, () =>
+      this._connect(credentials, connectOption)
+    ).then(
       () => {
         app.sftpBarItem.reset();
         this.isValid = true;
@@ -213,43 +221,22 @@ class KeepAliveRemoteFs {
   }
 
   /**
-   * The file system, or a view of it that notices TLS going wrong.
+   * The file system, as a view that knows which connection it is.
    *
-   * Only wrapped when this connection is encrypted because the extension
-   * decided so: a configured connection behaves exactly as it always did, and
-   * a plain one has nothing to watch for.
+   * Every call runs inside the connection's name, which is how a line logged
+   * four frames deep in a client library ends up saying whose server it was.
+   * The same wrapper notices an upgraded connection failing, which can only be
+   * seen from out here, where the failure and the decision to upgrade both are.
    */
   private _watching(): RemoteFileSystem {
-    if (!this._secureByUpgrade) {
-      return this.fs;
-    }
     if (this._watched) {
       return this._watched;
     }
 
-    const self = this;
-    this._watched = new Proxy(this.fs, {
-      get(target: any, property: PropertyKey) {
-        const value = target[property];
-        if (typeof value !== 'function') {
-          return value;
-        }
-
-        return (...args: any[]) => {
-          const answer = value.apply(target, args);
-
-          // Only asynchronous work can fail in the way this is watching for.
-          if (!answer || typeof answer.then !== 'function') {
-            return answer;
-          }
-
-          return answer.then(undefined, (error: any) => {
-            self.noteTrouble(self._option, error);
-            throw error;
-          });
-        };
-      },
-    }) as RemoteFileSystem;
+    this._watched = watched(this.fs, {
+      name: this._name,
+      onTrouble: error => this.noteTrouble(this._option, error),
+    });
 
     return this._watched;
   }
@@ -294,7 +281,15 @@ const fsTable: {
   [x: string]: KeepAliveRemoteFs;
 } = {};
 
-export function createRemoteIfNoneExist(option): Promise<FileSystem> {
+/**
+ * `name` is only what the logs should call this connection. It is deliberately
+ * not part of the identity: two configurations that reach the same host with
+ * the same credentials share one connection, and always have.
+ */
+export function createRemoteIfNoneExist(
+  option,
+  name?: string
+): Promise<FileSystem> {
   if (option.protocol === 'local') {
     return getLocalFs();
   }
@@ -302,12 +297,12 @@ export function createRemoteIfNoneExist(option): Promise<FileSystem> {
   const identity = hashOption(option);
   const fs = fsTable[identity];
   if (fs !== undefined) {
-    return fs.getFs(option);
+    return fs.getFs(option, name);
   }
 
   const fsInstance = new KeepAliveRemoteFs();
   fsTable[identity] = fsInstance;
-  return fsInstance.getFs(option);
+  return fsInstance.getFs(option, name);
 }
 
 export function removeRemoteFs(option) {
