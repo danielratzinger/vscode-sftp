@@ -95,7 +95,7 @@ export const REDACTION_MARKER = '[redacted:';
  * wrong thing in front of `\u043f` or `\u03ba`, so those names match without it.
  */
 const LATIN_SECRET_NAME =
-  '(?:pass(?:word|wd|phrase)?|passwort|kennwort|passcode|pwd|pw|psw|pswrd|' +
+  '(?:pass(?:word|wd|w|phrase)?|passwort|kennwort|passcode|pwd|pw|psw|pswrd|' +
   'secret|token|api[_-]?key|apikey|access[_-]?key|auth[_-]?(?:key|token)|' +
   'credentials?|client[_-]?secret|contrase|senha|wachtwoord|has[l\u0142]o|heslo|' +
   'jelsz[o\u00f3]|lozinka|geslo|l[o\u00f6]senord|salasana|adgangskode|' +
@@ -107,8 +107,20 @@ const OTHER_SECRET_NAME = '(?:\u043f\u0430\u0440\u043e\u043b\u044c|\u043f\u0430\
 /** Matched anywhere inside a name: `DB_PASSWORD` contains one. */
 const SECRET_NAME = `(?:${LATIN_SECRET_NAME}|${OTHER_SECRET_NAME})`;
 
-/** Matched as a name in its own right, which is what a key is. */
-const SECRET_KEY = `(?:\\b${LATIN_SECRET_NAME}|${OTHER_SECRET_NAME})`;
+/**
+ * Matched as a name in its own right, which is what a key is.
+ *
+ * Not `\b`, which is a boundary between a word character and a non-word one -
+ * and `_` is a word character. `DB_PASSWORD`, `smtp_password`, `api_secret`
+ * and `MAIL_PASSWORD` are how these are spelled in nearly every configuration
+ * file there is, and `\b` read straight past all of them: it wanted a name
+ * that began the word, and after an underscore none of them do.
+ *
+ * What it is really guarding against is `bypass`, `compass`, `passage` - a
+ * secret name buried inside an unrelated word. So the rule is a letter or a
+ * digit before it, nothing else: `_pass` is a name, `bypass` is a word.
+ */
+const SECRET_KEY = `(?:(?<![A-Za-z0-9])${LATIN_SECRET_NAME}|${OTHER_SECRET_NAME})`;
 
 /**
  * Where the name is *not* a key, and so what follows it cannot be its value.
@@ -184,9 +196,39 @@ const PLACEHOLDERS = [
   // Words that turn up next to a secret-sounding name without being one.
   'required', 'optional', 'nullable', 'confirmed', 'string', 'integer',
   'boolean', 'number', 'email', 'username', 'address', 'hidden', 'submit',
+  // The three values `fetch(..., { credentials: ... })` takes, which is not a
+  // credential at all and appears in every hand-written bit of front end.
+  'same-origin', 'omit', 'include',
 ];
 
-function looksLikeASecret(value: string): boolean {
+/**
+ * The name this value was found under: the last identifier before the `=`.
+ */
+function nameIn(prefix: string): string {
+  const match = prefix.match(/([A-Za-z0-9_-]+)['"\]]*\s*(?:=>|=|:)\s*$/);
+  return match ? match[1] : '';
+}
+
+const plain = (text: string) => text.toLowerCase().replace(/[_\- ]/g, '');
+
+/**
+ * A value that says what it is, rather than being it.
+ *
+ * `'token' => 'appendTokenMetric'`, `'X-Amz-Security-Token' => '[TOKEN]'`:
+ * lookup tables and placeholder maps, where the value repeats the key back.
+ * Only when there is not a digit or a symbol in it, so a real, weak
+ * `'password' => 'my_password_2024'` is still caught.
+ */
+function echoesItsName(prefix: string, value: string): boolean {
+  if (/[0-9!-\/:-@{-~]/.test(value.replace(/[\[\]-]/g, ''))) {
+    return false;
+  }
+
+  const name = plain(nameIn(prefix));
+  return name.length > 2 && plain(value).indexOf(name) !== -1;
+}
+
+function looksLikeASecret(value: string, prefix = ''): boolean {
   const trimmed = value.trim();
 
   // Too short to be worth protecting, and short strings are where the false
@@ -196,6 +238,28 @@ function looksLikeASecret(value: string): boolean {
   }
 
   if (PLACEHOLDERS.indexOf(trimmed.toLowerCase()) !== -1) {
+    return false;
+  }
+
+  /**
+   * Code, not a credential.
+   *
+   * `'x-api-key: ' . $config['key']` is one string, a concatenation and
+   * another string - but the closing quote of the first reads exactly like
+   * the opening quote of a value, and what gets "redacted" is the code in
+   * between. Eating code is the worst thing this module can do, because the
+   * marker looks precisely like a redaction somebody meant.
+   */
+  if (/^[.,;+)\]]/.test(trimmed) || /\$[A-Za-z_]|::|->|\[|\(/.test(trimmed)) {
+    return false;
+  }
+
+  // `[TOKEN]`, `<your key here>`: a hole somebody else already left.
+  if (/^\[[^\]]*\]$/.test(trimmed)) {
+    return false;
+  }
+
+  if (echoesItsName(prefix, trimmed)) {
     return false;
   }
 
@@ -403,7 +467,7 @@ export function redact(text: string, option: RedactOption = {}): Redacted {
 
   if (option.assignments !== false) {
     const replace = (whole: string, prefix: string, quote: string, value: string) => {
-      if (!looksLikeASecret(value)) {
+      if (!looksLikeASecret(value, prefix)) {
         return whole;
       }
 
@@ -418,7 +482,7 @@ export function redact(text: string, option: RedactOption = {}): Redacted {
     result = result.replace(
       BARE_ASSIGNMENT,
       (whole: string, prefix: string, value: string) => {
-        if (!looksLikeASecret(value) || !isBareLiteral(value)) {
+        if (!looksLikeASecret(value, prefix) || !isBareLiteral(value)) {
           return whole;
         }
 

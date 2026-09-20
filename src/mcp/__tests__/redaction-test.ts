@@ -443,3 +443,75 @@ describe('what the originals are allowed to reach', () => {
     expect(JSON.stringify({ found: scrubbed.found })).not.toContain('Xk7mQ2vL9pR');
   });
 });
+
+describe('a name is not only a name when it starts a word', () => {
+  // Reported from a real read: a config file came back with its credentials
+  // in it. The rule wanted a word boundary before the name, and `_` is a word
+  // character - so `DB_PASSWORD`, `smtp_password` and `api_secret`, which is
+  // how nearly every configuration file spells them, went straight past it.
+  const SECRET = 'Xk7mQ2vL9pR';
+
+  const caught = [
+    ['an array key after an underscore', `$_CONFIG['DB_PASSWORD']="${SECRET}";`],
+    ['a lower-case one', `$conf['smtp_password'] = '${SECRET}';`],
+    ['a property', `$config->db_pass = '${SECRET}';`],
+    ['a secret after an underscore', `'api_secret' => '${SECRET}',`],
+    ['an abbreviation', `$_CONFIG['MAIL']['smtp_pw']="${SECRET}";`],
+    ['the spelling this was reported for', `$_CONFIG['MYSQL']['passw']="${SECRET}";`],
+    ['a bare one', `DB_PASSWORD = '${SECRET}'`],
+    ['one inside a putenv string', `putenv("MAIL_PASSWORD=${SECRET}");`],
+    ['a JSON key', `"smtp_pass": "${SECRET}abc"`],
+  ];
+
+  caught.forEach(([what, code]) =>
+    it(`catches ${what}`, () => {
+      const result = redact(code);
+      expect(result.text).not.toContain(SECRET);
+      expect(result.found).toContain('assigned-secret');
+    })
+  );
+
+  const spared = [
+    ['a word that ends in one', `$bypass = '${SECRET}';`],
+    ['another', `$compass = '${SECRET}';`],
+  ];
+
+  spared.forEach(([what, code]) =>
+    it(`leaves ${what} alone`, () => expect(redact(code).text).toBe(code))
+  );
+});
+
+describe('the worst thing this can do is eat code', () => {
+  // All of these came back redacted from a scan of real projects, and every
+  // one of them is a line of code. A marker where code was looks exactly like
+  // a redaction somebody meant, which is what makes it worse than a miss.
+  const untouched = [
+    [
+      'a header built by concatenation',
+      `'headers'=>array('x-goog-api-key: '.$key,'Content-Type: application/json'),`,
+    ],
+    [
+      'a query string built by concatenation',
+      `return self::curl('http://api.example.com/scrape?access_key='.$_CONFIG['key'].'&url='.$url);`,
+    ],
+    [
+      'a URL assembled from parts',
+      `$url = urlencode('otpauth://totp/'.$name.'?secret='.$secret.'');`,
+    ],
+    ['an option that is not a credential', `fetch(url, { credentials: 'same-origin' })`],
+    ['a lookup table naming its own handler', `'token' => 'appendTokenMetric',`],
+    ['another', `'credentials' => 'appendCredentialsMetric',`],
+    ['a hole somebody else already left', `'X-Amz-Security-Token' => '[TOKEN]',`],
+  ];
+
+  untouched.forEach(([what, code]) =>
+    it(`leaves ${what} exactly as it stands`, () =>
+      expect(redact(code).text).toBe(code))
+  );
+
+  it('still redacts a weak password that repeats the word', () => {
+    // The rule above only spares a value with no digit and no symbol in it.
+    const result = redact(`'password' => 'my_password_2024',`);
+    expect(result.text).not.toContain('my_password_2024');
+  });
+});

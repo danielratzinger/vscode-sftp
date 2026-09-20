@@ -108,6 +108,15 @@ now diverges from upstream's.
   server: path containment caught the obvious cases, and two servers that
   both keep their site under `/httpdocs` it could not. The cached files and
   the notes under that id were mixed up the same way.
+- Redaction read straight past the way credentials are actually spelled.
+  `DB_PASSWORD`, `smtp_password`, `api_secret`, `MAIL_PASSWORD`: the rule
+  wanted a word boundary before the name, and `_` is a word character, so a
+  name after an underscore was not a name. A file could come back with its
+  credentials in it.
+- Redaction could also eat code: `'x-api-key: ' . $config['key']` reads as a
+  quoted value if you take the closing quote for an opening one, and what
+  was replaced with a marker was the concatenation. A marker where code was
+  looks exactly like a redaction somebody meant.
 - `read` returned everything about a file except the file to any client that
   reads structured output, which is what a client does once a tool declares a
   schema. The contents are now in both halves of the reply.
