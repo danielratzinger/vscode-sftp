@@ -35,6 +35,9 @@ now diverges from upstream's.
   `credentials` file, `kubeconfig`, Rails `secrets.yml` and
   `credentials.yml.enc`, `*.tfvars`, `*.ppk` and `*.kdbx`. INI and YAML are
   outlined like the rest, so these answer with their names too.
+- `note` without a path records what a whole project is for, which `overview`
+  and `servers` then report. `overview` could only repeat what composer.json
+  said about itself, and said nothing at all about a project without one.
 - A denied file can now answer with the names in it. `.env` and a JSON
   credentials file are served as their keys with every value withheld -
   including the values that look harmless - so an agent can see that

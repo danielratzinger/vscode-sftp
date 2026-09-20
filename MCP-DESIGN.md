@@ -477,7 +477,7 @@ Names and shapes are the part users live with longest.
 | `tree` | Remote structure to a given depth, annotated with each file's purpose where known. The first call an agent should make |
 | `stat` | One path's state: same, diverged, local-only, with both timestamps |
 | `sync` | Explicit refresh of a subtree, reporting what changed |
-| `overview` | How the project is built: detected facts, plus a derived narrative when available |
+| `overview` | How the project is built: detected facts, plus what somebody recorded about it with `note` |
 | `note` | Record what a file is for. Writes the local index, never the server |
 | `forget` | Drop notes for a path or a whole connection |
 | *(later)* `write` | Gated behind write scope and per-operation confirmation |

@@ -121,6 +121,49 @@ export function put(
   };
 }
 
+/**
+ * What the project is, as opposed to what one of its files is.
+ *
+ * `overview` reads a name and a framework out of `composer.json` and friends,
+ * which is honest but thin, and on a project with neither it says nothing at
+ * all. What a server is *for* - the pipeline it runs, what talks to it, what
+ * is deployed where - is learned by reading it, and until now there was
+ * nowhere to put that. The field was in this type from the first version and
+ * nothing ever wrote it.
+ *
+ * No version to key it to, since it describes no single file, so it goes
+ * stale by age alone.
+ */
+export function putOverview(store: NoteStore, summary: string): NoteStore {
+  return {
+    ...store,
+    overview: { summary, mtime: 0, size: 0, updated: Date.now() },
+  };
+}
+
+export interface OverviewView {
+  summary: string;
+  updated: number;
+  /** True once nobody has confirmed it for `maxAge`. */
+  stale: boolean;
+}
+
+export function overviewOf(
+  store: NoteStore,
+  maxAge: number,
+  now: number = Date.now()
+): OverviewView | undefined {
+  if (!store.overview) {
+    return undefined;
+  }
+
+  return {
+    summary: store.overview.summary,
+    updated: store.overview.updated,
+    stale: now - store.overview.updated > maxAge,
+  };
+}
+
 export function forget(store: NoteStore, remotePath?: string): NoteStore {
   if (remotePath === undefined) {
     return { files: {} };

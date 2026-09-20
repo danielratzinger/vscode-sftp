@@ -458,3 +458,71 @@ describe('reading on through a search', () => {
     expect(result.text).not.toContain('Call again with offset');
   });
 });
+
+describe('what the project is', () => {
+  // The other half of the same idea, and the half that was declared in the
+  // store's type from the first version with nothing ever writing it: what a
+  // server is *for* is learned by reading it, and `overview` could only
+  // report what composer.json said about itself - nothing, on a project
+  // without one.
+  const summary = 'Scraper pipeline: search → fetch → extract → match → store.';
+
+  it('records it without a path, and reports it in overview', async () => {
+    const noted = await tool('note').run({ server: 'Staging', summary });
+
+    expect(noted.isError).toBeFalsy();
+
+    const result: any = await tool('overview').run({ server: 'Staging' });
+
+    expect(result.structured.narrative).toBe(summary);
+    expect(result.structured.stale).toBe(false);
+    expect(result.text).toContain(summary);
+  });
+
+  it('says so in the listing, which is the first call an agent makes', async () => {
+    await tool('note').run({ server: 'Staging', summary });
+
+    const result: any = await tool('servers').run({});
+
+    expect(result.structured.servers[0].summary).toBe(summary);
+    expect(result.text).toContain(summary);
+  });
+
+  it('asks for one when there is none', async () => {
+    const result: any = await tool('overview').run({ server: 'Staging' });
+
+    expect(result.structured.narrative).toBeUndefined();
+    expect(result.text).toContain('Nobody has recorded what this project is for');
+  });
+
+  it('still requires a summary', async () => {
+    const result: any = await tool('note').run({ server: 'Staging', summary: '   ' });
+
+    expect(result.isError).toBe(true);
+  });
+
+  it('is forgotten with everything else, and said so', async () => {
+    await tool('note').run({ server: 'Staging', summary });
+    await tool('note').run({
+      server: 'Staging', path: '/srv/app/index.php', summary: 'entry point',
+    });
+
+    const forgotten: any = await tool('forget').run({ server: 'Staging' });
+
+    expect(forgotten.text).toContain('and what the project is');
+    const after: any = await tool('overview').run({ server: 'Staging' });
+    expect(after.structured.narrative).toBeUndefined();
+  });
+
+  it('keeps a file description separate from the project one', async () => {
+    await tool('note').run({ server: 'Staging', summary });
+    await tool('note').run({
+      server: 'Staging', path: '/srv/app/index.php', summary: 'entry point',
+    });
+
+    await tool('forget').run({ server: 'Staging', path: '/srv/app/index.php' });
+
+    const after: any = await tool('overview').run({ server: 'Staging' });
+    expect(after.structured.narrative).toBe(summary);
+  });
+});

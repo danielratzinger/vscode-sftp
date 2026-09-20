@@ -45,8 +45,10 @@ import {
   forget as forgetNote,
   load as loadNotes,
   NoteState,
+  overviewOf,
   prune,
   put as putNote,
+  putOverview,
   save as saveNotes,
   viewOf,
 } from './notes';
@@ -396,11 +398,35 @@ export function createTools(
           remotePath: stringField,
           workspace: stringField,
           profile: stringField,
+          summary: stringField,
         }),
       },
     }),
     annotations: { readOnlyHint: true, openWorldHint: false },
     async run() {
+      const described = await Promise.all(
+        context.services().map(async service => {
+          try {
+            const held = await loadNotes(
+              context.cacheOption(service).cacheRoot,
+              stableId(service)
+            );
+            const recorded = overviewOf(held, MAX_STALE_AGE);
+            return recorded ? { id: stableId(service), summary: recorded.summary } : undefined;
+          } catch (error) {
+            // A listing that cannot read a note is still a listing.
+            return undefined;
+          }
+        })
+      );
+
+      const summaries: { [id: string]: string } = {};
+      described.forEach(one => {
+        if (one) {
+          summaries[one.id] = one.summary;
+        }
+      });
+
       const connections = exposedConnections(
         context.services(),
         context.exposure()
@@ -416,9 +442,17 @@ export function createTools(
         };
       }
 
+      // What somebody recorded about each one, which is the difference between
+      // a list of hostnames and a list of projects.
+      const listed = connections.map(connection =>
+        summaries[connection.id]
+          ? { ...connection, summary: summaries[connection.id] }
+          : connection
+      );
+
       return {
-        text: connections.map(describeConnectionLine).join('\n'),
-        structured: { servers: connections },
+        text: listed.map(describeConnectionLine).join('\n'),
+        structured: { servers: listed },
       };
     },
   };
@@ -1284,20 +1318,31 @@ export function createTools(
 
   const recordNote: ToolDefinition = {
     name: 'note',
-    title: 'Record what a file is for',
+    title: 'Record what a file or a project is for',
     description:
-      'Save a one-line description of a file you have just understood, so it ' +
-      'shows up in tree next time - for you, later, or for anyone else ' +
-      'working on this server. Writes only to this machine, never to the ' +
-      'server. Describe the purpose, not the contents.',
+      'Save a description of something you have just understood, so it shows ' +
+      'up next time - for you, later, or for anyone else working on this ' +
+      'server. With a path it describes that file and appears in `tree`; ' +
+      'without one it describes the whole project and appears in `servers` ' +
+      'and `overview`, which is where to put what a server is actually for. ' +
+      'Writes only to this machine, never to the server. Describe the ' +
+      'purpose, not the contents.',
     inputSchema: {
       type: 'object',
       properties: {
         server: { type: 'string', description: 'An id or name from `servers`.' },
-        path: { type: 'string', description: 'Absolute remote path.' },
-        summary: { type: 'string', description: 'One line. What the file is for.' },
+        path: {
+          type: 'string',
+          description:
+            'Absolute remote path. Leave it out to describe the project as a ' +
+            'whole.',
+        },
+        summary: {
+          type: 'string',
+          description: 'What it is for. One line for a file; a few for a project.',
+        },
       },
-      required: ['server', 'path', 'summary'],
+      required: ['server', 'summary'],
     },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     async run(args: any) {
@@ -1305,8 +1350,27 @@ export function createTools(
       if (!service) {
         return errorResult(UNKNOWN_SERVER);
       }
-      if (typeof args.path !== 'string' || typeof args.summary !== 'string') {
-        return errorResult('A path and a summary are required.');
+      if (typeof args.summary !== 'string' || args.summary.trim() === '') {
+        return errorResult('A summary is required.');
+      }
+
+      if (args.path === undefined || args.path === '') {
+        const root = context.cacheOption(service).cacheRoot;
+        const key = stableId(service);
+        const held = await loadNotes(root, key);
+
+        await saveNotes(root, key, putOverview(held, args.summary.trim()));
+
+        return {
+          text:
+            `Noted what ${service.getConfig().name || service.name} is: ` +
+            `${args.summary.trim()}\n` +
+            '`servers` and `overview` will say so from now on.',
+        };
+      }
+
+      if (typeof args.path !== 'string') {
+        return errorResult('A path must be a string, or left out entirely.');
       }
 
       const target = within(service, args.path);
@@ -1381,8 +1445,14 @@ export function createTools(
       }
 
       const count = Object.keys(store.files).length;
+      const hadOverview = Boolean(store.overview);
       await saveNotes(cacheRoot, id, forgetNote(store));
-      return { text: `Forgot ${count} description${count === 1 ? '' : 's'}.` };
+
+      return {
+        text:
+          `Forgot ${count} file description${count === 1 ? '' : 's'}` +
+          `${hadOverview ? ', and what the project is' : ''}.`,
+      };
     },
   };
 
@@ -1406,7 +1476,10 @@ export function createTools(
       // Whatever the project files said about themselves: a framework, a name,
       // a description. The keys are not fixed, because the facts are not.
       facts: { type: 'object', additionalProperties: { type: 'string' } },
+      /** What somebody recorded with `note`, which the facts cannot tell you. */
       narrative: stringField,
+      recorded: numberField,
+      stale: booleanField,
     }),
     annotations: { readOnlyHint: true, openWorldHint: true },
     async run(args: any) {
@@ -1431,9 +1504,21 @@ export function createTools(
       }
 
       const facts = factsFrom(contents);
+      const held = await loadNotes(context.cacheOption(service).cacheRoot, stableId(service));
+      const recorded = overviewOf(held, MAX_STALE_AGE);
       const lines = [
         `${config.name || config.host} \u2014 ${config.protocol}://${config.host}${root}`,
       ];
+
+      if (recorded) {
+        lines.push(
+          '',
+          recorded.summary +
+            (recorded.stale
+              ? `\n(recorded ${describeVersionAge(recorded.updated)} and not confirmed since)`
+              : '')
+        );
+      }
 
       if (Object.keys(facts).length === 0) {
         lines.push('', 'Nothing identifying found at the remote root.');
@@ -1442,9 +1527,24 @@ export function createTools(
         Object.keys(facts).forEach(label => lines.push(`${label}: ${facts[label]}`));
       }
 
+      if (!recorded) {
+        lines.push(
+          '',
+          'Nobody has recorded what this project is for. Once you know, ' +
+            '`note` without a path is where it goes.'
+        );
+      }
+
       return {
         text: lines.join('\n'),
-        structured: { server: args.server, root, facts },
+        structured: {
+          server: args.server,
+          root,
+          facts,
+          narrative: recorded ? recorded.summary : undefined,
+          recorded: recorded ? recorded.updated : undefined,
+          stale: recorded ? recorded.stale : undefined,
+        },
       };
     },
   };
@@ -1906,7 +2006,9 @@ export function createTools(
   ];
 }
 
-function describeConnectionLine(connection: ExposedConnection): string {
+function describeConnectionLine(
+  connection: ExposedConnection & { summary?: string }
+): string {
   const who = connection.username ? `${connection.username}@` : '';
   const profile = connection.profile ? ` [profile: ${connection.profile}]` : '';
 
@@ -1914,7 +2016,8 @@ function describeConnectionLine(connection: ExposedConnection): string {
     `${connection.id}  ${connection.name}${profile}\n` +
     `    ${connection.protocol}://${who}${connection.host}:${connection.port}` +
     `${connection.remotePath}\n` +
-    `    project: ${connection.workspace}`
+    `    project: ${connection.workspace}` +
+    (connection.summary ? `\n    ${connection.summary}` : '')
   );
 }
 

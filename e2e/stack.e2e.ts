@@ -247,6 +247,28 @@ describe('the whole stack against a real server', () => {
     );
   });
 
+  it('records what the project is, and says so where it matters', async () => {
+    const summary = 'The shop: a PHP front controller with a small app folder.';
+
+    expect((await tool('note', { server: 'Fixture', summary })).isError).toBeFalsy();
+
+    const overview = await tool('overview', { server: 'Fixture' });
+    expect(overview.structuredContent.narrative).toBe(summary);
+
+    // The listing is the first call an agent makes, so it is where knowing
+    // what a server is for is worth most.
+    const listed = await tool('servers', {});
+    const fixture = listed.structuredContent.servers.find(
+      (one: any) => one.name === 'Fixture'
+    );
+    expect(fixture.summary).toBe(summary);
+
+    await tool('forget', { server: 'Fixture' });
+    expect(
+      (await tool('overview', { server: 'Fixture' })).structuredContent.narrative
+    ).toBeUndefined();
+  });
+
   it('serves the names in a denied file and none of its values', async () => {
     const result = await tool('read', { server: 'Fixture', path: '/.env' });
 
@@ -415,6 +437,9 @@ describe('what every tool promises', () => {
         expect(structured.files.map((f: any) => f.path)).toContain('/app/boot.php'),
     },
     note: { args: { server: 'Fixture', path: '/index.php', summary: 'the front controller' } },
+    // `note` without a path describes the project; `overview` and `servers`
+    // are where it shows up.
+
     overview: {
       args: { server: 'Fixture' },
       substance: structured => expect(structured.root).toBe('/'),
