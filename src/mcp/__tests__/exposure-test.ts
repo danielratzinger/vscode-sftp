@@ -4,6 +4,7 @@ import {
   isExposed,
   ServiceLike,
 } from '../exposure';
+import { stableId } from '../identity';
 
 function service(id: number, config: any): ServiceLike {
   return {
@@ -54,7 +55,7 @@ describe('exposedConnections', () => {
     const [staging] = exposedConnections(services, DEFAULT_ON);
 
     expect(staging).toMatchObject({
-      id: '1',
+      id: stableId(services[0]),
       name: 'Staging',
       protocol: 'sftp',
       host: 'staging.example.com',
@@ -95,7 +96,7 @@ describe('exposedConnections', () => {
     };
 
     const exposed = exposedConnections([...services, broken], DEFAULT_ON);
-    expect(exposed.map(c => c.id)).toEqual(['1']);
+    expect(exposed.map(c => c.id)).toEqual([stableId(services[0])]);
   });
 });
 
@@ -107,17 +108,73 @@ describe('findExposed', () => {
   ];
 
   it('resolves an exposed id', () => {
-    expect(findExposed(services, DEFAULT_ON, '1')!.id).toBe(1);
+    expect(findExposed(services, DEFAULT_ON, stableId(services[0]))!.id).toBe(1);
   });
 
   it('treats a hidden connection as absent, not forbidden', () => {
     // Indistinguishable from an id that never existed, on purpose.
-    expect(findExposed(services, DEFAULT_ON, '2')).toBeUndefined();
+    expect(findExposed(services, DEFAULT_ON, stableId(services[1]))).toBeUndefined();
     expect(findExposed(services, DEFAULT_ON, '404')).toBeUndefined();
   });
 
   it('stops resolving an id once the setting withdraws it', () => {
-    expect(findExposed(services, DEFAULT_ON, '1')).toBeDefined();
-    expect(findExposed(services, DEFAULT_OFF, '1')).toBeUndefined();
+    const id = stableId(services[0]);
+    expect(findExposed(services, DEFAULT_ON, id)).toBeDefined();
+    expect(findExposed(services, DEFAULT_OFF, id)).toBeUndefined();
+  });
+
+  it('no longer answers to the editor\u2019s own connection number', () => {
+    // Which is the whole point: the number means a different server after a
+    // reload, and an agent holding one would read somewhere it never meant to.
+    expect(findExposed(services, DEFAULT_ON, '1')).toBeUndefined();
+  });
+});
+
+describe('addressing a connection by name', () => {
+  const site = (id: number, name: string, workspace: string) =>
+    service(id, { name, protocol: 'sftp', host: `${name}.example.com`,
+                  port: 22, remotePath: '/srv', workspace });
+
+  it('takes the name an agent read in the listing', () => {
+    const services = [site(1, 'staging', '/work/a'), site(2, 'live', '/work/b')];
+
+    expect(findExposed(services, DEFAULT_ON, 'staging')).toBe(services[0]);
+    expect(findExposed(services, DEFAULT_ON, 'live')).toBe(services[1]);
+  });
+
+  it('refuses a name that two connections share', () => {
+    // Two checkouts of one project, both called the same thing. Guessing
+    // between them is how an agent reads the wrong server.
+    const twice = [
+      site(1, 'cashtrack', '/work/one'),
+      site(2, 'cashtrack', '/work/two'),
+    ];
+
+    expect(findExposed(twice, DEFAULT_ON, 'cashtrack')).toBeUndefined();
+    // Their ids still differ, and each still resolves.
+    expect(stableId(twice[0])).not.toBe(stableId(twice[1]));
+    expect(findExposed(twice, DEFAULT_ON, stableId(twice[1]))).toBe(twice[1]);
+  });
+});
+
+describe('the id a connection keeps', () => {
+  const config = {
+    name: 'events', protocol: 'sftp', host: 'univers.example.com',
+    port: 2121, remotePath: '/httpdocs/stage', workspace: '/work/events',
+  };
+
+  it('survives the editor renumbering everything', () => {
+    // What happens on every reload: the same connection, a different number.
+    expect(stableId(service(11, config))).toBe(stableId(service(104, config)));
+  });
+
+  it('changes when the connection points somewhere else', () => {
+    const elsewhere = { ...config, remotePath: '/httpdocs/live' };
+    const otherHost = { ...config, host: 'other.example.com' };
+    const otherProject = { ...config, workspace: '/work/other' };
+
+    [elsewhere, otherHost, otherProject].forEach(changed =>
+      expect(stableId(service(1, changed))).not.toBe(stableId(service(1, config)))
+    );
   });
 });

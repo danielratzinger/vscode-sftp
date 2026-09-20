@@ -2,7 +2,7 @@ jest.mock('fs');
 
 import { vol } from 'memfs';
 import { createTools, ToolContext } from '../tools';
-import { ServiceLike } from '../exposure';
+import { ServiceLike, UNKNOWN_SERVER } from '../exposure';
 import { FileType } from '../../core/fs';
 import { DEFAULT_WALK, searchPaths, searchText, walk } from '../search';
 
@@ -219,7 +219,7 @@ describe('searchPaths', () => {
 describe('search', () => {
   it('finds text and says what it cost', async () => {
     const result = await tool(createContext(), 'search').run({
-      server: '1',
+      server: 'Staging',
       query: 'session_start',
     });
 
@@ -230,7 +230,7 @@ describe('search', () => {
 
   it('reports path matches alongside content matches', async () => {
     const result = await tool(createContext(), 'search').run({
-      server: '1',
+      server: 'Staging',
       query: 'Session',
     });
 
@@ -239,7 +239,7 @@ describe('search', () => {
 
   it('never searches a credential file', async () => {
     const result = await tool(createContext(), 'search').run({
-      server: '1',
+      server: 'Staging',
       query: 'DB_PASSWORD',
     });
 
@@ -250,7 +250,7 @@ describe('search', () => {
 
   it('scopes to a directory', async () => {
     const result = await tool(createContext(), 'search').run({
-      server: '1',
+      server: 'Staging',
       query: 'class',
       dir: '/srv/app/src',
     });
@@ -260,10 +260,10 @@ describe('search', () => {
   });
 
   it('requires a query, and an exposed server', async () => {
-    expect((await tool(createContext(), 'search').run({ server: '1' })).isError).toBe(true);
+    expect((await tool(createContext(), 'search').run({ server: 'Staging' })).isError).toBe(true);
     expect(
       (await tool(createContext(), 'search').run({ server: '9', query: 'x' })).text
-    ).toBe('Unknown server.');
+    ).toBe(UNKNOWN_SERVER);
   });
 });
 
@@ -316,7 +316,7 @@ describe('a walk that runs out of time', () => {
 describe('how deep the tree goes', () => {
   it('lists only the given directory at depth 1', async () => {
     const result: any = await tool(createContext(), 'tree').run({
-      server: '1',
+      server: 'Staging',
       depth: 1,
     });
 
@@ -330,7 +330,7 @@ describe('how deep the tree goes', () => {
   });
 
   it('reaches into subdirectories by default', async () => {
-    const result: any = await tool(createContext(), 'tree').run({ server: '1' });
+    const result: any = await tool(createContext(), 'tree').run({ server: 'Staging' });
 
     expect(result.structured.files.map((f: any) => f.path)).toContain(
       '/srv/app/src/Session.php'
@@ -347,7 +347,7 @@ describe('how deep the tree goes', () => {
         excludeExtensions: [],
       }),
     } as any);
-    const result: any = await tool(context, 'tree').run({ server: '1' });
+    const result: any = await tool(context, 'tree').run({ server: 'Staging' });
 
     expect(result.structured.stoppedBy).toEqual(['files']);
     expect(result.text).toContain('narrow it with dir');

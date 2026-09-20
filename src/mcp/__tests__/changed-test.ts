@@ -84,7 +84,7 @@ beforeEach(() => {
 
 describe('what changed', () => {
   it('answers with the files a deploy touched, newest first', async () => {
-    const result: any = await tree().run({ server: '1', since: '7d' });
+    const result: any = await tree().run({ server: 'Staging', since: '7d' });
 
     expect(result.structured.files.map((f: any) => f.path)).toEqual([
       '/srv/app/hotfix.php',
@@ -96,14 +96,14 @@ describe('what changed', () => {
   });
 
   it('says plainly when nothing changed', async () => {
-    const result: any = await tree().run({ server: '1', since: '1h' });
+    const result: any = await tree().run({ server: 'Staging', since: '1h' });
 
     expect(result.text).toContain('Nothing under /srv/app has changed');
     expect(result.structured.files).toEqual([]);
   });
 
   it('still lists everything when no window is given', async () => {
-    const result: any = await tree().run({ server: '1' });
+    const result: any = await tree().run({ server: 'Staging' });
 
     expect(result.structured.files).toHaveLength(3);
     // Listing order, untouched: only a window or an explicit sort reorders.
@@ -111,7 +111,7 @@ describe('what changed', () => {
   });
 
   it('sorts by time without filtering when asked', async () => {
-    const result: any = await tree().run({ server: '1', sort: 'modified' });
+    const result: any = await tree().run({ server: 'Staging', sort: 'modified' });
 
     expect(result.structured.files.map((f: any) => f.path)).toEqual([
       '/srv/app/hotfix.php',
@@ -121,7 +121,7 @@ describe('what changed', () => {
   });
 
   it('ignores a window it cannot read, rather than refusing', async () => {
-    const result: any = await tree().run({ server: '1', since: 'recently' });
+    const result: any = await tree().run({ server: 'Staging', since: 'recently' });
 
     expect(result.structured.files).toHaveLength(3);
   });

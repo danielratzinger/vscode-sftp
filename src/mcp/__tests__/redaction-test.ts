@@ -433,7 +433,7 @@ describe('what the originals are allowed to reach', () => {
 
     const stat = await createTools(context)
       .find((tool: any) => tool.name === 'stat')
-      .run({ server: '1', path: '/srv/app/config.php' });
+      .run({ server: 'Staging', path: '/srv/app/config.php' });
 
     expect(JSON.stringify(stat)).not.toContain('Xk7mQ2vL9pR');
 

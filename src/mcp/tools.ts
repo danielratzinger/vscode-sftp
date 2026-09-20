@@ -85,6 +85,7 @@ import {
   findExposed,
   UNKNOWN_SERVER,
 } from './exposure';
+import { stableId } from './identity';
 
 /**
  * Everything the tools need from the extension, injected so the tool layer can
@@ -274,7 +275,7 @@ async function noteFor(
 ) {
   const store = await loadNotes(
     context.cacheOption(service).cacheRoot,
-    String(service.id)
+    stableId(service)
   );
 
   return viewOf(store, remotePath, current);
@@ -323,7 +324,7 @@ export function createTools(
     offset: number,
     budget: Budget
   ) {
-    const key = keyFor(String(service.id), root, option);
+    const key = keyFor(stableId(service), root, option);
 
     if (offset > 0) {
       const cached = recall(key);
@@ -375,8 +376,11 @@ export function createTools(
     title: 'List servers',
     description:
       'The servers available to read from, with what each one is where known. ' +
-      'Call this first: every other tool takes one of these ids. Only servers ' +
-      'open in the editor and marked as exposed appear here.',
+      'Call this first: every other tool takes one of these ids, or the name ' +
+      'beside it when no other connection shares that name. An id stays the ' +
+      'same for as long as the connection points at the same place, so one ' +
+      'from an earlier session is still good. Only servers open in the editor ' +
+      'and marked as exposed appear here.',
     inputSchema: { type: 'object', properties: {} },
     annotations: { readOnlyHint: true, openWorldHint: false },
     async run() {
@@ -411,7 +415,7 @@ export function createTools(
     inputSchema: {
       type: 'object',
       properties: {
-        server: { type: 'string', description: 'An id from `servers`.' },
+        server: { type: 'string', description: 'An id or name from `servers`.' },
         path: {
           type: 'string',
           description:
@@ -516,7 +520,7 @@ export function createTools(
     inputSchema: {
       type: 'object',
       properties: {
-        server: { type: 'string', description: 'An id from `servers`.' },
+        server: { type: 'string', description: 'An id or name from `servers`.' },
         path: { type: 'string', description: 'Absolute remote path.' },
       },
       required: ['server', 'path'],
@@ -594,7 +598,7 @@ export function createTools(
     inputSchema: {
       type: 'object',
       properties: {
-        server: { type: 'string', description: 'An id from `servers`.' },
+        server: { type: 'string', description: 'An id or name from `servers`.' },
         path: { type: 'string', description: 'Absolute remote path.' },
         start_line: { type: 'integer', description: 'First line, 1-based.' },
         end_line: { type: 'integer', description: 'Last line, inclusive.' },
@@ -662,7 +666,7 @@ export function createTools(
       const toLocal = context.localPathFor || localPathFor;
       const result = await materialise(
         {
-          connectionId: String(service.id),
+          connectionId: stableId(service),
           remotePath: target,
           localPath: toLocal(service, target),
           remote: { size: remoteStat.size, mtime: remoteStat.mtime },
@@ -738,7 +742,7 @@ export function createTools(
     inputSchema: {
       type: 'object',
       properties: {
-        server: { type: 'string', description: 'An id from `servers`.' },
+        server: { type: 'string', description: 'An id or name from `servers`.' },
         path: { type: 'string', description: 'Absolute remote path.' },
         start_line: { type: 'integer', description: 'First line, 1-based.' },
         end_line: { type: 'integer', description: 'Last line, inclusive.' },
@@ -804,7 +808,7 @@ export function createTools(
     inputSchema: {
       type: 'object',
       properties: {
-        server: { type: 'string', description: 'An id from `servers`.' },
+        server: { type: 'string', description: 'An id or name from `servers`.' },
         query: { type: 'string', description: 'Text to find, or a pattern with regex: true.' },
         dir: {
           type: 'string',
@@ -918,7 +922,7 @@ export function createTools(
 
         const result = await materialise(
           {
-            connectionId: String(service.id),
+            connectionId: stableId(service),
             remotePath: file.path,
             localPath: (context.localPathFor || localPathFor)(service, file.path),
             remote: { size: file.size, mtime: file.mtime },
@@ -1020,7 +1024,7 @@ export function createTools(
     inputSchema: {
       type: 'object',
       properties: {
-        server: { type: 'string', description: 'An id from `servers`.' },
+        server: { type: 'string', description: 'An id or name from `servers`.' },
         dir: { type: 'string', description: 'Where to start. Defaults to the remote root.' },
         depth: {
           type: 'integer',
@@ -1099,7 +1103,7 @@ export function createTools(
       );
 
       const cacheRoot = context.cacheOption(service).cacheRoot;
-      const notes = await loadNotes(cacheRoot, String(service.id));
+      const notes = await loadNotes(cacheRoot, stableId(service));
 
       // What changed is a different question from what exists, and the walk
       // already carries the times that answer it.
@@ -1145,7 +1149,7 @@ export function createTools(
       if (survivors.removed.length > 0 && !found.truncated) {
         // Only when the walk was complete: a truncated one would look like
         // half the server had been deleted.
-        await saveNotes(cacheRoot, String(service.id), survivors.store);
+        await saveNotes(cacheRoot, stableId(service), survivors.store);
       }
 
       if (!found.truncated) {
@@ -1155,7 +1159,7 @@ export function createTools(
         // and never the wrong answer.
         await pruneCache(
           context.cacheOption(service),
-          String(service.id),
+          stableId(service),
           cached =>
             present[cached] === true || resolveWithin(root, cached) === undefined
         ).catch(() => []);
@@ -1224,7 +1228,7 @@ export function createTools(
     inputSchema: {
       type: 'object',
       properties: {
-        server: { type: 'string', description: 'An id from `servers`.' },
+        server: { type: 'string', description: 'An id or name from `servers`.' },
         path: { type: 'string', description: 'Absolute remote path.' },
         summary: { type: 'string', description: 'One line. What the file is for.' },
       },
@@ -1256,7 +1260,7 @@ export function createTools(
       const remoteStat = looked.stat;
 
       const cacheRoot = context.cacheOption(service).cacheRoot;
-      const id = String(service.id);
+      const id = stableId(service);
       const store = await loadNotes(cacheRoot, id);
 
       // Keyed by the version described, so the note goes stale by itself when
@@ -1283,7 +1287,7 @@ export function createTools(
     inputSchema: {
       type: 'object',
       properties: {
-        server: { type: 'string', description: 'An id from `servers`.' },
+        server: { type: 'string', description: 'An id or name from `servers`.' },
         path: { type: 'string', description: 'One path. Leave it out to clear the lot.' },
       },
       required: ['server'],
@@ -1296,7 +1300,7 @@ export function createTools(
       }
 
       const cacheRoot = context.cacheOption(service).cacheRoot;
-      const id = String(service.id);
+      const id = stableId(service);
       const store = await loadNotes(cacheRoot, id);
 
       if (typeof args.path === 'string' && args.path !== '') {
@@ -1327,7 +1331,7 @@ export function createTools(
     inputSchema: {
       type: 'object',
       properties: {
-        server: { type: 'string', description: 'An id from `servers`.' },
+        server: { type: 'string', description: 'An id or name from `servers`.' },
       },
       required: ['server'],
     },
@@ -1466,7 +1470,7 @@ export function createTools(
     inputSchema: {
       type: 'object',
       properties: {
-        server: { type: 'string', description: 'An id from `servers`.' },
+        server: { type: 'string', description: 'An id or name from `servers`.' },
         path: { type: 'string', description: 'Absolute remote path.' },
         version: {
           type: 'string',
@@ -1691,7 +1695,7 @@ export function createTools(
     inputSchema: {
       type: 'object',
       properties: {
-        server: { type: 'string', description: 'An id from `servers`.' },
+        server: { type: 'string', description: 'An id or name from `servers`.' },
         path: { type: 'string', description: 'Absolute remote path.' },
         left: {
           type: 'string',

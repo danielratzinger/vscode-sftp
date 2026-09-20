@@ -2,7 +2,7 @@ jest.mock('fs');
 
 import { vol } from 'memfs';
 import { createTools, ToolContext } from '../tools';
-import { ServiceLike } from '../exposure';
+import { ServiceLike, UNKNOWN_SERVER } from '../exposure';
 import { FileType } from '../../core/fs';
 
 const STAGING_TEXT = ['<?php', `define('MODE', 'staging');`, 'run();'].join('\n');
@@ -67,10 +67,10 @@ describe('comparing one connection with another', () => {
     // Two servers hosting one project mount it in different places, so "the
     // same file" is the same path below the root, not the same absolute path.
     const result: any = await diffTool().run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/config.php',
       left: 'remote',
-      right: 'server:2',
+      right: 'server:Production',
     });
 
     expect(result.isError).toBeUndefined();
@@ -83,9 +83,9 @@ describe('comparing one connection with another', () => {
 
   it('works in either direction', async () => {
     const result: any = await diffTool().run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/config.php',
-      left: 'server:2',
+      left: 'server:Production',
       right: 'remote',
     });
 
@@ -96,10 +96,10 @@ describe('comparing one connection with another', () => {
 
   it('says so when the other server does not have it', async () => {
     const result: any = await diffTool().run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/missing.php',
       left: 'remote',
-      right: 'server:2',
+      right: 'server:Production',
     });
 
     expect(result.isError).toBe(true);
@@ -107,34 +107,34 @@ describe('comparing one connection with another', () => {
 
   it('refuses a connection that is not exposed, as if it were not there', async () => {
     const result: any = await diffTool().run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/config.php',
       left: 'remote',
-      right: 'server:3',
+      right: 'server:Secret',
     });
 
     expect(result.isError).toBe(true);
-    expect(result.text).toBe('Unknown server.');
+    expect(result.text).toBe(UNKNOWN_SERVER);
   });
 
   it('refuses a connection that does not exist, in the same words', async () => {
     const result: any = await diffTool().run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/config.php',
       right: 'server:99',
     });
 
-    expect(result.text).toBe('Unknown server.');
+    expect(result.text).toBe(UNKNOWN_SERVER);
   });
 
   it('will not serve a denied file through the other side', async () => {
     // The boundary is checked again on the far side; a path inside one
     // connection has no standing in another.
     const result: any = await diffTool().run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/.env',
       left: 'remote',
-      right: 'server:2',
+      right: 'server:Production',
     });
 
     expect(result.isError).toBe(true);
@@ -142,9 +142,9 @@ describe('comparing one connection with another', () => {
 
   it('refuses a path that is the root itself', async () => {
     const result: any = await diffTool().run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app',
-      right: 'server:2',
+      right: 'server:Production',
     });
 
     expect(result.isError).toBe(true);

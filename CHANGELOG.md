@@ -71,6 +71,10 @@ now diverges from upstream's.
 
 ### Changed
 
+- A connection's MCP id is derived from where it points rather than from the
+  order the editor loaded it in, so it survives a reload - and so do the
+  cached files and notes kept under it. A name from `servers` works in place
+  of an id when only one connection answers to it.
 - Log lines name the connection they are about: `[info:staging]` rather than
   `[info]`. With more than one server configured, a timeout, a clock offset or
   a refused upgrade said nothing about whose it was.
@@ -94,6 +98,11 @@ now diverges from upstream's.
 - `getFileSystemPath` took a URI while its callers pass a path string.
 - Every FTP connection left its connect-deadline timer running after the
   connection was made.
+- An MCP connection id addressed whichever connection the editor happened to
+  number that way this session. After a reload the same id meant a different
+  server: path containment caught the obvious cases, and two servers that
+  both keep their site under `/httpdocs` it could not. The cached files and
+  the notes under that id were mixed up the same way.
 - `read` returned everything about a file except the file to any client that
   reads structured output, which is what a client does once a tool declares a
   schema. The contents are now in both halves of the reply.

@@ -2,7 +2,7 @@ jest.mock('fs');
 
 import { vol } from 'memfs';
 import { createTools, ToolContext } from '../tools';
-import { ServiceLike } from '../exposure';
+import { ServiceLike, UNKNOWN_SERVER } from '../exposure';
 import { FileType } from '../../core/fs';
 
 const REMOTE_MTIME = 2000000;
@@ -64,7 +64,7 @@ describe('read', () => {
     const context = createContext();
 
     const result = await tool(context, 'read').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/index.php',
     });
 
@@ -81,7 +81,7 @@ describe('read', () => {
     place({ '/work/site/index.php': ['my unsaved work', REMOTE_MTIME + 60000] });
 
     const result = await tool(createContext(), 'read').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/index.php',
     });
 
@@ -97,7 +97,7 @@ describe('read', () => {
     place({ '/work/site/index.php': ['my unsaved work', REMOTE_MTIME + 60000] });
 
     await tool(createContext(), 'read').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/index.php',
     });
 
@@ -108,7 +108,7 @@ describe('read', () => {
     place({});
 
     const result = await tool(createContext(), 'read').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/index.php',
       start_line: 2,
       end_line: 3,
@@ -129,7 +129,7 @@ describe('read', () => {
     });
 
     const result = await tool(context, 'read').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/src',
     });
 
@@ -150,7 +150,7 @@ describe('read', () => {
     });
 
     const result = await tool(context, 'read').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/gone.php',
     });
 
@@ -163,7 +163,7 @@ describe('read', () => {
     const context = createContext({ cacheOption: () => ({ cacheRoot: '/cache', materialize: false }) });
 
     const result = await tool(context, 'read').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/index.php',
     });
 
@@ -179,11 +179,11 @@ describe('read', () => {
     });
 
     const result = await tool(hidden, 'read').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/index.php',
     });
 
-    expect(result.text).toBe('Unknown server.');
+    expect(result.text).toBe(UNKNOWN_SERVER);
   });
 });
 
@@ -192,7 +192,7 @@ describe('local-copy', () => {
     place({ '/work/site/index.php': ['my unsaved work', REMOTE_MTIME + 60000] });
 
     const result = await tool(createContext(), 'local-copy').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/index.php',
     });
 
@@ -204,7 +204,7 @@ describe('local-copy', () => {
     place({});
 
     const result = await tool(createContext(), 'local-copy').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/index.php',
     });
 
@@ -235,7 +235,7 @@ describe('the redaction setting reaches the tools', () => {
 
   it('redacts a named assignment by default', async () => {
     const result = await tool(withContent(), 'read').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/config.php',
       start_line: 1,
     });
@@ -248,7 +248,7 @@ describe('the redaction setting reaches the tools', () => {
     const context = withContent({ redaction: () => ({ assignments: false }) });
 
     const result = await tool(context, 'read').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/config.php',
       start_line: 1,
     });
@@ -295,7 +295,7 @@ describe('what lands on disk is never redacted', () => {
     const context = serving(SECRET_FILE);
 
     const result = await tool(context, 'read').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/config.php',
       start_line: 1,
     });
@@ -311,7 +311,7 @@ describe('what lands on disk is never redacted', () => {
     const context = serving(SECRET_FILE);
 
     const result = await tool(context, 'search').run({
-      server: '1',
+      server: 'Staging',
       query: 'DB_PASSWORD',
     });
 
@@ -324,7 +324,7 @@ describe('what lands on disk is never redacted', () => {
     place({ '/work/site/config.php': [MINE, REMOTE_MTIME + 60000] });
 
     await tool(serving(SECRET_FILE), 'read').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/config.php',
       start_line: 1,
     });
@@ -351,7 +351,7 @@ describe('the connection is a boundary, not a starting point', () => {
       const context = createContext();
 
       const result = await tool(context, 'read').run({
-        server: '1',
+        server: 'Staging',
         path: candidate,
       });
 
@@ -365,7 +365,7 @@ describe('the connection is a boundary, not a starting point', () => {
   it('refuses one for every tool that takes a path', async () => {
     place({});
     const context = createContext();
-    const outside = { server: '1', path: '/etc/passwd' };
+    const outside = { server: 'Staging', path: '/etc/passwd' };
 
     const results = await Promise.all([
       tool(context, 'stat').run(outside),
@@ -373,8 +373,8 @@ describe('the connection is a boundary, not a starting point', () => {
       tool(context, 'list').run(outside),
       tool(context, 'note').run({ ...outside, summary: 'x' }),
       tool(context, 'forget').run(outside),
-      tool(context, 'search').run({ server: '1', query: 'x', dir: '/etc' }),
-      tool(context, 'tree').run({ server: '1', dir: '/etc' }),
+      tool(context, 'search').run({ server: 'Staging', query: 'x', dir: '/etc' }),
+      tool(context, 'tree').run({ server: 'Staging', dir: '/etc' }),
     ]);
 
     results.forEach(result => {
@@ -386,7 +386,7 @@ describe('the connection is a boundary, not a starting point', () => {
   it('accepts the same file however it is spelled', async () => {
     place({});
     const result = await tool(createContext(), 'stat').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app//./config.php',
     });
 
@@ -426,7 +426,7 @@ describe('what is too big or not text', () => {
     const context = serving('small on disk, huge on paper', 50 * 1024 * 1024);
 
     const result = await tool(context, 'read').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/dump.sql',
     });
 
@@ -443,7 +443,7 @@ describe('what is too big or not text', () => {
     (context as any).maxFileBytes = () => 8 * 1024 * 1024;
 
     const result = await tool(context, 'read').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/dump.sql',
       start_line: 1,
     });
@@ -456,7 +456,7 @@ describe('what is too big or not text', () => {
     const context = serving(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x1a, 0x0a]));
 
     const result = await tool(context, 'read').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/dump.sql',
       start_line: 1,
     });
@@ -472,7 +472,7 @@ describe('what is too big or not text', () => {
     const context = serving(Buffer.from([0x00, 0x01, 0x02, 0x03, 0x04, 0x05]));
 
     const result = await tool(context, 'search').run({
-      server: '1',
+      server: 'Staging',
       query: 'anything',
     });
 
@@ -515,7 +515,7 @@ describe('a search that runs out of time', () => {
     place({});
 
     const result = await tool(slowContext(60, 40), 'search').run({
-      server: '1',
+      server: 'Staging',
       query: 'needle',
     });
 
@@ -530,7 +530,7 @@ describe('a search that runs out of time', () => {
     place({});
 
     const result = await tool(slowContext(0, 5000), 'search').run({
-      server: '1',
+      server: 'Staging',
       query: 'needle',
     });
 
@@ -566,7 +566,7 @@ describe('a search that could not read anything', () => {
     });
 
     const result: any = await tool(context, 'search').run({
-      server: '1',
+      server: 'Staging',
       query: 'needle',
     });
 
@@ -604,7 +604,7 @@ describe('a search that could not read anything', () => {
     });
 
     const result: any = await tool(context, 'search').run({
-      server: '1',
+      server: 'Staging',
       query: 'needle',
     });
 

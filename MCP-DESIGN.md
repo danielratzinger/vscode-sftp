@@ -717,6 +717,13 @@ Every bound is there because something unbounded has an owner who pays for it.
   the failure mode to design against before it is possible.
 - **A hidden connection reports "unknown", not "forbidden"** — refusing by
   pretending absence avoids confirming that something is there.
+- **A connection's id outlives the window.** The editor numbers its connections
+  as it loads them, so the number that meant one server this morning means
+  another after a reload - and that number also names the folder holding that
+  connection's cached files and its notes. The id an agent is given is derived
+  from the project and the place on the network it reaches, so it means the
+  same thing tomorrow, and a name from the listing works in its place when only
+  one connection answers to it.
 - **No interactive prompt is ever raised by an MCP call.** Missing credentials,
   host key confirmation and transfer questions all fail with a message the agent
   can relay, rather than a modal in a window nobody is looking at.

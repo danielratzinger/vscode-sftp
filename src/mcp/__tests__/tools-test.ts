@@ -1,5 +1,5 @@
 import { createTools, localPathFor, ToolContext } from '../tools';
-import { ServiceLike } from '../exposure';
+import { ServiceLike, UNKNOWN_SERVER } from '../exposure';
 import { FileType } from '../../core/fs';
 
 function service(id: number, config: any): ServiceLike {
@@ -92,7 +92,7 @@ describe('servers', () => {
 describe('list', () => {
   it('lists a directory, folders first', async () => {
     const result = await tool(createContext(), 'list').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app',
     });
 
@@ -114,7 +114,7 @@ describe('list', () => {
       }),
     });
 
-    await tool(context, 'list').run({ server: '1' });
+    await tool(context, 'list').run({ server: 'Staging' });
     expect(asked).toBe('/srv/app');
   });
 
@@ -127,20 +127,20 @@ describe('list', () => {
       }),
     });
 
-    const result = await tool(context, 'list').run({ server: '1' });
+    const result = await tool(context, 'list').run({ server: 'Staging' });
     expect(result.text).toContain('is empty');
   });
 
   it('treats a hidden server as one that does not exist', async () => {
-    const result = await tool(createContext(), 'list').run({ server: '2' });
+    const result = await tool(createContext(), 'list').run({ server: 'Production' });
 
     expect(result.isError).toBe(true);
-    expect(result.text).toBe('Unknown server.');
+    expect(result.text).toBe(UNKNOWN_SERVER);
   });
 
   it('answers an unknown id identically, so absence is indistinguishable', async () => {
     const missing = await tool(createContext(), 'list').run({ server: '404' });
-    const hidden = await tool(createContext(), 'list').run({ server: '2' });
+    const hidden = await tool(createContext(), 'list').run({ server: 'Production' });
 
     expect(missing.text).toBe(hidden.text);
   });
@@ -154,7 +154,7 @@ describe('list', () => {
 describe('stat', () => {
   it('reports size, time and where a local copy would live', async () => {
     const result = await tool(createContext(), 'stat').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/index.php',
     });
 
@@ -175,7 +175,7 @@ describe('stat', () => {
     });
 
     const result = await tool(context, 'stat').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/gone.php',
     });
 
@@ -184,7 +184,7 @@ describe('stat', () => {
   });
 
   it('requires a path', async () => {
-    const result = await tool(createContext(), 'stat').run({ server: '1' });
+    const result = await tool(createContext(), 'stat').run({ server: 'Staging' });
     expect(result.isError).toBe(true);
   });
 });
@@ -217,7 +217,7 @@ describe('a directory bigger than anyone reads', () => {
     });
 
   it('shows the first thousand and says how to get the rest', async () => {
-    const result = await tool(paged(), 'list').run({ server: '1' });
+    const result = await tool(paged(), 'list').run({ server: 'Staging' });
 
     expect(result.text).toContain('(1500, showing 1-1000)');
     expect(result.text).toContain('offset: 1000');
@@ -229,9 +229,9 @@ describe('a directory bigger than anyone reads', () => {
   it('reads on from where it stopped', async () => {
     // "Narrow it with a subdirectory" is not advice anyone can take when the
     // directory has no subdirectories in it.
-    const first: any = await tool(paged(), 'list').run({ server: '1' });
+    const first: any = await tool(paged(), 'list').run({ server: 'Staging' });
     const second: any = await tool(paged(), 'list').run({
-      server: '1',
+      server: 'Staging',
       offset: first.structured.nextOffset,
     });
 
@@ -247,7 +247,7 @@ describe('a directory bigger than anyone reads', () => {
 
   it('is unbothered by an offset past the end', async () => {
     const result: any = await tool(paged(), 'list').run({
-      server: '1',
+      server: 'Staging',
       offset: 9000,
     });
 
@@ -257,7 +257,7 @@ describe('a directory bigger than anyone reads', () => {
 
   it('ignores an offset that is not a number', async () => {
     const result: any = await tool(paged(), 'list').run({
-      server: '1',
+      server: 'Staging',
       offset: 'lots',
     });
 
@@ -266,7 +266,7 @@ describe('a directory bigger than anyone reads', () => {
   });
 
   it('says nothing about truncation when there is none', async () => {
-    const result = await tool(createContext(), 'list').run({ server: '1' });
+    const result = await tool(createContext(), 'list').run({ server: 'Staging' });
 
     expect(result.text).not.toContain('more.');
     expect((result.structured as any).truncated).toBe(false);

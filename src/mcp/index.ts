@@ -16,6 +16,7 @@ import { readBackup } from '../core/overwriteBackup';
 import connectionLabel from '../core/connectionLabel';
 import { connectionKeyFor, versionsOf } from '../modules/replacedFiles';
 import { exposedConnections } from './exposure';
+import { stableId } from './identity';
 import { localiseCall, PeerRegistry, targetOf, unqualify } from './peers';
 import { postJson } from './rpcClient';
 import {
@@ -132,7 +133,7 @@ function calledOn(id: any): string | undefined {
   }
 
   const service = ((getAllFileService() as unknown) as ServiceLike[]).find(
-    one => String(one.id) === id
+    one => stableId(one) === id
   );
 
   return service ? connectionLabel(service.getConfig() as any) : undefined;

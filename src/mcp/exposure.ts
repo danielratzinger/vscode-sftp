@@ -1,3 +1,5 @@
+import { stableId } from './identity';
+
 /**
  * Which connections an MCP client may see.
  *
@@ -8,7 +10,10 @@
  */
 
 export interface ExposedConnection {
-  /** Stable within a window; qualified by the window when aggregated. */
+  /**
+   * The same across reloads, and qualified by the window when aggregated.
+   * See `identity.ts` for why it is not the editor's own connection number.
+   */
   id: string;
   /** The config's name, or the host when it has none. */
   name: string;
@@ -60,7 +65,7 @@ export function describeConnection(
   const config = service.getConfig();
 
   return {
-    id: String(service.id),
+    id: stableId(service),
     name: config.name || service.name || config.host,
     protocol: config.protocol,
     host: config.host,
@@ -102,9 +107,32 @@ export function findExposed(
   option: ExposureOption,
   id: string
 ): ServiceLike | undefined {
-  return services.find(
-    service => String(service.id) === id && isExposed(service.getConfig(), option)
-  );
+  const exposed = services.filter(service => {
+    try {
+      return isExposed(service.getConfig(), option);
+    } catch (error) {
+      return false;
+    }
+  });
+
+  const byId = exposed.find(service => stableId(service) === id);
+  if (byId) {
+    return byId;
+  }
+
+  // A name, when it can only mean one connection. Agents write down the name
+  // they read in the listing, and an ambiguous name resolves to nothing rather
+  // than to whichever connection happened to load first.
+  const named = exposed.filter(service => nameOf(service) === id);
+  return named.length === 1 ? named[0] : undefined;
 }
 
-export const UNKNOWN_SERVER = 'Unknown server.';
+function nameOf(service: ServiceLike): string {
+  const config = service.getConfig();
+  return config.name || service.name || config.host;
+}
+
+export const UNKNOWN_SERVER =
+  'Unknown server. Call `servers` for the ones this editor is offering: an ' +
+  'id from an earlier session is still valid, but a connection that has been ' +
+  'closed, hidden or pointed somewhere else is not.';

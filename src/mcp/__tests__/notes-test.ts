@@ -2,6 +2,7 @@ jest.mock('fs');
 
 import { vol } from 'memfs';
 import { createTools, ToolContext } from '../tools';
+import { stableId } from '../identity';
 import { ServiceLike } from '../exposure';
 import { FileType } from '../../core/fs';
 import { factsFrom, load, NoteState, prune, put, viewOf } from '../notes';
@@ -25,6 +26,21 @@ const STAGING: ServiceLike = {
     port: 22, remotePath: '/srv/app',
   }),
 };
+
+/** Where this connection's cache and notes live: see `identity.ts`. */
+const ID = stableId(STAGING as any);
+
+/** Another connection entirely, whose cache this one must not touch. */
+const OTHER = stableId({
+  id: 2,
+  name: 'Elsewhere',
+  workspace: '/work/elsewhere',
+  baseDir: '/work/elsewhere',
+  getConfig: () => ({
+    name: 'Elsewhere', protocol: 'sftp', host: 'elsewhere.example.com',
+    port: 22, remotePath: '/srv/app',
+  }),
+} as any);
 
 function entriesOf(dir: string) {
   const children = new Map<string, any>();
@@ -150,61 +166,61 @@ describe('factsFrom', () => {
 describe('note and tree', () => {
   it('records a description and shows it in the tree', async () => {
     await tool('note').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/src/Session.php',
       summary: 'session handling',
     });
 
-    const tree = await tool('tree').run({ server: '1' });
+    const tree = await tool('tree').run({ server: 'Staging' });
 
     expect(tree.text).toContain('/srv/app/src/Session.php — session handling');
     expect(tree.text).toContain('1 described');
   });
 
   it('nudges towards describing what is not yet described', async () => {
-    const tree = await tool('tree').run({ server: '1' });
+    const tree = await tool('tree').run({ server: 'Staging' });
     expect(tree.text).toContain('note');
   });
 
   it('flags a description whose file has changed', async () => {
     const cacheRoot = '/cache';
     await tool('note').run({
-      server: '1', path: '/srv/app/index.php', summary: 'entry point',
+      server: 'Staging', path: '/srv/app/index.php', summary: 'entry point',
     });
 
     // The file moves on without the note being refreshed.
-    const store = await load(cacheRoot, '1');
+    const store = await load(cacheRoot, ID);
     store.files['/srv/app/index.php'].mtime = MTIME - 500000;
-    vol.writeFileSync('/cache/1/notes.json', JSON.stringify(store));
+    vol.writeFileSync(`/cache/${ID}/notes.json`, JSON.stringify(store));
 
-    const tree = await tool('tree').run({ server: '1' });
+    const tree = await tool('tree').run({ server: 'Staging' });
     expect(tree.text).toContain('stale: the file has changed since');
   });
 
   it('refuses to describe a file the server does not have', async () => {
     const result = await tool('note').run({
-      server: '1', path: '/srv/app/imaginary.php', summary: 'nothing',
+      server: 'Staging', path: '/srv/app/imaginary.php', summary: 'nothing',
     });
 
     expect(result.isError).toBe(true);
   });
 
   it('forgets one description, and all of them', async () => {
-    await tool('note').run({ server: '1', path: '/srv/app/index.php', summary: 'a' });
-    await tool('note').run({ server: '1', path: '/srv/app/src/Session.php', summary: 'b' });
+    await tool('note').run({ server: 'Staging', path: '/srv/app/index.php', summary: 'a' });
+    await tool('note').run({ server: 'Staging', path: '/srv/app/src/Session.php', summary: 'b' });
 
-    await tool('forget').run({ server: '1', path: '/srv/app/index.php' });
-    expect(Object.keys((await load('/cache', '1')).files)).toEqual(['/srv/app/src/Session.php']);
+    await tool('forget').run({ server: 'Staging', path: '/srv/app/index.php' });
+    expect(Object.keys((await load('/cache', ID)).files)).toEqual(['/srv/app/src/Session.php']);
 
-    const all = await tool('forget').run({ server: '1' });
+    const all = await tool('forget').run({ server: 'Staging' });
     expect(all.text).toContain('Forgot 1');
-    expect(Object.keys((await load('/cache', '1')).files)).toEqual([]);
+    expect(Object.keys((await load('/cache', ID)).files)).toEqual([]);
   });
 });
 
 describe('overview', () => {
   it('reports what the project is, from facts alone', async () => {
-    const result = await tool('overview').run({ server: '1' });
+    const result = await tool('overview').run({ server: 'Staging' });
 
     expect(result.text).toContain('Company website for XY GmbH');
     expect(result.text).toContain('laravel');
@@ -223,7 +239,7 @@ describe('overview', () => {
 
     const result = await createTools(bare)
       .find(t => t.name === 'overview')!
-      .run({ server: '1' });
+      .run({ server: 'Staging' });
 
     expect(result.text).toContain('Nothing identifying');
   });
@@ -232,18 +248,18 @@ describe('overview', () => {
 describe('a description is checked wherever the file is', () => {
   /** Ages the stored note so the file it describes has moved on. */
   async function ageTheNote(remotePath: string) {
-    const store = await load('/cache', '1');
+    const store = await load('/cache', ID);
     store.files[remotePath].mtime = MTIME - 500000;
-    vol.writeFileSync('/cache/1/notes.json', JSON.stringify(store));
+    vol.writeFileSync(`/cache/${ID}/notes.json`, JSON.stringify(store));
   }
 
   it('repeats a current description when the file is stat-ed', async () => {
     await tool('note').run({
-      server: '1', path: '/srv/app/index.php', summary: 'entry point',
+      server: 'Staging', path: '/srv/app/index.php', summary: 'entry point',
     });
 
     const result = await tool('stat').run({
-      server: '1', path: '/srv/app/index.php',
+      server: 'Staging', path: '/srv/app/index.php',
     });
 
     expect(result.text).toContain('Noted: entry point');
@@ -254,12 +270,12 @@ describe('a description is checked wherever the file is', () => {
     // Without this, a wrong description is only ever caught by a tree walk -
     // and nothing makes an agent walk the tree.
     await tool('note').run({
-      server: '1', path: '/srv/app/index.php', summary: 'entry point',
+      server: 'Staging', path: '/srv/app/index.php', summary: 'entry point',
     });
     await ageTheNote('/srv/app/index.php');
 
     const result = await tool('stat').run({
-      server: '1', path: '/srv/app/index.php',
+      server: 'Staging', path: '/srv/app/index.php',
     });
 
     expect(result.text).toContain('entry point');
@@ -271,12 +287,12 @@ describe('a description is checked wherever the file is', () => {
   it('flags a stale description to the one caller that can fix it', async () => {
     // Reading the file is the moment the summary can actually be rewritten.
     await tool('note').run({
-      server: '1', path: '/srv/app/index.php', summary: 'entry point',
+      server: 'Staging', path: '/srv/app/index.php', summary: 'entry point',
     });
     await ageTheNote('/srv/app/index.php');
 
     const result = await tool('read').run({
-      server: '1', path: '/srv/app/index.php',
+      server: 'Staging', path: '/srv/app/index.php',
     });
 
     expect(result.text).toContain('changed since');
@@ -286,7 +302,7 @@ describe('a description is checked wherever the file is', () => {
 
   it('says nothing about files nobody has described', async () => {
     const result = await tool('stat').run({
-      server: '1', path: '/srv/app/index.php',
+      server: 'Staging', path: '/srv/app/index.php',
     });
 
     expect(result.text).not.toContain('note');
@@ -297,28 +313,28 @@ describe('a description is checked wherever the file is', () => {
 describe('the cache is swept when the tree is walked', () => {
   it('drops cached bytes for a file the server no longer has', async () => {
     vol.fromJSON({
-      '/cache/1/srv/app/index.php': 'still there',
-      '/cache/1/srv/app/deleted.php': 'gone from the server',
+      [`/cache/${ID}/srv/app/index.php`]: 'still there',
+      [`/cache/${ID}/srv/app/deleted.php`]: 'gone from the server',
     });
 
-    await tool('tree').run({ server: '1' });
+    await tool('tree').run({ server: 'Staging' });
 
     // Notes are pruned on a complete walk; the bytes get the same sweep.
-    expect(vol.existsSync('/cache/1/srv/app/deleted.php')).toBe(false);
-    expect(vol.existsSync('/cache/1/srv/app/index.php')).toBe(true);
+    expect(vol.existsSync(`/cache/${ID}/srv/app/deleted.php`)).toBe(false);
+    expect(vol.existsSync(`/cache/${ID}/srv/app/index.php`)).toBe(true);
   });
 
   it('leaves another connection’s cache alone', async () => {
-    vol.fromJSON({ '/cache/2/srv/app/whatever.php': 'not ours to sweep' });
+    vol.fromJSON({ [`/cache/${OTHER}/srv/app/whatever.php`]: 'not ours to sweep' });
 
-    await tool('tree').run({ server: '1' });
+    await tool('tree').run({ server: 'Staging' });
 
-    expect(vol.existsSync('/cache/2/srv/app/whatever.php')).toBe(true);
+    expect(vol.existsSync(`/cache/${OTHER}/srv/app/whatever.php`)).toBe(true);
   });
 
   it('does not sweep on a walk that hit its limit', async () => {
     // A truncated walk would look like most of the server had been deleted.
-    vol.fromJSON({ '/cache/1/srv/app/deleted.php': 'gone' });
+    vol.fromJSON({ [`/cache/${ID}/srv/app/deleted.php`]: 'gone' });
 
     const narrow = {
       ...context,
@@ -332,9 +348,9 @@ describe('the cache is swept when the tree is walked', () => {
 
     await createTools(narrow)
       .find(t => t.name === 'tree')!
-      .run({ server: '1' });
+      .run({ server: 'Staging' });
 
-    expect(vol.existsSync('/cache/1/srv/app/deleted.php')).toBe(true);
+    expect(vol.existsSync(`/cache/${ID}/srv/app/deleted.php`)).toBe(true);
   });
 });
 
@@ -373,7 +389,7 @@ describe('reading on through a large tree', () => {
     createTools(ctx).find(t => t.name === 'tree')!;
 
   it('shows a page and says where the rest starts', async () => {
-    const result: any = await treeOf(bigContext()).run({ server: '1' });
+    const result: any = await treeOf(bigContext()).run({ server: 'Staging' });
 
     expect(result.structured.total).toBe(1200);
     expect(result.structured.files).toHaveLength(1000);
@@ -398,10 +414,10 @@ describe('reading on through a large tree', () => {
       },
     } as any;
 
-    await treeOf(counting).run({ server: '1' });
+    await treeOf(counting).run({ server: 'Staging' });
     const walked = listings;
 
-    const second: any = await treeOf(counting).run({ server: '1', offset: 1000 });
+    const second: any = await treeOf(counting).run({ server: 'Staging', offset: 1000 });
 
     // Page two costing page one all over again is no way to offer paging.
     expect(listings).toBe(walked);
@@ -413,7 +429,7 @@ describe('reading on through a large tree', () => {
 describe('reading on through a search', () => {
   it('says where it stopped and carries on from there', async () => {
     const first: any = await tool('search').run({
-      server: '1',
+      server: 'Staging',
       query: 'boot',
       max_matches: 1,
     });
@@ -423,7 +439,7 @@ describe('reading on through a search', () => {
     expect(first.text).toContain('offset:');
 
     const second: any = await tool('search').run({
-      server: '1',
+      server: 'Staging',
       query: 'class',
       offset: first.structured.nextOffset,
     });
@@ -434,7 +450,7 @@ describe('reading on through a search', () => {
 
   it('says nothing about carrying on when it read everything', async () => {
     const result: any = await tool('search').run({
-      server: '1',
+      server: 'Staging',
       query: 'nothing matches this',
     });
 

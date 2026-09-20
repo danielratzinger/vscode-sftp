@@ -72,7 +72,7 @@ beforeEach(() => {
 describe('history', () => {
   it('lists the versions the editor still holds, newest first', async () => {
     const result: any = await tool(createContext(), 'history').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/index.php',
     });
 
@@ -86,12 +86,12 @@ describe('history', () => {
 
   it('returns one version by id, and by position', async () => {
     const byId: any = await tool(createContext(), 'history').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/index.php',
       version: 'aaaa.php',
     });
     const byIndex: any = await tool(createContext(), 'history').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/index.php',
       version: '1',
     });
@@ -103,7 +103,7 @@ describe('history', () => {
 
   it('says plainly when there is no history for a file', async () => {
     const result: any = await tool(createContext(), 'history').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/untouched.php',
     });
 
@@ -115,7 +115,7 @@ describe('history', () => {
     const off = createContext({ historyRoot: () => undefined });
 
     const result: any = await tool(off, 'history').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/index.php',
     });
 
@@ -125,7 +125,7 @@ describe('history', () => {
   it('will not serve the history of a file it would not serve', async () => {
     // A denied file's earlier versions are just as much a credential.
     const result: any = await tool(createContext(), 'history').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/.env',
     });
 
@@ -134,7 +134,7 @@ describe('history', () => {
 
   it('refuses a path outside the connection', async () => {
     const result: any = await tool(createContext(), 'history').run({
-      server: '1',
+      server: 'Staging',
       path: '/etc/passwd',
     });
 
@@ -146,7 +146,7 @@ describe('history', () => {
 describe('diff', () => {
   it('compares the server with the working copy by default', async () => {
     const result: any = await tool(createContext(), 'diff').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/index.php',
     });
 
@@ -160,7 +160,7 @@ describe('diff', () => {
 
   it('compares an earlier version with what is on disk now', async () => {
     const result: any = await tool(createContext(), 'diff').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/index.php',
       left: 'aaaa.php',
       right: 'local',
@@ -172,7 +172,7 @@ describe('diff', () => {
 
   it('says when two sides are identical', async () => {
     const result: any = await tool(createContext(), 'diff').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/index.php',
       left: 'remote',
       right: 'bbbb.php',
@@ -184,7 +184,7 @@ describe('diff', () => {
 
   it('explains which side it could not read', async () => {
     const result: any = await tool(createContext(), 'diff').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/index.php',
       left: 'nonsense.php',
     });
@@ -212,7 +212,7 @@ describe('diff', () => {
     });
 
     const result: any = await tool(context, 'diff').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/config.php',
     });
 
@@ -239,7 +239,7 @@ describe('copies kept when a download overwrote something', () => {
 
   it('lists them beside the editor’s own versions, in one order', async () => {
     const result: any = await tool(withReplaced(), 'history').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/index.php',
     });
 
@@ -256,7 +256,7 @@ describe('copies kept when a download overwrote something', () => {
 
   it('reads one back', async () => {
     const result: any = await tool(withReplaced(), 'history').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/index.php',
       version: 'replaced:1699999000000',
     });
@@ -266,7 +266,7 @@ describe('copies kept when a download overwrote something', () => {
 
   it('diffs one against the server', async () => {
     const result: any = await tool(withReplaced(), 'diff').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/index.php',
       left: 'replaced:1699999000000',
       right: 'remote',
@@ -278,7 +278,7 @@ describe('copies kept when a download overwrote something', () => {
 
   it('still works when nothing was ever replaced', async () => {
     const result: any = await tool(createContext(), 'history').run({
-      server: '1',
+      server: 'Staging',
       path: '/srv/app/index.php',
     });
 
