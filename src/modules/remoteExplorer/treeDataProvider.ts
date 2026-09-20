@@ -1,5 +1,8 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { showTextDocument } from '../../host';
+import { toLocalPath } from '../../helper';
 import {
   upath,
   UResource,
@@ -22,6 +25,32 @@ type Id = number;
 const previewDocumentPathPrefix = '/~ ';
 
 const DEFAULT_FILES_EXCLUDE = ['.git', '.svn', '.hg', 'CVS', '.DS_Store'];
+
+/** What makes the local copy of a folder a working copy of something. */
+const REPOSITORY_MARKERS = ['.git', '.svn', '.hg'];
+
+/**
+ * Whether the local copy of this remote folder is a repository.
+ *
+ * Only `Clear Local Folder` asks. Clearing a folder is for a download that
+ * has to start from nothing, and a repository is not that: it holds the
+ * history of what is deployed, most of it exists nowhere else, and no
+ * download would put it back. The command refuses to remove the repository
+ * itself in any case - this keeps it off the menu, so the question does not
+ * come up over a folder where the answer would be no.
+ *
+ * `.git` can be a file rather than a folder, in a worktree or a submodule,
+ * so this asks whether the name is there at all.
+ */
+export function localCopyIsARepository(local: string): boolean {
+  return REPOSITORY_MARKERS.some(marker => {
+    try {
+      return fs.existsSync(path.join(local, marker));
+    } catch (error) {
+      return false;
+    }
+  });
+}
 /**
  * covert the url path for a customed docuemnt title
  *
@@ -117,7 +146,7 @@ export default class RemoteTreeData
       label: customLabel,
       resourceUri: item.resource.uri,
       collapsibleState: item.isDirectory ? vscode.TreeItemCollapsibleState.Collapsed : undefined,
-      contextValue: isRoot ? 'root' : item.isDirectory ? 'folder' : 'file',
+      contextValue: this._describe(item, isRoot),
       command: item.isDirectory
         ? undefined
         : {
@@ -128,6 +157,31 @@ export default class RemoteTreeData
             title: 'View Remote Resource',
           },
     };
+  }
+
+  /**
+   * What the menus match on. `folder` and `root` as before, with `-repo` where
+   * the local copy is a working copy - so a `when` clause can name folders
+   * exactly, and the ones that are repositories are not among them.
+   */
+  private _describe(item: ExplorerItem, isRoot: boolean): string {
+    if (!isRoot && !item.isDirectory) {
+      return 'file';
+    }
+
+    const kind = isRoot ? 'root' : 'folder';
+    const root = this.findRoot(item.resource.uri);
+    if (!root) {
+      return kind;
+    }
+
+    const local = toLocalPath(
+      item.resource.fsPath,
+      root.explorerContext.config.remotePath,
+      root.explorerContext.fileService.baseDir
+    );
+
+    return localCopyIsARepository(local) ? `${kind}-repo` : kind;
   }
 
   async getChildren(item?: ExplorerItem): Promise<ExplorerItem[]> {

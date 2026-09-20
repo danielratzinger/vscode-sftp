@@ -36,8 +36,9 @@ now diverges from upstream's.
   start from nothing. `Download Scripts` writes files and never removes them,
   so a folder downloaded across a year of deploys holds files the server
   deleted months ago. Asked first, with the count and the size; moved to the
-  trash where the system supports it; never a repository, never anything the
-  connection ignores, and never anything on the server.
+  trash where the system supports it; never anything the connection ignores,
+  and never anything on the server. Not offered at all on a folder whose
+  local copy is a repository.
 
 - The denied-files list covers the credential files of other ecosystems:
   `.npmrc`, `.pypirc`, `.my.cnf`, `.s3cfg`, `.boto`, `.dockercfg`, an AWS

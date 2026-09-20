@@ -82,7 +82,7 @@ Every folder is walked by default. To leave some out, name them in `sftp.downloa
 Both settings ignore case. The connection's own `ignore` rules still apply on top.
 
 ### Clear Local Folder
-Sits under `Download Scripts` in the Remote Explorer's menu, on folders and on a connection's root — nowhere else. Deletes the contents of the *local* copy of that folder and never touches the server.
+Sits under `Download Scripts` in the Remote Explorer's menu, on folders and on a connection's root — nowhere else, and not on a folder whose local copy is a repository. Clearing a folder is for a download that has to start from nothing, and a repository is not that: it holds the history of what is deployed, most of it exists nowhere else, and no download would put it back. A folder *inside* a repository is still offered, because its files are tracked and deleting them is recoverable. Deletes the contents of the *local* copy of that folder and never touches the server.
 
 `Download Scripts` writes files and never removes them, so a folder downloaded across a year of deploys holds files the server deleted months ago — and nothing downstream can tell those apart from current ones. This is the other half of it: clear the folder, download it again, and what is on disk is what is on the server.
 
