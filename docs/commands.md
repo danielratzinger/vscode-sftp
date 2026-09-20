@@ -86,6 +86,11 @@ Sits above `Reveal in Explorer` in the Remote Explorer's menu, on anything that 
 
 It is called `Reveal in Finder` on macOS, `Reveal in File Explorer` on Windows and `Open Containing Folder` on Linux, which is how the editor names its own. A menu entry shows its command's title and a title cannot vary by platform, so there is one command per platform behind it.
 
+### Reveal in Terminal
+On folders, in both explorers: opens the machine's own terminal on that folder — the external one, not the editor's built-in. In the Remote Explorer it needs a local copy, like `Reveal in Finder`; in the file explorer the folder is already there.
+
+`openInTerminal` is the editor's command for the external terminal and `openInIntegratedTerminal` for the built-in one. They are separate commands, so `terminal.explorerKind` — which decides which of the two the *editor* offers in its own menus — does not redirect this one. Whatever is set in `terminal.external.osxExec`, `terminal.external.windowsExec` or `terminal.external.linuxExec` is the terminal that opens.
+
 ### Clear Local Folder
 Sits under `Download Scripts` in the Remote Explorer's menu, on folders and on a connection's root — nowhere else, and only where something has been downloaded — and not on anything whose local copy sits in a repository. Clearing a folder is for a download that has to start from nothing, and nothing in a working copy is that: the files are tracked, the history is beside them, and what the command would delete is not what a download would put back. The search for one walks up from the folder and stops at the workspace — a repository above the folder the editor has open is not this extension's business. Deletes the contents of the *local* copy of that folder and never touches the server.
 

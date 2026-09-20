@@ -180,3 +180,18 @@ export async function revealLocal(ctx: {
 }): Promise<void> {
   await executeCommand('revealFileInOS', ctx.target.localUri);
 }
+
+/**
+ * Opening a folder in the machine's own terminal, not the editor's.
+ *
+ * `openInTerminal` is the editor's command for the external one and
+ * `openInIntegratedTerminal` for the built-in - two ids, so this is not the
+ * setting that decides which of them the editor offers in its own menus. It
+ * honours `terminal.external.*Exec`, so whatever somebody has set as their
+ * terminal is the one that opens.
+ */
+export async function revealInTerminal(ctx: {
+  target: { localUri: Uri };
+}): Promise<void> {
+  await executeCommand('openInTerminal', ctx.target.localUri);
+}

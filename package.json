@@ -437,6 +437,11 @@
         "category": "SFTP"
       },
       {
+        "command": "sftp.revealInTerminal",
+        "title": "Reveal in Terminal",
+        "category": "SFTP"
+      },
+      {
         "command": "sftp.revealInRemoteExplorer",
         "title": "Reveal in Remote Explorer",
         "category": "SFTP"
@@ -652,6 +657,10 @@
           "when": "false"
         },
         {
+          "command": "sftp.revealInTerminal",
+          "when": "false"
+        },
+        {
           "command": "sftp.showMcpDetails",
           "when": "sftp.enabled"
         }
@@ -718,6 +727,11 @@
         {
           "command": "sftp.download.scripts",
           "group": "sftp.trans@3",
+          "when": "sftp.enabled && explorerResourceIsFolder"
+        },
+        {
+          "command": "sftp.revealInTerminal",
+          "group": "navigation@21",
           "when": "sftp.enabled && explorerResourceIsFolder"
         }
       ],
@@ -806,8 +820,13 @@
           "when": "view == remoteExplorer && isLinux && viewItem =~ /-local$/"
         },
         {
-          "command": "sftp.revealInExplorer",
+          "command": "sftp.revealInTerminal",
           "group": "2_files@3",
+          "when": "view == remoteExplorer && viewItem =~ /^(folder|root)(-repo)?-local$/"
+        },
+        {
+          "command": "sftp.revealInExplorer",
+          "group": "2_files@4",
           "when": "view == remoteExplorer && !(viewItem =~ /^root/)"
         },
         {
