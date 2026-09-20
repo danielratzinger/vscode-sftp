@@ -1771,7 +1771,14 @@ export function createTools(
       return { label, error: `The editor no longer has version ${wanted.id}.` };
     }
 
-    return { label: `version from ${describeVersionAge(wanted.timestamp)}`, text };
+    // Named as well as dated: comparing two versions of the same file the same
+    // afternoon otherwise labels both sides identically.
+    return {
+      label:
+        `version ${wanted.id} from ${describeVersionAge(wanted.timestamp)} ` +
+        `(${new Date(wanted.timestamp).toISOString().slice(0, 16).replace('T', ' ')})`,
+      text,
+    };
   }
 
   const diffTool: ToolDefinition = {

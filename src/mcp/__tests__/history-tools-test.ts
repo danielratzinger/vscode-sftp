@@ -285,3 +285,20 @@ describe('copies kept when a download overwrote something', () => {
     expect(result.structured.versions).toHaveLength(2);
   });
 });
+
+describe('comparing two earlier versions', () => {
+  it('labels each side by the version it is', async () => {
+    // Both sides are versions of one file, often from the same afternoon, so
+    // "version from 957 days ago" twice says nothing about which is which.
+    const result: any = await tool(createContext(), 'diff').run({
+      server: 'Staging',
+      path: '/srv/app/index.php',
+      left: '1',
+      right: '0',
+    });
+
+    expect(result.isError).toBeFalsy();
+    expect(result.structured.left).not.toBe(result.structured.right);
+    expect(result.structured.left).toContain('version ');
+  });
+});
