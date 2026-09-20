@@ -69,6 +69,9 @@ describe('read', () => {
     });
 
     expect(result.text).toBe(REMOTE);
+    // Both, and the same: a client that declares it can read structured
+    // output stops reading the text, and the file is the point of the call.
+    expect((result.structured as any).content).toBe(REMOTE);
     expect((result.structured as any).source).toBe('workspace');
     expect((result.structured as any).state).toBe('missing');
     expect((context as any).written).toEqual(['/work/site/index.php']);
@@ -112,6 +115,7 @@ describe('read', () => {
     });
 
     expect(result.text).toBe('2\tline two\n3\tline three');
+    expect((result.structured as any).content).toBe('2\tline two\n3\tline three');
   });
 
   it('refuses a directory and points at the right tool', async () => {

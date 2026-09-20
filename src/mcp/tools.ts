@@ -603,6 +603,10 @@ export function createTools(
     },
     outputSchema: objectSchema({
       path: stringField,
+      // The file itself. A client that reads the structured result and not the
+      // text - which is what a client does once a tool declares a schema -
+      // otherwise gets everything about the file except the file.
+      content: stringField,
       state: stringField,
       source: stringField,
       localPath: stringField,
@@ -711,6 +715,7 @@ export function createTools(
         text: notes ? `${notes}\n\n${body}` : body,
         structured: {
           path: target,
+          content: body,
           state: result.state,
           source: result.source,
           localPath: result.localPath,

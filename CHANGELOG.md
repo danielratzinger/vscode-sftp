@@ -94,6 +94,9 @@ now diverges from upstream's.
 - `getFileSystemPath` took a URI while its callers pass a path string.
 - Every FTP connection left its connect-deadline timer running after the
   connection was made.
+- `read` returned everything about a file except the file to any client that
+  reads structured output, which is what a client does once a tool declares a
+  schema. The contents are now in both halves of the reply.
 - Every SFTP file read failed with “isDate is not a function”. The shim for
   ssh2 was installed when the extension activated, and ssh2 takes its copy of
   what the shim patches while the entry module's imports are still being
