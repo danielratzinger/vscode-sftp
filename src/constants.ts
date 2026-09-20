@@ -45,6 +45,7 @@ export const COMMAND_DOWNLOAD_FILE = 'sftp.download.file';
 export const COMMAND_DOWNLOAD_ACTIVEFILE = 'sftp.download.activeFile';
 export const COMMAND_DOWNLOAD_FOLDER = 'sftp.download.folder';
 export const COMMAND_DOWNLOAD_SCRIPTS = 'sftp.download.scripts';
+export const COMMAND_CLEAR_LOCAL_FOLDER = 'sftp.clear.localFolder';
 export const COMMAND_DOWNLOAD_ACTIVEFOLDER = 'sftp.download.activeFolder';
 export const COMMAND_DOWNLOAD_PROJECT = 'sftp.download.project';
 

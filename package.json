@@ -342,6 +342,11 @@
         "category": "SFTP"
       },
       {
+        "command": "sftp.clear.localFolder",
+        "title": "Clear Local Folder",
+        "category": "SFTP"
+      },
+      {
         "command": "sftp.download.activeFolder",
         "title": "Download Active Folder",
         "category": "SFTP"
@@ -616,6 +621,10 @@
           "when": "false"
         },
         {
+          "command": "sftp.clear.localFolder",
+          "when": "false"
+        },
+        {
           "command": "sftp.showMcpDetails",
           "when": "sftp.enabled"
         }
@@ -790,6 +799,11 @@
         {
           "command": "sftp.download.scripts",
           "group": "3_trans@3",
+          "when": "sftp.enabled && viewItem != file"
+        },
+        {
+          "command": "sftp.clear.localFolder",
+          "group": "3_trans@4",
           "when": "sftp.enabled && viewItem != file"
         },
         {
