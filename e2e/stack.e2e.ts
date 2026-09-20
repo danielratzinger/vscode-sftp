@@ -376,7 +376,11 @@ describe('what every tool promises', () => {
   const CALLS: {
     [name: string]: { args: any; substance?(structured: any, text: string): void };
   } = {
-    servers: { args: {} },
+    servers: {
+      args: {},
+      substance: structured =>
+        expect(structured.servers.map((one: any) => one.name)).toContain('Fixture'),
+    },
     list: {
       args: { server: 'Fixture', path: '/' },
       substance: structured =>
@@ -395,7 +399,11 @@ describe('what every tool promises', () => {
       substance: structured =>
         expect(structured.content).toContain(`require 'app/boot.php';`),
     },
-    'local-copy': { args: { server: 'Fixture', path: '/index.php' } },
+    'local-copy': {
+      args: { server: 'Fixture', path: '/index.php' },
+      substance: structured =>
+        expect(structured.content).toContain(`require 'app/boot.php';`),
+    },
     search: {
       args: { server: 'Fixture', query: 'echo' },
       substance: structured =>
@@ -407,9 +415,20 @@ describe('what every tool promises', () => {
         expect(structured.files.map((f: any) => f.path)).toContain('/app/boot.php'),
     },
     note: { args: { server: 'Fixture', path: '/index.php', summary: 'the front controller' } },
-    overview: { args: { server: 'Fixture' } },
-    history: { args: { server: 'Fixture', path: '/index.php' } },
-    diff: { args: { server: 'Fixture', path: '/README.md' } },
+    overview: {
+      args: { server: 'Fixture' },
+      substance: structured => expect(structured.root).toBe('/'),
+    },
+    history: {
+      args: { server: 'Fixture', path: '/index.php' },
+      substance: structured => expect(Array.isArray(structured.versions)).toBe(true),
+    },
+    diff: {
+      args: { server: 'Fixture', path: '/README.md' },
+      // The diff itself, not only how many lines it has.
+      substance: structured =>
+        expect(structured.changed ? structured.diff : '').not.toBeUndefined(),
+    },
     forget: { args: { server: 'Fixture', path: '/index.php' } },
   };
 

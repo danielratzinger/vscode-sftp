@@ -383,6 +383,22 @@ export function createTools(
       'from an earlier session is still good. Only servers open in the editor ' +
       'and marked as exposed appear here.',
     inputSchema: { type: 'object', properties: {} },
+    outputSchema: objectSchema({
+      servers: {
+        type: 'array',
+        items: objectSchema({
+          id: stringField,
+          name: stringField,
+          protocol: stringField,
+          host: stringField,
+          port: numberField,
+          username: stringField,
+          remotePath: stringField,
+          workspace: stringField,
+          profile: stringField,
+        }),
+      },
+    }),
     annotations: { readOnlyHint: true, openWorldHint: false },
     async run() {
       const connections = exposedConnections(
@@ -790,6 +806,13 @@ export function createTools(
       },
       required: ['server', 'path'],
     },
+    outputSchema: objectSchema({
+      path: stringField,
+      content: stringField,
+      localPath: stringField,
+      source: stringField,
+      redacted: { type: 'array', items: stringField },
+    }),
     annotations: { readOnlyHint: true, openWorldHint: false },
     async run(args: any) {
       const service = resolve(args.server);
@@ -829,6 +852,7 @@ export function createTools(
         text: note ? `${note}\n\n${body}` : body,
         structured: {
           path: target,
+          content: body,
           localPath,
           source: 'workspace',
           redacted: scrubbed.found,
@@ -1376,6 +1400,14 @@ export function createTools(
       },
       required: ['server'],
     },
+    outputSchema: objectSchema({
+      server: stringField,
+      root: stringField,
+      // Whatever the project files said about themselves: a framework, a name,
+      // a description. The keys are not fixed, because the facts are not.
+      facts: { type: 'object', additionalProperties: { type: 'string' } },
+      narrative: stringField,
+    }),
     annotations: { readOnlyHint: true, openWorldHint: true },
     async run(args: any) {
       const service = resolve(args.server);
@@ -1524,6 +1556,23 @@ export function createTools(
       },
       required: ['server', 'path'],
     },
+    outputSchema: objectSchema({
+      path: stringField,
+      localPath: stringField,
+      versions: {
+        type: 'array',
+        items: objectSchema({
+          index: numberField,
+          id: stringField,
+          timestamp: numberField,
+          source: stringField,
+        }),
+      },
+      version: stringField,
+      timestamp: numberField,
+      content: stringField,
+      redacted: { type: 'array', items: stringField },
+    }),
     annotations: { readOnlyHint: true, openWorldHint: false },
     async run(args: any) {
       const service = resolve(args.server);
@@ -1603,6 +1652,7 @@ export function createTools(
           localPath,
           version: wanted.id,
           timestamp: wanted.timestamp,
+          content: body,
           redacted: scrubbed.found,
         },
       };
@@ -1752,6 +1802,16 @@ export function createTools(
       },
       required: ['server', 'path'],
     },
+    outputSchema: objectSchema({
+      path: stringField,
+      changed: booleanField,
+      left: stringField,
+      right: stringField,
+      added: numberField,
+      removed: numberField,
+      summarised: booleanField,
+      diff: stringField,
+    }),
     annotations: { readOnlyHint: true, openWorldHint: true },
     async run(args: any) {
       const service = resolve(args.server);
@@ -1817,6 +1877,7 @@ export function createTools(
           added: result.added,
           removed: result.removed,
           summarised: result.summarised,
+          diff: result.text,
         },
       };
     },

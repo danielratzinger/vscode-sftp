@@ -17,6 +17,13 @@ function createTools(): ToolDefinition[] {
       name: 'structured',
       description: 'Returns data as well as prose.',
       inputSchema: { type: 'object' },
+      outputSchema: { type: 'object', properties: { rows: { type: 'array' } } },
+      run: async () => ({ text: 'two rows', structured: { rows: [1, 2] } }),
+    },
+    {
+      name: 'undeclared',
+      description: 'Returns data without saying it would.',
+      inputSchema: { type: 'object' },
       run: async () => ({ text: 'two rows', structured: { rows: [1, 2] } }),
     },
     {
@@ -91,6 +98,7 @@ describe('dispatcher', () => {
     expect(response.result.tools.map((t: any) => t.name)).toEqual([
       'echo',
       'structured',
+      'undeclared',
       'explodes',
     ]);
     expect(response.result.tools[0].run).toBeUndefined();
@@ -107,6 +115,16 @@ describe('dispatcher', () => {
     const response: any = await createServer().handle(call('structured'));
 
     expect(response.result.structuredContent).toEqual({ rows: [1, 2] });
+    expect(response.result.content[0].text).toBe('two rows');
+  });
+
+  it('withholds structured output from a tool that did not declare any', async () => {
+    // A client that sees structured content reads that and ignores the text,
+    // so a tool answering with a summary it never promised hands back less
+    // than it was asked for. `read` shipped that way once.
+    const response: any = await createServer().handle(call('undeclared'));
+
+    expect(response.result.structuredContent).toBeUndefined();
     expect(response.result.content[0].text).toBe('two rows');
   });
 

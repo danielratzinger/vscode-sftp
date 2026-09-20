@@ -223,13 +223,13 @@ export function createDispatcher(
           if (onCall) {
             onCall(name, args, null, error);
           }
-          return ok(id, toCallResult(result));
+          return ok(id, toCallResult(result, Boolean(tool.outputSchema)));
         }
 
         if (onCall) {
           onCall(name, args, result);
         }
-        return ok(id, toCallResult(result));
+        return ok(id, toCallResult(result, Boolean(tool.outputSchema)));
       }
 
       default:
@@ -269,14 +269,23 @@ export function createDispatcher(
   return { handle, handlePayload };
 }
 
-function toCallResult(result: ToolResult) {
+/**
+ * `structuredContent` belongs to a tool that declared an output schema.
+ *
+ * Sending it without one is not just a protocol detail: a client that sees
+ * structured content reads that and ignores the text, so a tool answering
+ * with a structured summary and its substance in the text hands back
+ * everything about a file except the file. That shipped once in `read`, and
+ * was still true of `local-copy`, `history` and `diff` after it was fixed.
+ */
+function toCallResult(result: ToolResult, declared: boolean) {
   const text = toUtf8(result.text === '' ? '(no data)' : result.text);
   const callResult: any = {
     content: [{ type: 'text', text }],
     isError: Boolean(result.isError),
   };
 
-  if (result.structured) {
+  if (result.structured && declared) {
     callResult.structuredContent = result.structured;
   }
 

@@ -32,11 +32,19 @@ export function validate(value: any, schema: any, where: string): string[] {
     });
 
     // Extra keys are how a reply drifts from what the schema promises; a
-    // client validating strictly would reject them.
+    // client validating strictly would reject them - unless the schema says
+    // its keys are open, which is how a map of facts is declared.
     Object.keys(value).forEach(name => {
-      if (!(schema.properties || {})[name]) {
-        wrong.push(`${where}: returned ${name}, which the schema does not declare`);
+      if ((schema.properties || {})[name]) {
+        return;
       }
+      if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
+        wrong.push(
+          ...validate(value[name], schema.additionalProperties, `${where}.${name}`)
+        );
+        return;
+      }
+      wrong.push(`${where}: returned ${name}, which the schema does not declare`);
     });
 
     return wrong;

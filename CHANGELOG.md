@@ -137,6 +137,11 @@ now diverges from upstream's.
   quoted value if you take the closing quote for an opening one, and what
   was replaced with a marker was the concatenation. A marker where code was
   looks exactly like a redaction somebody meant.
+- `local-copy`, `history` and `diff` returned structured output they never
+  declared, and left their substance out of it - the same fault as `read`,
+  one layer down. A tool's structured content is now sent only when it
+  published a schema for it, and the five tools that were returning it
+  without one publish schemas that carry the file, the version and the diff.
 - `read` returned everything about a file except the file to any client that
   reads structured output, which is what a client does once a tool declares a
   schema. The contents are now in both halves of the reply.

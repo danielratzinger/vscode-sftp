@@ -25,6 +25,7 @@ describe('discovery and the stdio bridge', () => {
       name: 'servers',
       description: 'servers',
       inputSchema: { type: 'object' },
+      outputSchema: { type: 'object', properties: { servers: { type: 'array' } } },
       run: async () => ({ text: 'one server', structured: { servers: [{ id: '1' }] } }),
     },
   ];
