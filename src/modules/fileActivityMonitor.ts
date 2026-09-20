@@ -13,7 +13,7 @@ import {
 } from './serviceManager';
 import { reportError, isValidFile, isConfigFile, isInWorkspace } from '../helper';
 import connectionLabel from '../core/connectionLabel';
-import { sayIfPaused } from './worktreeSync';
+import { resumeAutosync, sayIfPaused } from './worktreeSync';
 import { downloadFile, uploadFile } from '../fileHandlers';
 
 let workspaceWatcher: vscode.Disposable;
@@ -36,6 +36,11 @@ async function handleConfigSave(uri: vscode.Uri) {
   } catch (error) {
     reportError(error);
   } finally {
+    // The services these watchers were bound to have just been thrown away and
+    // built again, so anything autosyncing has to be bound to the new ones.
+    await resumeAutosync().catch(error2 =>
+      logger.debug(`could not rebind autosync: ${error2.message}`)
+    );
     app.remoteExplorer.refresh();
   }
 }

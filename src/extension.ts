@@ -14,7 +14,14 @@ import { initReplacedFiles } from './modules/replacedFiles';
 import { checkForOtherSftpExtensions } from './modules/otherSftpExtensions';
 import { initPasswordExposure } from './modules/passwordExposure';
 import { initFtpsUpgrade } from './modules/ftpsUpgrade';
-import { initWorktreeSync } from './modules/worktreeSync';
+import {
+  initWorktreeSync,
+  onDidChangeAutosync,
+  resumeAutosync,
+} from './modules/worktreeSync';
+import initAutosyncDecoration from './modules/autosyncDecoration';
+import { initAutosyncBackup } from './modules/autosyncBackup';
+import { initHostVerification } from './modules/hostVerification';
 import { reportError } from './helper';
 import fileActivityMonitor from './modules/fileActivityMonitor';
 import { tryLoadConfigs } from './modules/config';
@@ -43,6 +50,14 @@ export async function activate(context: vscode.ExtensionContext) {
   // first attempt rather than after a stray prompt.
   initCredentials(context);
 
+  // Before anything can connect: a connection made before this is in place is
+  // a connection that checked nothing.
+  try {
+    initHostVerification(context);
+  } catch (error) {
+    reportError(error, 'initHostVerification');
+  }
+
   try {
     initCommands(context);
   } catch (error) {
@@ -57,7 +72,18 @@ export async function activate(context: vscode.ExtensionContext) {
 
   try {
     initFtpsUpgrade(context);
-  initWorktreeSync(context);
+    initAutosyncBackup(context);
+    initWorktreeSync(context);
+    initAutosyncDecoration(context);
+    // The badge and the connection's description both say what is syncing, and
+    // neither notices on its own that it has changed.
+    context.subscriptions.push(
+      onDidChangeAutosync(() => {
+        if (app.remoteExplorer) {
+          app.remoteExplorer.refresh();
+        }
+      })
+    );
   } catch (error) {
     reportError(error, 'initFtpsUpgrade');
   }
@@ -100,6 +126,11 @@ export async function activate(context: vscode.ExtensionContext) {
   try {
     await setup(workspaceFolders);
     app.remoteExplorer = new RemoteExplorer(context);
+
+    // Only now do the connections exist. Anything that was syncing when this
+    // window last closed picks up here - including whatever changed in its
+    // folder while nothing was watching.
+    await resumeAutosync();
   } catch (error) {
     reportError(error);
   }

@@ -34,6 +34,8 @@ const configScheme = {
   ]).optional(),
   algorithms: Joi.any(),
   sshConfigPath: Joi.string(),
+  hostVerification: Joi.boolean(),
+  knownHostsPath: Joi.string(),
   sshCustomParams: Joi.string(),
 
   secure: Joi.any().valid(true, false, 'control', 'implicit'),

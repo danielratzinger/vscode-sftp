@@ -2,7 +2,7 @@
   "name": "sftp",
   "displayName": "SFTP",
   "description": "SFTP/FTP sync, with an MCP server that lets local AI clients read your servers",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "publisher": "danielratzinger",
   "author": "Daniel Ratzinger (https://github.com/danielratzinger)",
   "engines": {
@@ -159,6 +159,49 @@
           "type": "number",
           "default": 7391,
           "markdownDescription": "Port for the MCP server. The first VS Code window to take it serves; the rest stand by and take over if it closes. If another program already has it, a free port is used instead — stdio clients do not care, since the bridge discovers it."
+        },
+        "sftp.hostVerification": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Check the SSH host key before sending anything to a server. The first connection to a host shows its fingerprint and asks once; a key that has *changed* is refused, with the old and new fingerprints shown and the option to update the stored one. Keys already in your `~/.ssh/known_hosts` are trusted without asking, and `StrictHostKeyChecking` / `UserKnownHostsFile` in your ssh config are honoured. Turn it off here for everything, or set `\"hostVerification\": false` on one connection in `sftp.json`."
+        },
+        "sftp.autosync.settleSeconds": {
+          "type": "number",
+          "default": 3,
+          "markdownDescription": "How long a file must sit still before autosync uploads it. A build step writes a hundred files in a second, and a tool that writes without an atomic rename leaves a half-written one visible in between; waiting batches the first and avoids the second."
+        },
+        "sftp.autosync.retrySeconds": {
+          "type": "number",
+          "default": 5,
+          "markdownDescription": "How long autosync waits before retrying a file that failed to upload. The wait grows with each further failure, up to five minutes, so a server that is briefly refusing is waited out rather than hammered. Nothing is dropped: whatever is still waiting when the window closes is picked up when it opens again."
+        },
+        "sftp.autosync.backupRemote": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Before autosync first writes over a file in a session, fetch what the server has and keep it - one copy per file per session, which is what makes `SFTP: Restore Server to an Earlier Point` possible. If the server cannot be reached to make the copy the file is **not** overwritten; it is retried instead. Turn this off to skip the extra fetch, at the cost of having no way back."
+        },
+        "sftp.autosync.backupDays": {
+          "type": "number",
+          "default": 30,
+          "markdownDescription": "How long copies of the server's files are kept before they are swept. Whole sessions are removed, never single files out of one, so a session you can still see is one that can be restored in full. Swept when the editor starts and whenever autosync begins."
+        },
+        "sftp.autosync.backupMaxMB": {
+          "type": "number",
+          "default": 20,
+          "markdownDescription": "The largest file whose server-side copy autosync will keep before overwriting it. The copy is held in memory on its way to disk, so a database dump or a video would take the window with it. Anything larger is uploaded anyway, with a line in the log saying there is no way back for that file."
+        },
+        "sftp.autosync.showEveryCheckout": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Offer every checkout git reports, including the ones nobody deploys. Two are left out by default: a worktree checked out at a commit rather than a branch, since nothing tracks it - there is no branch to keep the server on and no git catch-up to offer; and a worktree nested inside another checkout's `.git`, `.vscode` or `.claude`, since the thing deployed there is the checkout around it, which is why those folders are never uploaded. Agent tooling leaves a lot of both behind. The folder this window has open is always offered whatever state it is in."
+        },
+        "sftp.autosync.searchPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Extra folders to search for other checkouts of a project when picking one to autosync from. The folder holding the project is always searched; add paths here when your tooling clones elsewhere, for example `~/intent/workspaces`. Searched three levels deep, and only when you open the list."
         },
         "sftp.mcp.deniedFiles": {
           "type": "array",
@@ -452,6 +495,36 @@
         "category": "SFTP"
       },
       {
+        "command": "sftp.switchAutosyncWorktree",
+        "title": "Switch Autosync Worktree",
+        "category": "SFTP"
+      },
+      {
+        "command": "sftp.restoreRemote",
+        "title": "Restore Server to an Earlier Point",
+        "category": "SFTP"
+      },
+      {
+        "command": "sftp.autosyncReveal.mac",
+        "title": "Reveal Autosynced Folder in Finder",
+        "category": "SFTP"
+      },
+      {
+        "command": "sftp.autosyncReveal.windows",
+        "title": "Reveal Autosynced Folder in File Explorer",
+        "category": "SFTP"
+      },
+      {
+        "command": "sftp.autosyncReveal.linux",
+        "title": "Open Autosynced Folder",
+        "category": "SFTP"
+      },
+      {
+        "command": "sftp.autosyncReveal.terminal",
+        "title": "Reveal Autosynced Folder in Terminal",
+        "category": "SFTP"
+      },
+      {
         "command": "sftp.revealInRemoteExplorer",
         "title": "Reveal in Remote Explorer",
         "category": "SFTP"
@@ -497,6 +570,30 @@
         {
           "command": "sftp.restoreReplaced",
           "when": "sftp.enabled"
+        },
+        {
+          "command": "sftp.switchAutosyncWorktree",
+          "when": "sftp.enabled && sftp.autosyncWorktreeing"
+        },
+        {
+          "command": "sftp.restoreRemote",
+          "when": "sftp.enabled"
+        },
+        {
+          "command": "sftp.autosyncReveal.mac",
+          "when": "sftp.enabled && isMac && sftp.autosyncElsewhere"
+        },
+        {
+          "command": "sftp.autosyncReveal.windows",
+          "when": "sftp.enabled && isWindows && sftp.autosyncElsewhere"
+        },
+        {
+          "command": "sftp.autosyncReveal.linux",
+          "when": "sftp.enabled && isLinux && sftp.autosyncElsewhere"
+        },
+        {
+          "command": "sftp.autosyncReveal.terminal",
+          "when": "sftp.enabled && sftp.autosyncElsewhere"
         },
         {
           "command": "sftp.openConnectInTerminal",
@@ -703,40 +800,40 @@
         },
         {
           "command": "sftp.upload.file",
-          "group": "sftp.trans@1",
+          "group": "sftp.trans@5",
           "when": "sftp.enabled && !explorerResourceIsRoot && !explorerResourceIsFolder"
         },
         {
           "command": "sftp.upload.folder",
-          "group": "sftp.trans@1",
+          "group": "sftp.trans@5",
           "alt": "sftp.forceUpload",
           "when": "sftp.enabled && explorerResourceIsFolder"
         },
         {
           "command": "sftp.upload.file.to.allProfiles",
-          "group": "sftp.trans@1",
+          "group": "sftp.trans@5",
           "when": "sftp.enabled && !explorerResourceIsRoot && !explorerResourceIsFolder"
         },
         {
           "command": "sftp.upload.folder.to.allProfiles",
-          "group": "sftp.trans@1",
+          "group": "sftp.trans@5",
           "alt": "sftp.forceUpload.to.allProfiles",
           "when": "sftp.enabled && explorerResourceIsFolder"
         },
         {
           "command": "sftp.download.file",
-          "group": "sftp.trans@2",
+          "group": "sftp.trans@6",
           "when": "sftp.enabled && !explorerResourceIsRoot && !explorerResourceIsFolder"
         },
         {
           "command": "sftp.download.folder",
-          "group": "sftp.trans@2",
+          "group": "sftp.trans@6",
           "alt": "sftp.forceDownload",
           "when": "sftp.enabled && explorerResourceIsFolder"
         },
         {
           "command": "sftp.download.scripts",
-          "group": "sftp.trans@3",
+          "group": "sftp.trans@7",
           "when": "sftp.enabled && explorerResourceIsFolder"
         },
         {
@@ -746,12 +843,37 @@
         },
         {
           "command": "sftp.autosyncWorktree",
+          "group": "sftp.trans@1",
+          "when": "sftp.enabled && explorerResourceIsFolder && !sftp.autosyncWorktreeing"
+        },
+        {
+          "command": "sftp.switchAutosyncWorktree",
+          "group": "sftp.trans@1",
+          "when": "sftp.enabled && explorerResourceIsFolder && sftp.autosyncWorktreeing"
+        },
+        {
+          "command": "sftp.autosyncReveal.mac",
+          "group": "sftp.trans@3",
+          "when": "sftp.enabled && isMac && explorerResourceIsFolder && sftp.autosyncElsewhere"
+        },
+        {
+          "command": "sftp.autosyncReveal.windows",
+          "group": "sftp.trans@3",
+          "when": "sftp.enabled && isWindows && explorerResourceIsFolder && sftp.autosyncElsewhere"
+        },
+        {
+          "command": "sftp.autosyncReveal.linux",
+          "group": "sftp.trans@3",
+          "when": "sftp.enabled && isLinux && explorerResourceIsFolder && sftp.autosyncElsewhere"
+        },
+        {
+          "command": "sftp.autosyncReveal.terminal",
           "group": "sftp.trans@4",
-          "when": "sftp.enabled && explorerResourceIsFolder"
+          "when": "sftp.enabled && explorerResourceIsFolder && sftp.autosyncElsewhere"
         },
         {
           "command": "sftp.stopAutosyncWorktree",
-          "group": "sftp.trans@5",
+          "group": "sftp.trans@2",
           "when": "sftp.enabled && explorerResourceIsFolder && sftp.autosyncWorktreeing"
         }
       ],
@@ -842,7 +964,7 @@
         {
           "command": "sftp.revealInTerminal",
           "group": "2_files@3",
-          "when": "view == remoteExplorer && viewItem =~ /^(folder|root)(-repo)?-local$/"
+          "when": "view == remoteExplorer && viewItem =~ /^(folder|root)(-autosync(away)?)?(-repo)?-local$/"
         },
         {
           "command": "sftp.revealInExplorer",
@@ -851,55 +973,85 @@
         },
         {
           "command": "sftp.upload.folder",
-          "group": "3_trans@1",
+          "group": "3_trans@5",
           "alt": "sftp.forceUpload",
           "when": "sftp.enabled && !(viewItem =~ /^file/)"
         },
         {
           "command": "sftp.upload.file",
-          "group": "3_trans@1",
+          "group": "3_trans@5",
           "when": "view == remoteExplorer && viewItem =~ /^file/"
         },
         {
           "command": "sftp.upload.folder.to.allProfiles",
-          "group": "3_trans@1",
+          "group": "3_trans@5",
           "alt": "sftp.forceUpload.to.allProfiles",
           "when": "sftp.enabled && !(viewItem =~ /^file/)"
         },
         {
           "command": "sftp.upload.file.to.allProfiles",
-          "group": "3_trans@1",
+          "group": "3_trans@5",
           "when": "view == remoteExplorer && viewItem =~ /^file/"
         },
         {
           "command": "sftp.download.folder",
-          "group": "3_trans@2",
+          "group": "3_trans@6",
           "alt": "sftp.forceDownload",
           "when": "sftp.enabled && !(viewItem =~ /^file/)"
         },
         {
           "command": "sftp.download.scripts",
-          "group": "3_trans@3",
+          "group": "3_trans@7",
           "when": "sftp.enabled && !(viewItem =~ /^file/)"
         },
         {
           "command": "sftp.autosyncWorktree",
-          "group": "3_trans@5",
-          "when": "sftp.enabled && viewItem =~ /^root/"
+          "group": "3_trans@1",
+          "when": "sftp.enabled && viewItem =~ /^root/ && !(viewItem =~ /-autosync/)"
+        },
+        {
+          "command": "sftp.switchAutosyncWorktree",
+          "group": "3_trans@1",
+          "when": "sftp.enabled && viewItem =~ /-autosync/"
         },
         {
           "command": "sftp.stopAutosyncWorktree",
-          "group": "3_trans@6",
-          "when": "sftp.enabled && viewItem =~ /^root/ && sftp.autosyncWorktreeing"
+          "group": "3_trans@2",
+          "when": "sftp.enabled && viewItem =~ /-autosync/"
+        },
+        {
+          "command": "sftp.autosyncReveal.mac",
+          "group": "3_trans@3",
+          "when": "sftp.enabled && isMac && viewItem =~ /-autosyncaway/"
+        },
+        {
+          "command": "sftp.autosyncReveal.windows",
+          "group": "3_trans@3",
+          "when": "sftp.enabled && isWindows && viewItem =~ /-autosyncaway/"
+        },
+        {
+          "command": "sftp.autosyncReveal.linux",
+          "group": "3_trans@3",
+          "when": "sftp.enabled && isLinux && viewItem =~ /-autosyncaway/"
+        },
+        {
+          "command": "sftp.autosyncReveal.terminal",
+          "group": "3_trans@4",
+          "when": "sftp.enabled && viewItem =~ /-autosyncaway/"
+        },
+        {
+          "command": "sftp.restoreRemote",
+          "group": "7_modification@0",
+          "when": "sftp.enabled && viewItem =~ /^root/"
         },
         {
           "command": "sftp.clear.localFolder",
-          "group": "3_trans@4",
-          "when": "sftp.enabled && viewItem =~ /^(folder|root)-local$/"
+          "group": "3_trans@8",
+          "when": "sftp.enabled && viewItem =~ /^(folder|root)(-autosync(away)?)?-local$/"
         },
         {
           "command": "sftp.download.file",
-          "group": "3_trans@2",
+          "group": "3_trans@6",
           "when": "view == remoteExplorer && viewItem =~ /^file/"
         },
         {

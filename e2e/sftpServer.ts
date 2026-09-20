@@ -16,6 +16,12 @@ import { Server, utils } from 'ssh2';
 
 const { STATUS_CODE, flagsToString } = (utils as any).sftp;
 
+/** The public half of a private key, as ssh2 parses it. */
+function publicFrom(privateKey: string): string {
+  const parsed = (utils as any).parseKey(privateKey);
+  return `${parsed.type} ${parsed.getPublicSSH().toString('base64')}`;
+}
+
 export interface Misbehaviour {
   /** Paths whose READ never answers, simulating a transfer that dies mid-file. */
   stallReadsOf?: string[];
@@ -28,6 +34,10 @@ export interface Misbehaviour {
 export interface RunningServer {
   port: number;
   root: string;
+  /** The host key it presents, in the one-line form `known_hosts` uses. */
+  publicKey: string;
+  /** The same key, so a restart can present it again. */
+  privateKey: string;
   /** Changed between calls to make one operation misbehave. */
   misbehave(next: Misbehaviour): void;
   close(): Promise<void>;
@@ -55,8 +65,15 @@ function longname(name: string, stat: fs.Stats): string {
   return `${kind}rw-r--r--   1 owner group ${stat.size} Jan 1 00:00 ${name}`;
 }
 
-export async function startSftpServer(root: string): Promise<RunningServer> {
-  const keys = utils.generateKeyPairSync('ed25519');
+export async function startSftpServer(
+  root: string,
+  option: { port?: number; privateKey?: string } = {}
+): Promise<RunningServer> {
+  // Given a key, it presents that one - which is how a test can restart "the
+  // same server" or stand up one pretending to be it with a different key.
+  const keys = option.privateKey
+    ? { private: option.privateKey, public: publicFrom(option.privateKey) }
+    : utils.generateKeyPairSync('ed25519');
   let misbehaviour: Misbehaviour = {};
 
   // Held so `close` can end them. `Server.close` stops listening and then
@@ -67,6 +84,10 @@ export async function startSftpServer(root: string): Promise<RunningServer> {
 
   const server = new Server({ hostKeys: [keys.private] }, (client: any) => {
     clients.push(client);
+    // A client that refuses our host key aborts the key exchange, and ssh2
+    // emits that on the connection. Unhandled, it takes the process with it -
+    // which is a property of the harness, not of the thing being tested.
+    client.on('error', () => undefined);
     client.on('close', () => {
       const at = clients.indexOf(client);
       if (at !== -1) {
@@ -274,12 +295,16 @@ export async function startSftpServer(root: string): Promise<RunningServer> {
   }
 
   const port: number = await new Promise(resolve =>
-    server.listen(0, '127.0.0.1', () => resolve((server.address() as any).port))
+    server.listen(option.port || 0, '127.0.0.1', () =>
+      resolve((server.address() as any).port)
+    )
   );
 
   return {
     port,
     root,
+    publicKey: keys.public,
+    privateKey: keys.private,
     misbehave: (nextOne: Misbehaviour) => {
       misbehaviour = nextOne;
     },

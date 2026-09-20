@@ -68,6 +68,12 @@ export const COMMAND_REVEAL_IN_FINDER_LINUX = 'sftp.revealInFinder.linux';
 export const COMMAND_REVEAL_IN_TERMINAL = 'sftp.revealInTerminal';
 export const COMMAND_AUTOSYNC_WORKTREE = 'sftp.autosyncWorktree';
 export const COMMAND_STOP_AUTOSYNC_WORKTREE = 'sftp.stopAutosyncWorktree';
+export const COMMAND_SWITCH_AUTOSYNC_WORKTREE = 'sftp.switchAutosyncWorktree';
+export const COMMAND_RESTORE_REMOTE = 'sftp.restoreRemote';
+export const COMMAND_AUTOSYNC_REVEAL_FINDER_MAC = 'sftp.autosyncReveal.mac';
+export const COMMAND_AUTOSYNC_REVEAL_FINDER_WINDOWS = 'sftp.autosyncReveal.windows';
+export const COMMAND_AUTOSYNC_REVEAL_FINDER_LINUX = 'sftp.autosyncReveal.linux';
+export const COMMAND_AUTOSYNC_REVEAL_TERMINAL = 'sftp.autosyncReveal.terminal';
 export const COMMAND_REVEAL_IN_REMOTE_EXPLORER = 'sftp.revealInRemoteExplorer';
 
 export const COMMAND_REMOTEEXPLORER_REFRESH = 'sftp.remoteExplorer.refresh';

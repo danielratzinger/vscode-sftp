@@ -24,6 +24,8 @@ export interface ConnectOption {
   passphrase?: string | boolean;
   interactiveAuth?: boolean | string[];
   agent?: string;
+  /** False turns off host key checking for this connection alone. */
+  hostVerification?: boolean;
   sock?: any;
   hop?: ConnectOption | ConnectOption[];
   limitOpenFilesOnRemote?: boolean | number;

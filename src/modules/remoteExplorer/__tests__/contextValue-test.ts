@@ -97,3 +97,108 @@ describe('whether there is anything on this machine to show', () => {
     expect(hasLocalCopy('')).toBe(false);
   });
 });
+
+/**
+ * The other half of the contract, and the half nothing was checking: the
+ * `when` clauses in `package.json` have to match the context values the tree
+ * actually produces. They are regular expressions in a JSON string, matched by
+ * the editor and by nothing here, so a marker added to a context value can
+ * quietly stop `Clear Local Folder` ever appearing again and every test still
+ * passes.
+ */
+// tslint:disable-next-line:no-var-requires
+const manifest = require('../../../../package.json');
+
+/**
+ * Whether a command's menu entry would show for a context value.
+ *
+ * The whole `when` clause, not the first pattern in it: `Autosync Worktree`
+ * asks two things about the item - that it is a root and that it is *not*
+ * syncing - and reading only the first says it appears on connections where it
+ * does not. Everything that is not about `viewItem` is taken as true, since
+ * those are about the window rather than the item.
+ */
+function menuShows(command: string, viewItem: string): boolean {
+  const entry = manifest.contributes.menus['view/item/context'].find(
+    (one: any) => one.command === command && /viewItem/.test(one.when || '')
+  );
+
+  expect(entry).toBeDefined();
+
+  return entry.when.split('&&').every((term: string) => {
+    const clause = term.trim();
+
+    const negated = /^!\(viewItem =~ \/(.+)\/\)$/.exec(clause);
+    if (negated) {
+      return !new RegExp(negated[1]).test(viewItem);
+    }
+
+    const plain = /^viewItem =~ \/(.+)\/$/.exec(clause);
+    if (plain) {
+      return new RegExp(plain[1]).test(viewItem);
+    }
+
+    return true;
+  });
+}
+
+/** Every shape `_describe` can produce for a connection's root. */
+const ROOTS = [
+  'root',
+  'root-local',
+  'root-repo-local',
+  'root-autosync',
+  'root-autosync-local',
+  'root-autosync-repo-local',
+  'root-autosyncaway-local',
+  'root-autosyncaway-repo-local',
+];
+
+describe('the menu patterns against the values the tree produces', () => {
+  it('offers Clear Local Folder on a plain local root, syncing or not', () => {
+    expect(menuShows('sftp.clear.localFolder', 'root-local')).toBe(true);
+    expect(menuShows('sftp.clear.localFolder', 'folder-local')).toBe(true);
+    expect(menuShows('sftp.clear.localFolder', 'root-autosync-local')).toBe(true);
+    expect(menuShows('sftp.clear.localFolder', 'root-autosyncaway-local')).toBe(true);
+  });
+
+  it('keeps Clear Local Folder off a working copy, syncing or not', () => {
+    expect(menuShows('sftp.clear.localFolder', 'root-repo-local')).toBe(false);
+    expect(menuShows('sftp.clear.localFolder', 'root-autosync-repo-local')).toBe(false);
+    expect(menuShows('sftp.clear.localFolder', 'root')).toBe(false);
+  });
+
+  it('offers Reveal in Terminal wherever there is a local copy', () => {
+    expect(menuShows('sftp.revealInTerminal', 'root-local')).toBe(true);
+    expect(menuShows('sftp.revealInTerminal', 'root-repo-local')).toBe(true);
+    expect(menuShows('sftp.revealInTerminal', 'root-autosync-repo-local')).toBe(true);
+    expect(menuShows('sftp.revealInTerminal', 'root')).toBe(false);
+    expect(menuShows('sftp.revealInTerminal', 'file-local')).toBe(false);
+  });
+
+  it('swaps Autosync for Switch Autosync on the connection that is syncing', () => {
+    // The pair have to be exclusive, or both appear on the same menu.
+    ROOTS.forEach(value => {
+      const syncing = value.indexOf('-autosync') !== -1;
+
+      expect(menuShows('sftp.switchAutosyncWorktree', value)).toBe(syncing);
+      expect(menuShows('sftp.autosyncWorktree', value)).toBe(!syncing);
+    });
+  });
+
+  it('offers Stop on exactly the connections that are syncing', () => {
+    ROOTS.forEach(value =>
+      expect(menuShows('sftp.stopAutosyncWorktree', value)).toBe(
+        value.indexOf('-autosync') !== -1
+      )
+    );
+  });
+
+  it('offers the reveal commands only where the folder is somewhere else', () => {
+    expect(menuShows('sftp.autosyncReveal.terminal', 'root-autosyncaway-local')).toBe(true);
+    // Syncing this window's own folder: revealing it would open the folder
+    // already open.
+    expect(menuShows('sftp.autosyncReveal.terminal', 'root-autosync-local')).toBe(false);
+    expect(menuShows('sftp.autosyncReveal.terminal', 'root-local')).toBe(false);
+  });
+});

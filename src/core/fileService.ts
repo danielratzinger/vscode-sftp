@@ -90,6 +90,12 @@ interface SftpOption {
   interactiveAuth: boolean | string[];
   algorithms: any;
   sshConfigPath?: string;
+  /** False turns host key checking off for this connection. */
+  hostVerification?: boolean;
+  /** `StrictHostKeyChecking accept-new`: take a new host without asking. */
+  acceptNewHostKeys?: boolean;
+  /** Where this connection's `known_hosts` is, when ssh config names one. */
+  knownHostsPath?: string;
   concurrency: number;
   sshCustomParams?: string;
   hop: (Host & SftpOption)[] | (Host & SftpOption);
@@ -271,10 +277,26 @@ function mergeConfigWithExternalRefer(
     ['identityfile', 'privateKeyPath'],
     ['serveraliveinterval', 'keepalive'],
     ['connecttimeout', 'connTimeout'],
+    ['userknownhostsfile', 'knownHostsPath'],
   ]);
 
   section.config.forEach(line => {
     if (!line.param) {
+      return;
+    }
+
+    // Two directives that are about host keys rather than about where to
+    // connect, and that this read straight past until host keys were checked
+    // at all. `no` and `off` turn the check off for this host; `accept-new`
+    // means "take a new host without asking, still refuse a changed one",
+    // which is what ssh does with it.
+    if (line.param.toLowerCase() === 'stricthostkeychecking') {
+      const value = String(line.value).toLowerCase();
+      if (value === 'no' || value === 'off') {
+        copyed.hostVerification = false;
+      } else if (value === 'accept-new') {
+        copyed.acceptNewHostKeys = true;
+      }
       return;
     }
 

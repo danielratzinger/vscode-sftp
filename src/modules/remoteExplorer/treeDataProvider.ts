@@ -18,6 +18,7 @@ import {
   COMMAND_REMOTEEXPLORER_EDITINLOCAL,
 } from '../../constants';
 import { getAllFileService } from '../serviceManager';
+import { autosyncState } from '../worktreeSync';
 import { getExtensionSetting } from '../ext';
 
 type Id = number;
@@ -206,8 +207,16 @@ export default class RemoteTreeData
     if (!customLabel) {
       customLabel = upath.basename(item.resource.fsPath);
     }
+    // What a badge cannot say: which folder it is syncing, and whether that
+    // folder is this window's own or one somewhere else entirely.
+    const autosync =
+      isRoot && autosyncState((item as ExplorerRoot).explorerContext.fileService);
+
     return {
       label: customLabel,
+      description: autosync
+        ? `autosync: ${autosync.label}${autosync.external ? ' (elsewhere)' : ''}`
+        : undefined,
       resourceUri: item.resource.uri,
       collapsibleState: item.isDirectory ? vscode.TreeItemCollapsibleState.Collapsed : undefined,
       contextValue: this._describe(item, isRoot),
@@ -227,6 +236,13 @@ export default class RemoteTreeData
    * What the menus match on. `folder` and `root` as before, with `-repo` where
    * the local copy is a working copy - so a `when` clause can name folders
    * exactly, and the ones that are repositories are not among them.
+   *
+   * Roots also carry whether *that* connection is autosyncing, and whether the
+   * folder it is syncing is one this window does not have open. A context key
+   * cannot say that: there is one per window, so with twenty-eight connections
+   * in a workspace it would label all of them by whatever one of them is
+   * doing. `-autosyncaway` contains `-autosync`, so a clause that wants either
+   * can ask for the shorter one.
    */
   private _describe(item: ExplorerItem, isRoot: boolean): string {
     const kind = isRoot ? 'root' : item.isDirectory ? 'folder' : 'file';
@@ -234,6 +250,15 @@ export default class RemoteTreeData
     if (!root) {
       return kind;
     }
+
+    const syncing = isRoot
+      ? autosyncState((item as ExplorerRoot).explorerContext.fileService)
+      : undefined;
+    const autosync = syncing
+      ? syncing.external
+        ? '-autosyncaway'
+        : '-autosync'
+      : '';
 
     const local = toLocalPath(
       item.resource.fsPath,
@@ -249,6 +274,7 @@ export default class RemoteTreeData
 
     return (
       kind +
+      autosync +
       (inRepository ? '-repo' : '') +
       (hasLocalCopy(local) ? '-local' : '')
     );

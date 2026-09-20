@@ -21,6 +21,7 @@ function sftpFileSystemClass(): typeof SFTPFileSystemType {
 }
 import logger from '../../logger';
 import CustomError from '../customError';
+import { hostKeyCheck } from './hostKeys';
 
 let MAX_OPEN_FD_NUM = 222;
 
@@ -339,8 +340,43 @@ export default class SSHClient extends RemoteClient {
             : connectTimeout,
           ...option,
           tryKeyboard: !!interactiveAuth,
+          hostVerifier: this._verifier(option),
         });
     });
+  }
+
+  /**
+   * The callback ssh2 runs with the key the server offered, before a password
+   * is anywhere near the wire.
+   *
+   * `undefined` when there is nobody to ask or the connection has opted out,
+   * and ssh2 then does what it always did - which is not check at all. The
+   * callback form rather than a return value, because answering may mean
+   * putting a question on screen and waiting for it.
+   */
+  private _verifier(option: ConnectOption): any {
+    const check = hostKeyCheck();
+    if (!check || (option as any).hostVerification === false) {
+      return undefined;
+    }
+
+    const host = option.host;
+    const port = option.port || 22;
+
+    const how = {
+      knownHostsPath: (option as any).knownHostsPath,
+      acceptNew: (option as any).acceptNewHostKeys === true,
+    };
+
+    return (key: Buffer, accept: (ok: boolean) => void) => {
+      check(host, port, key, how).then(
+        ok => accept(ok),
+        error => {
+          logger.error(error, `verifying the host key of ${host}`);
+          accept(false);
+        }
+      );
+    };
   }
 
   private _getSftp(client): Promise<any> {
