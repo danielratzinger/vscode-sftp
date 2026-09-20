@@ -884,6 +884,8 @@ export function createTools(
       let scanned = 0;
       let fetched = 0;
       let skipped = 0;
+      let failed = 0;
+      let firstFailure = '';
       // Where the next search picks up: the file after the last one this call
       // looked at, whatever it was that stopped it.
       let reached = Math.min(from, found.files.length);
@@ -922,7 +924,11 @@ export function createTools(
             },
             onWorkspaceWrite: context.onWorkspaceWrite,
           }
-        ).catch(() => undefined);
+        ).catch(error => {
+          failed += 1;
+          firstFailure = firstFailure || (error && error.message) || 'unknown';
+          return undefined;
+        });
 
         if (!result) {
           continue;
@@ -953,6 +959,17 @@ export function createTools(
         }
       }
 
+      // A search that could not read anything has not searched. Reporting no
+      // matches would say the text is not there, which is a different claim
+      // and one nobody could tell apart from the truth.
+      if (scanned === 0 && failed > 0) {
+        return errorResult(
+          `Nothing could be read under ${root}: ${failed} ` +
+            `${failed === 1 ? 'file' : 'files'} failed, the first with ` +
+            `“${firstFailure}”. This is not a result of no matches.`
+        );
+      }
+
       const byPath = searchPaths(found.files, args.query);
       const ordered = rank(matches, args.query).slice(0, maxMatches);
       const next = nextOffset(found.files.length, 0, reached);
@@ -963,6 +980,7 @@ export function createTools(
           scanned,
           fetched,
           skipped,
+          failed,
           outOfTime,
           nextOffset: next,
           truncated: found.truncated,
@@ -1782,6 +1800,7 @@ function describeSearch(
     scanned: number;
     fetched: number;
     skipped?: number;
+    failed?: number;
     outOfTime?: boolean;
     nextOffset?: number;
     truncated: boolean;
@@ -1795,6 +1814,14 @@ function describeSearch(
     `${matches.length} match${matches.length === 1 ? '' : 'es'} in ${about.root} ` +
       `(${about.scanned} files searched, ${about.fetched} fetched from the server).`
   );
+  if (about.failed) {
+    // Said even when there were matches: a partial search that looks complete
+    // is how somebody concludes a string is absent from a file nobody read.
+    lines.push(
+      `${about.failed} file${about.failed === 1 ? '' : 's'} could not be read ` +
+        'and were not searched.'
+    );
+  }
   if (about.skipped) {
     lines.push(
       `${about.skipped} file${about.skipped === 1 ? ' was' : 's were'} skipped ` +

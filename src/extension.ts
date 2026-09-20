@@ -2,6 +2,7 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
+import { installNodeCompat } from './core/nodeCompat';
 import app from './app';
 import initCommands from './initCommands';
 import initCredentials from './modules/credentials';
@@ -34,6 +35,9 @@ function setup(workspaceFolders: vscode.WorkspaceFolder[]) {
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
 export async function activate(context: vscode.ExtensionContext) {
+  // Before anything can reach ssh2.
+  installNodeCompat();
+
   // Before anything can connect, so a stored password is available on the
   // first attempt rather than after a stray prompt.
   initCredentials(context);

@@ -58,8 +58,14 @@ export default abstract class RemoteFileSystem extends FileSystem {
   }
 
   setRemoteTimeOffsetInHours(offset: number) {
-    this._remoteTimeOffsetInSeconds = offset * SECONDS_PER_HOUR;
-    this._remoteTimeOffsetInMilliseconds = offset * MILLISECONDS_PER_HOUR;
+    // Anything that is not a number means "no offset". An unset option
+    // arrives here as undefined - `{...defaultOption, ...option}` lets an
+    // explicit undefined overwrite the default - and `undefined * 3600000` is
+    // NaN, which then makes every timestamp from this server NaN, silently.
+    const hours = typeof offset === 'number' && isFinite(offset) ? offset : 0;
+
+    this._remoteTimeOffsetInSeconds = hours * SECONDS_PER_HOUR;
+    this._remoteTimeOffsetInMilliseconds = hours * MILLISECONDS_PER_HOUR;
   }
 
   getClient() {

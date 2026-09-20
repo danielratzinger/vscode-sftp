@@ -534,3 +534,80 @@ describe('a search that runs out of time', () => {
     expect((result.structured as any).scanned).toBe(3);
   });
 });
+
+describe('a search that could not read anything', () => {
+  it('says so instead of reporting no matches', async () => {
+    // The two are indistinguishable to a caller, and one of them is a claim
+    // about the file's contents that nobody is in a position to make.
+    place({});
+    const context = createContext({
+      remoteFs: async () =>
+        ({
+          list: async () => [
+            {
+              name: 'index.php',
+              fspath: '/srv/app/index.php',
+              type: FileType.File,
+              size: 20,
+              mtime: REMOTE_MTIME,
+              atime: REMOTE_MTIME,
+              mode: 0o644,
+            },
+          ],
+          lstat: async () => ({ type: FileType.File, size: 20, mtime: REMOTE_MTIME }),
+          readFile: async () => {
+            throw new Error('isDate is not a function');
+          },
+        } as any),
+    });
+
+    const result: any = await tool(context, 'sftp_search').run({
+      server: '1',
+      query: 'needle',
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.text).toContain('Nothing could be read');
+    expect(result.text).toContain('isDate is not a function');
+    expect(result.text).not.toMatch(/^0 matches/);
+  });
+
+  it('still reports the matches it found, and says what it missed', async () => {
+    place({});
+    let attempt = 0;
+    const context = createContext({
+      remoteFs: async () =>
+        ({
+          list: async () =>
+            ['one.php', 'two.php'].map(name => ({
+              name,
+              fspath: `/srv/app/${name}`,
+              type: FileType.File,
+              size: 20,
+              mtime: REMOTE_MTIME,
+              atime: REMOTE_MTIME,
+              mode: 0o644,
+            })),
+          lstat: async () => ({ type: FileType.File, size: 20, mtime: REMOTE_MTIME }),
+          readFile: async () => {
+            attempt += 1;
+            if (attempt === 1) {
+              throw new Error('connection lost');
+            }
+            return '<?php // needle here';
+          },
+        } as any),
+    });
+
+    const result: any = await tool(context, 'sftp_search').run({
+      server: '1',
+      query: 'needle',
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(result.text).toContain('needle here');
+    // A partial search that looks complete is how somebody concludes a string
+    // is absent from a file nobody read.
+    expect(result.text).toContain('1 file could not be read');
+  });
+});
