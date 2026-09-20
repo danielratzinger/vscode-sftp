@@ -44,6 +44,22 @@ function holdsARepository(dir: string): boolean {
 }
 
 /**
+ * Whether anything has been downloaded here yet.
+ *
+ * `Reveal in Finder` has nothing to show without it, and an entry that opens
+ * a window on nothing is worse than no entry. Not cached, unlike the walk
+ * above: this changes with every download, and it is one question about one
+ * path rather than a climb.
+ */
+export function hasLocalCopy(local: string): boolean {
+  try {
+    return fs.existsSync(local);
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
  * Answers kept for the life of a tree, because this is asked once per visible
  * item and the walk repeats itself all the way up every time.
  */
@@ -209,11 +225,7 @@ export default class RemoteTreeData
    * exactly, and the ones that are repositories are not among them.
    */
   private _describe(item: ExplorerItem, isRoot: boolean): string {
-    if (!isRoot && !item.isDirectory) {
-      return 'file';
-    }
-
-    const kind = isRoot ? 'root' : 'folder';
+    const kind = isRoot ? 'root' : item.isDirectory ? 'folder' : 'file';
     const root = this.findRoot(item.resource.uri);
     if (!root) {
       return kind;
@@ -225,9 +237,17 @@ export default class RemoteTreeData
       root.explorerContext.fileService.baseDir
     );
 
-    return localCopyIsInARepository(local, root.explorerContext.fileService.workspace)
-      ? `${kind}-repo`
-      : kind;
+    // `repo` only for the folders a clear could be offered on; `local` for
+    // anything at all, because revealing a file is the common case.
+    const inRepository =
+      kind !== 'file' &&
+      localCopyIsInARepository(local, root.explorerContext.fileService.workspace);
+
+    return (
+      kind +
+      (inRepository ? '-repo' : '') +
+      (hasLocalCopy(local) ? '-local' : '')
+    );
   }
 
   async getChildren(item?: ExplorerItem): Promise<ExplorerItem[]> {

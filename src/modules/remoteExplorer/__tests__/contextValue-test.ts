@@ -3,6 +3,7 @@ jest.mock('fs');
 import { vol } from 'memfs';
 import {
   forgetRepositoryAnswers,
+  hasLocalCopy,
   localCopyIsInARepository,
 } from '../treeDataProvider';
 
@@ -80,5 +81,19 @@ describe('a folder whose local copy is in a repository', () => {
 
     forgetRepositoryAnswers();
     expect(localCopyIsInARepository('/work/site/app', WORKSPACE)).toBe(true);
+  });
+});
+
+describe('whether there is anything on this machine to show', () => {
+  it('knows a folder that has been downloaded from one that has not', () => {
+    vol.fromJSON({ '/work/site/app/boot.php': '<?php' });
+
+    expect(hasLocalCopy('/work/site/app')).toBe(true);
+    expect(hasLocalCopy('/work/site/app/boot.php')).toBe(true);
+    expect(hasLocalCopy('/work/site/never')).toBe(false);
+  });
+
+  it('says no rather than throwing on a path it cannot look at', () => {
+    expect(hasLocalCopy('')).toBe(false);
   });
 });

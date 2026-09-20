@@ -30,6 +30,10 @@ now diverges from upstream's.
 
 ### Added
 
+- `Reveal in Finder`, above `Reveal in Explorer` in the Remote Explorer's
+  menu, on anything that has been downloaded: opens the system's file manager
+  on the local copy. `Reveal in File Explorer` on Windows, `Open Containing
+  Folder` on Linux.
 - `Clear Local Folder`, under `Download Scripts` in the Remote Explorer's
   menu on folders and roots: deletes the local copy of a folder and everything
   in it, so a download can

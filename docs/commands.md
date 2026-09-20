@@ -81,8 +81,13 @@ Every folder is walked by default. To leave some out, name them in `sftp.downloa
 
 Both settings ignore case. The connection's own `ignore` rules still apply on top.
 
+### Reveal in Finder
+Sits above `Reveal in Explorer` in the Remote Explorer's menu, on anything that has been downloaded — and only then, because there is nothing to show otherwise. `Reveal in Explorer` shows the file in the editor's own sidebar; this opens the system's file manager, which is where you go for what the editor does not do: a Quick Look, a drag into another application, a look at what else is in the folder.
+
+It is called `Reveal in Finder` on macOS, `Reveal in File Explorer` on Windows and `Open Containing Folder` on Linux, which is how the editor names its own. A menu entry shows its command's title and a title cannot vary by platform, so there is one command per platform behind it.
+
 ### Clear Local Folder
-Sits under `Download Scripts` in the Remote Explorer's menu, on folders and on a connection's root — nowhere else, and not on anything whose local copy sits in a repository. Clearing a folder is for a download that has to start from nothing, and nothing in a working copy is that: the files are tracked, the history is beside them, and what the command would delete is not what a download would put back. The search for one walks up from the folder and stops at the workspace — a repository above the folder the editor has open is not this extension's business. Deletes the contents of the *local* copy of that folder and never touches the server.
+Sits under `Download Scripts` in the Remote Explorer's menu, on folders and on a connection's root — nowhere else, and only where something has been downloaded — and not on anything whose local copy sits in a repository. Clearing a folder is for a download that has to start from nothing, and nothing in a working copy is that: the files are tracked, the history is beside them, and what the command would delete is not what a download would put back. The search for one walks up from the folder and stops at the workspace — a repository above the folder the editor has open is not this extension's business. Deletes the contents of the *local* copy of that folder and never touches the server.
 
 `Download Scripts` writes files and never removes them, so a folder downloaded across a year of deploys holds files the server deleted months ago — and nothing downstream can tell those apart from current ones. This is the other half of it: clear the folder, download it again, and what is on disk is what is on the server.
 

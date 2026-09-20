@@ -3,7 +3,7 @@ import { Uri, window } from 'vscode';
 import { FileType } from '../core';
 import { getAllFileService } from '../modules/serviceManager';
 import { ExplorerItem } from '../modules/remoteExplorer';
-import { getActiveTextEditor } from '../host';
+import { executeCommand, getActiveTextEditor } from '../host';
 import { listFiles, toLocalPath, simplifyPath } from '../helper';
 
 function configIngoreFilterCreator(config) {
@@ -163,3 +163,20 @@ export const selectFileFromAll = createFileSelector();
 
 // selected file from remote files expect ignored
 export const selectFile = createFileSelector(configIngoreFilterCreator);
+
+/**
+ * Showing the local copy of a remote file in the system's file manager.
+ *
+ * `Reveal in Explorer` shows it in the editor's own sidebar; this opens
+ * Finder, or whatever the file manager is where this is running, which is
+ * where you go for what the editor does not do - a Quick Look, a drag into
+ * another application, a look at what else is in the folder.
+ *
+ * `revealFileInOS` is the editor's own command for it, so the behaviour is the
+ * platform's rather than ours.
+ */
+export async function revealLocal(ctx: {
+  target: { localUri: Uri };
+}): Promise<void> {
+  await executeCommand('revealFileInOS', ctx.target.localUri);
+}

@@ -60,6 +60,11 @@ export const COMMAND_LIST_ACTIVEFOLDER = 'sftp.listActiveFolder';
 export const COMMAND_LIST_ALL = 'sftp.listAll';
 export const COMMAND_DELETE_REMOTE = 'sftp.delete.remote';
 export const COMMAND_REVEAL_IN_EXPLORER = 'sftp.revealInExplorer';
+// One id per platform: a menu entry shows its command's title, and a title
+// cannot vary by platform. The editor spells its own the same way.
+export const COMMAND_REVEAL_IN_FINDER_MAC = 'sftp.revealInFinder.mac';
+export const COMMAND_REVEAL_IN_FINDER_WINDOWS = 'sftp.revealInFinder.windows';
+export const COMMAND_REVEAL_IN_FINDER_LINUX = 'sftp.revealInFinder.linux';
 export const COMMAND_REVEAL_IN_REMOTE_EXPLORER = 'sftp.revealInRemoteExplorer';
 
 export const COMMAND_REMOTEEXPLORER_REFRESH = 'sftp.remoteExplorer.refresh';
