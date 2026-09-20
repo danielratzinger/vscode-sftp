@@ -179,12 +179,12 @@
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "Folders `sftp_search` does not walk into, by name at any depth. Empty by default. A common list is `[\"node_modules\", \"vendor\", \".git\", \"dist\"]`."
+          "markdownDescription": "Folders `search` does not walk into, by name at any depth. Empty by default. A common list is `[\"node_modules\", \"vendor\", \".git\", \"dist\"]`."
         },
         "sftp.mcp.exposeHistory": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Let MCP clients read VS Code's local history for files in the project, through `sftp_history` and `sftp_diff`. It is the only record of how your working copy got to its current state. Read only, and already off when `workbench.localHistory.enabled` is false."
+          "markdownDescription": "Let MCP clients read VS Code's local history for files in the project, through `history` and `diff`. It is the only record of how your working copy got to its current state. Read only, and already off when `workbench.localHistory.enabled` is false."
         },
         "sftp.mcp.callTimeout": {
           "type": "number",
