@@ -1,3 +1,8 @@
+// Before ssh2, always: it destructures `util.isDate` as it loads, and on a
+// runtime that no longer has one it keeps `undefined` for the life of the
+// process. Importing it here rather than only from the extension entry means
+// nothing can reach ssh2 without the patch, whichever module got there first.
+import '../nodeCompat';
 import { Client } from 'ssh2';
 import upath from '../upath';
 import RemoteClient, { ErrorCode, ConnectOption, Config } from './remoteClient';

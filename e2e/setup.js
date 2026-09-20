@@ -1,17 +1,13 @@
 /**
- * `util.isDate` was deprecated for years and removed in Node 23. ssh2 1.13
- * still calls it whenever it encodes file attributes, so on a modern Node the
- * library throws before it can send a STAT reply or a SETSTAT.
+ * Deliberately empty of shims.
  *
- * VS Code bundles its own, older Node, so the extension is unaffected in the
- * editor - but this suite runs on the system one. The shim is restricted to
- * the test process: it must never become a reason for the extension to depend
- * on a patched runtime.
+ * This file used to install `util.isDate` for ssh2, on the reasoning that the
+ * editor ran an older Node and only the test process needed it. The editor
+ * does not, and the shim here meant no test in this suite could ever fail the
+ * way the extension failed: every SFTP file read threw "isDate is not a
+ * function" while the tests passed.
+ *
+ * The extension installs its own, in `src/core/nodeCompat`, at the only moment
+ * that works. The suite runs on a bare runtime so that it can say whether that
+ * is true.
  */
-const util = require('util');
-
-if (typeof util.isDate !== 'function') {
-  util.isDate = value =>
-    value instanceof Date ||
-    Object.prototype.toString.call(value) === '[object Date]';
-}

@@ -76,6 +76,17 @@ describe('the packaged bundle', () => {
     expect(report.connect.ftp).not.toContain('not a constructor');
   });
 
+  it('reads a real file over a real socket', () => {
+    // Connecting proves the modules initialised; reading proves the runtime
+    // underneath them is one ssh2 can work on. This is the call that encodes
+    // file attributes, and so the call that reaches for a `util.isDate` the
+    // bundle has to have restored before ssh2 captured it - which happens
+    // while the entry's imports are still being evaluated, long before
+    // anything activates. It shipped once as "every listing works and no file
+    // can be read".
+    expect(report.read).toBe('<?php echo "read through the bundle";');
+  });
+
   it('stops a cleartext password before the socket', () => {
     // Plain FTP with nobody answering the warning: the connection must not
     // happen, and the reason must be the password rather than the network.

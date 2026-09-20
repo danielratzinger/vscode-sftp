@@ -59,7 +59,20 @@ export async function startSftpServer(root: string): Promise<RunningServer> {
   const keys = utils.generateKeyPairSync('ed25519');
   let misbehaviour: Misbehaviour = {};
 
+  // Held so `close` can end them. `Server.close` stops listening and then
+  // waits for every client to go, so a test that leaves one connected - which
+  // is most of them, since a connection pool exists to stay open - waits for
+  // ever instead of finishing.
+  const clients: any[] = [];
+
   const server = new Server({ hostKeys: [keys.private] }, (client: any) => {
+    clients.push(client);
+    client.on('close', () => {
+      const at = clients.indexOf(client);
+      if (at !== -1) {
+        clients.splice(at, 1);
+      }
+    });
     client.on('authentication', (ctx: any) => ctx.accept());
     client.on('ready', () => {
       client.on('session', (acceptSession: any) => {
@@ -272,6 +285,13 @@ export async function startSftpServer(root: string): Promise<RunningServer> {
     },
     close: () =>
       new Promise<void>(resolve => {
+        clients.slice().forEach(client => {
+          try {
+            client.end();
+          } catch (error) {
+            // Already gone.
+          }
+        });
         server.close(() => resolve());
       }),
   };

@@ -94,6 +94,10 @@ now diverges from upstream's.
 - `getFileSystemPath` took a URI while its callers pass a path string.
 - Every FTP connection left its connect-deadline timer running after the
   connection was made.
+- Every SFTP file read failed with “isDate is not a function”. The shim for
+  ssh2 was installed when the extension activated, and ssh2 takes its copy of
+  what the shim patches while the entry module's imports are still being
+  evaluated. Listings, which encode no file attributes, worked throughout.
 - A tree or search that stopped early said only that it had “hit its limit”.
   It now says which limit - depth, file count or time - because the way out of
   each is a different one.

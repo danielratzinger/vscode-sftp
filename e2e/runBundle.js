@@ -1,11 +1,9 @@
 // Loads a webpack bundle of the extension outside VS Code, with just enough of
 // the editor API stubbed for the modules to initialise.
 const Module = require('module');
-const util = require('util');
 
-if (typeof util.isDate !== 'function') {
-  util.isDate = value => value instanceof Date;
-}
+// No `util.isDate` shim here: the bundle has to install its own before ssh2
+// captures it, and one installed by the harness would prove nothing.
 
 const nothing = () => undefined;
 const disposable = { dispose: nothing };
