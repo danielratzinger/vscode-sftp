@@ -44,6 +44,10 @@ now diverges from upstream's.
   Download`).
 - `operationTimeout`: a command must answer within it, and a transfer must
   not go silent for longer than it.
+- A note in the log when an FTP server's clock is wrong, as opposed to in a
+  different timezone. Measured for free from a file the server stamped
+  itself, on servers that cannot set timestamps on upload. Reported rather
+  than corrected: a clock minutes out is a server to fix.
 - Hidden files in FTP listings, via `LIST -a` with a fallback.
 - Plain FTP connections are attempted over TLS, and kept that way for as long
   as they keep working. Many hosts accept FTPS without anyone configuring it;

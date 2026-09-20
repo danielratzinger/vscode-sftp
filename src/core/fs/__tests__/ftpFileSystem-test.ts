@@ -535,3 +535,102 @@ describe('what counts as a timezone', () => {
     );
   });
 });
+
+describe('noticing that the server’s clock is wrong', () => {
+  /**
+   * A server whose clock is `driftMinutes` out, and which refuses MFMT - so
+   * an uploaded file keeps the server's own timestamp, which is the only
+   * thing that reveals a clock rather than a timezone.
+   */
+  function createDriftingFs(driftMinutes: number, supportsMfmt = false) {
+    const log: string[] = [];
+
+    const ftp = {
+      setLastMod(path: string, date: Date, cb: (err?: Error) => void) {
+        log.push(`setLastMod ${path}`);
+        cb(supportsMfmt ? undefined : new Error('500 Unknown command'));
+      },
+      lastMod(path: string, cb: (err: Error | null, date?: Date) => void) {
+        log.push(`lastMod ${path}`);
+        // What the server would stamp on a file written now, read back as
+        // node-ftp reads MDTM: UTC digits placed in local time.
+        const now = new Date(Date.now() + driftMinutes * 60 * 1000);
+        setTimeout(
+          () =>
+            cb(
+              null,
+              new Date(
+                now.getUTCFullYear(),
+                now.getUTCMonth(),
+                now.getUTCDate(),
+                now.getUTCHours(),
+                now.getUTCMinutes(),
+                now.getUTCSeconds()
+              )
+            ),
+          0
+        );
+      },
+    };
+
+    const client = {
+      getFsClient: () => ftp,
+      connectOption: { password: 'x' },
+      connect: () => Promise.resolve(),
+      end: () => undefined,
+      onDisconnected: () => undefined,
+    };
+
+    const fs = new FTPFileSystem(upath, { client, connectionLimit: 1 } as any);
+
+    return { fs, log };
+  }
+
+  const settle = () => new Promise(resolve => setTimeout(resolve, 20));
+
+  it('reads the server’s clock from a file it could not stamp itself', async () => {
+    const { fs } = createDriftingFs(45);
+
+    // The first utimes discovers MFMT is unsupported; the next upload is the
+    // one that leaves the server's own timestamp behind.
+    await fs.utimes('/pub/a.txt', 0, 1700000000);
+    await fs.utimes('/pub/b.txt', 0, 1700000000);
+    await settle();
+
+    expect(Math.round((fs as any).clockDrift / 60000)).toBe(45);
+  });
+
+  it('asks only once, however many files are uploaded', async () => {
+    const { fs, log } = createDriftingFs(45);
+
+    await fs.utimes('/pub/a.txt', 0, 1700000000);
+    for (const name of ['b', 'c', 'd']) {
+      await fs.utimes(`/pub/${name}.txt`, 0, 1700000000);
+    }
+    await settle();
+
+    expect(log.filter(line => line.startsWith('lastMod'))).toHaveLength(1);
+  });
+
+  it('says nothing about a server that can stamp its own files', async () => {
+    // With MFMT the uploaded file carries our time, so there is no signal -
+    // and no extra command is sent looking for one.
+    const { fs, log } = createDriftingFs(45, true);
+
+    await fs.utimes('/pub/a.txt', 0, 1700000000);
+    await settle();
+
+    expect(log.filter(line => line.startsWith('lastMod'))).toHaveLength(0);
+    expect((fs as any).clockDrift).toBeUndefined();
+  });
+
+  it('measures a clock that is behind as well as ahead', async () => {
+    const { fs } = createDriftingFs(-30);
+
+    await fs.utimes('/pub/a.txt', 0, 1700000000);
+    await fs.utimes('/pub/b.txt', 0, 1700000000);
+    await settle();
+
+    expect(Math.round((fs as any).clockDrift / 60000)).toBe(-30);
+  });
+});

@@ -18,6 +18,9 @@ const HOUR = 60 * MINUTE;
 /** Timezones move in quarter hours, and nothing finer survives a `LIST`. */
 const QUARTER_HOUR = 15 * MINUTE;
 
+/** Below this, a clock difference is ordinary and not worth mentioning. */
+const SIGNIFICANT_DRIFT = 2 * MINUTE;
+
 /**
  * A listing older than about six months carries a year instead of a clock
  * time - `Mar 15 2025` rather than `Sep 19 15:40` - and the parser fills the
@@ -93,6 +96,8 @@ function hasListedEntry(stats: any[]): boolean {
 
 export default class FTPFileSystem extends RemoteFileSystem {
   private _supportMFMT: boolean = true;
+  private _clockDrift: number | undefined;
+  private _driftMeasured: boolean = false;
 
   // `undefined` until we've seen how the server reacts to the `-a` flag.
   private _supportListAll: boolean | undefined;
@@ -300,12 +305,104 @@ export default class FTPFileSystem extends RemoteFileSystem {
   }
 
   utimes(path: string, _atime: number, mtime: number): Promise<void> {
-    if (!this._supportMFMT) return Promise.resolve();
+    if (!this._supportMFMT) {
+      // The file this extension just wrote kept the server's own timestamp,
+      // which is the one chance to see what the server thinks the time is.
+      this._measureClockDrift(path);
+      return Promise.resolve();
+    }
 
     return this.atomicSetLastMod(path, new Date(mtime * 1000)).catch(_ => {
       logger.info('Don\'t Support MFMT');
       this._supportMFMT = false;
     });
+  }
+
+  /** How far the server's clock is from this machine's, once it is known. */
+  get clockDrift(): number | undefined {
+    return this._clockDrift;
+  }
+
+  /**
+   * What the server thinks the time is, from a file it has just stamped.
+   *
+   * The timezone measurement cannot see this. It compares two readings of one
+   * file taken from the same clock, so a clock that is wrong is wrong in both
+   * and cancels out; what is left is the timezone. A drifting clock only
+   * shows when the server stamps something *now* and says so.
+   *
+   * That happens for free on servers without `MFMT`: this extension cannot
+   * set the timestamp on what it uploads, so the file carries the server's
+   * own idea of the time, and `MDTM` reports it in UTC - no timezone in the
+   * way. One command, once per connection, on a file that was going to be
+   * written anyway.
+   *
+   * It is reported, not corrected. A clock that is minutes out is a server to
+   * fix rather than an offset to carry, and silently compensating would hide
+   * it - while making every timestamp on that server depend on a guess.
+   */
+  private _measureClockDrift(path: string): void {
+    if (this._clockDrift !== undefined || this._driftMeasured) {
+      return;
+    }
+    this._driftMeasured = true;
+
+    const writtenAt = Date.now();
+
+    this._withClient(
+      ftp =>
+        new Promise<Date>((resolve, reject) => {
+          ftp.lastMod(path, (err, date) => (err ? reject(err) : resolve(date)));
+        }),
+      `MDTM ${path}`
+    )
+      .then(stamped => {
+        if (!(stamped instanceof Date) || isNaN(stamped.getTime())) {
+          return;
+        }
+
+        // `lastMod` builds its Date from an ISO string with no zone, so the
+        // reading is the server's UTC digits placed in local time. Reading
+        // this machine's clock the same way makes the two comparable.
+        const here = new Date(writtenAt);
+        const asLocal = Date.UTC(
+          here.getUTCFullYear(),
+          here.getUTCMonth(),
+          here.getUTCDate(),
+          here.getUTCHours(),
+          here.getUTCMinutes(),
+          here.getUTCSeconds()
+        );
+        const theirs = Date.UTC(
+          stamped.getFullYear(),
+          stamped.getMonth(),
+          stamped.getDate(),
+          stamped.getHours(),
+          stamped.getMinutes(),
+          stamped.getSeconds()
+        );
+
+        this._clockDrift = theirs - asLocal;
+
+        if (Math.abs(this._clockDrift) < SIGNIFICANT_DRIFT) {
+          return;
+        }
+
+        const minutes = Math.round(this._clockDrift / MINUTE);
+        logger.warn(
+          `The server's clock is ${Math.abs(minutes)} minutes ` +
+            `${minutes > 0 ? 'ahead of' : 'behind'} this machine. Files changed ` +
+            'on the server by anything other than this extension will look ' +
+            `that much ${minutes > 0 ? 'newer' : 'older'} than they are, so ` +
+            'comparisons against local copies can be wrong. This is the ' +
+            'server\'s clock rather than its timezone, and is worth fixing ' +
+            'there rather than working around here.'
+        );
+      })
+      .catch(() => {
+        // A server that will not answer MDTM tells us nothing; nothing here
+        // is worth failing a transfer over.
+      });
   }
 
   async get(path, _option?: FileOption): Promise<Readable> {

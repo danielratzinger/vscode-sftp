@@ -436,7 +436,7 @@ The number of hours difference between the local machine and the remote server (
 
 | 💡 Note |
 | :--- |
-| *Leave it out on FTP and it is measured for you on the first listing. A `LIST` line carries no timezone — it is the server's wall clock — while `MDTM` returns the same moment in UTC, so comparing the two for one file gives the difference. Nothing is written to the server, and it costs one extra command per connection. The result is rounded to the nearest quarter hour and written to the SFTP output channel. Setting this yourself turns the measurement off.* | 
+| *Leave it out on FTP and it is measured for you on the first listing. A `LIST` line carries no timezone — it is the server's wall clock — while `MDTM` returns the same moment in UTC, so comparing the two for one file gives the difference. Nothing is written to the server, and it costs one extra command per connection. The result is rounded to the nearest quarter hour and written to the SFTP output channel, and only believed if it is a timezone that exists — between −12:00 and +14:00 — because a listing older than a few months carries a date with no clock time, and measuring against its midnight produces an offset no timezone has. Setting this yourself turns the measurement off.* | 
 
 | 💡 Note |
 | :--- |
@@ -522,6 +522,11 @@ Set it to `0` to wait forever, which is what happened before this setting existe
   "operationTimeout": 120000
 }
 ```
+
+
+| ℹ️ A timezone is not a clock |
+| :--- |
+| *That measurement sees a server's timezone, never a wrong clock: both readings come from the same clock, so an error in it cancels out. A clock that is simply wrong shows up separately — on a server without `MFMT`, a file this extension uploads keeps the server's own idea of the time, and the log then says how far out it is. That one is reported rather than corrected: a server minutes out of step is worth fixing where it is, and files uploaded from here carry your timestamp anyway.* |
 
 ### verifyTransfer
 After each file is written, compare its size on the destination against the source and fail the file if they differ. <br>
