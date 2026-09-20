@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { showTextDocument } from '../../host';
-import { toLocalPath } from '../../helper';
+import { isSubpathOf, toLocalPath } from '../../helper';
 import {
   upath,
   UResource,
@@ -30,26 +30,67 @@ const DEFAULT_FILES_EXCLUDE = ['.git', '.svn', '.hg', 'CVS', '.DS_Store'];
 const REPOSITORY_MARKERS = ['.git', '.svn', '.hg'];
 
 /**
- * Whether the local copy of this remote folder is a repository.
- *
- * Only `Clear Local Folder` asks. Clearing a folder is for a download that
- * has to start from nothing, and a repository is not that: it holds the
- * history of what is deployed, most of it exists nowhere else, and no
- * download would put it back. The command refuses to remove the repository
- * itself in any case - this keeps it off the menu, so the question does not
- * come up over a folder where the answer would be no.
- *
- * `.git` can be a file rather than a folder, in a worktree or a submodule,
- * so this asks whether the name is there at all.
+ * `.git` can be a file rather than a folder, in a worktree or a submodule, so
+ * this asks whether the name is there at all.
  */
-export function localCopyIsARepository(local: string): boolean {
+function holdsARepository(dir: string): boolean {
   return REPOSITORY_MARKERS.some(marker => {
     try {
-      return fs.existsSync(path.join(local, marker));
+      return fs.existsSync(path.join(dir, marker));
     } catch (error) {
       return false;
     }
   });
+}
+
+/**
+ * Answers kept for the life of a tree, because this is asked once per visible
+ * item and the walk repeats itself all the way up every time.
+ */
+const repositoryAnswers = new Map<string, boolean>();
+
+export function forgetRepositoryAnswers(): void {
+  repositoryAnswers.clear();
+}
+
+/**
+ * Whether the local copy of this remote folder is in a repository - its own,
+ * or one it sits inside.
+ *
+ * Only `Clear Local Folder` asks. Clearing a folder is for a download that has
+ * to start from nothing, and nothing in a working copy is that: the files are
+ * tracked, the history is beside them, and what the command would delete is
+ * not what a download would put back.
+ *
+ * The walk stops at the workspace folder. A repository above the folder the
+ * editor has open is not this extension's business, and an unbounded walk
+ * makes the answer depend on how somebody keeps their home directory.
+ */
+export function localCopyIsInARepository(local: string, workspace: string): boolean {
+  const held = repositoryAnswers.get(local);
+  if (held !== undefined) {
+    return held;
+  }
+
+  const stop = path.resolve(workspace);
+  let dir = path.resolve(local);
+  let answer = false;
+
+  for (;;) {
+    if (holdsARepository(dir)) {
+      answer = true;
+      break;
+    }
+
+    const up = path.dirname(dir);
+    if (dir === stop || up === dir || !isSubpathOf(stop, up)) {
+      break;
+    }
+    dir = up;
+  }
+
+  repositoryAnswers.set(local, answer);
+  return answer;
 }
 /**
  * covert the url path for a customed docuemnt title
@@ -106,6 +147,9 @@ export default class RemoteTreeData
   readonly onDidChange: vscode.Event<vscode.Uri> = this._onDidChangeFile.event;
 
   async refresh(item?: ExplorerItem): Promise<any> {
+    // A folder can become a repository, or stop being one, between refreshes.
+    forgetRepositoryAnswers();
+
     // refresh root
     if (!item) {
       // clear cache
@@ -181,7 +225,9 @@ export default class RemoteTreeData
       root.explorerContext.fileService.baseDir
     );
 
-    return localCopyIsARepository(local) ? `${kind}-repo` : kind;
+    return localCopyIsInARepository(local, root.explorerContext.fileService.workspace)
+      ? `${kind}-repo`
+      : kind;
   }
 
   async getChildren(item?: ExplorerItem): Promise<ExplorerItem[]> {

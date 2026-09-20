@@ -37,8 +37,8 @@ now diverges from upstream's.
   so a folder downloaded across a year of deploys holds files the server
   deleted months ago. Asked first, with the count and the size; moved to the
   trash where the system supports it; never anything the connection ignores,
-  and never anything on the server. Not offered at all on a folder whose
-  local copy is a repository.
+  and never anything on the server. Not offered at all on anything whose local
+  copy sits in a repository, its own or one above it.
 
 - The denied-files list covers the credential files of other ecosystems:
   `.npmrc`, `.pypirc`, `.my.cnf`, `.s3cfg`, `.boto`, `.dockercfg`, an AWS
