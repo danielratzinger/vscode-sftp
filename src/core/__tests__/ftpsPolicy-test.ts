@@ -81,3 +81,37 @@ describe('the message matters even when there is a code', () => {
     ).toBe(false);
   });
 });
+
+describe('the floor is your configuration', () => {
+  it('never weakens a connection, only ever strengthens one', () => {
+    // The invariant worth stating plainly: an upgrade can add TLS to a
+    // connection that had none, and nothing here can remove it from one that
+    // has it. A configured FTPS connection that fails, fails - it does not
+    // quietly become plain FTP.
+    const configured = [
+      { protocol: 'ftp', host: 'h', secure: true },
+      { protocol: 'ftp', host: 'h', secure: 'implicit' },
+      { protocol: 'ftp', host: 'h', secure: 'control' },
+      { protocol: 'ftp', host: 'h', secure: true, secureOptions: { rejectUnauthorized: true } },
+    ];
+
+    configured.forEach(option => {
+      const after = withTls(option);
+      expect(after).toBe(option);
+      expect(after.secure).toBe(option.secure);
+    });
+  });
+
+  it('leaves certificate checking alone where it was asked for', () => {
+    const strict = {
+      protocol: 'ftp',
+      host: 'h',
+      secureOptions: { rejectUnauthorized: true },
+    };
+
+    // No `secure`, so this one is upgraded - but the stricter option someone
+    // wrote survives the upgrade rather than being replaced by the lenient
+    // default an upgrade would otherwise use.
+    expect(withTls(strict).secureOptions.rejectUnauthorized).toBe(true);
+  });
+});
