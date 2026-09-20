@@ -27,10 +27,10 @@ describe('withBudget', () => {
   const never = () => new Promise<void>(() => undefined);
 
   it('stops a call that runs past its budget', async () => {
-    const error = await withBudget(never(), 20, 'sftp_search').catch(e => e);
+    const error = await withBudget(never(), 20, 'search').catch(e => e);
 
     expect(error).toBeInstanceOf(CallTimeoutError);
-    expect(error.message).toContain('sftp_search');
+    expect(error.message).toContain('search');
     // The model needs to know what to do differently, not just that it failed.
     expect(error.message).toContain('Ask for less');
   });
@@ -38,13 +38,13 @@ describe('withBudget', () => {
   it('leaves a call that finishes in time alone', async () => {
     const work = new Promise(resolve => setTimeout(() => resolve('done'), 5));
 
-    expect(await withBudget(work, 200, 'sftp_list')).toBe('done');
+    expect(await withBudget(work, 200, 'list')).toBe('done');
   });
 
   it('passes a real failure through unchanged', async () => {
     const failing = Promise.reject(new Error('Unknown server.'));
 
-    const error = await withBudget(failing, 200, 'sftp_list').catch(e => e);
+    const error = await withBudget(failing, 200, 'list').catch(e => e);
 
     expect(error.message).toBe('Unknown server.');
   });
@@ -58,7 +58,7 @@ describe('withBudget', () => {
       setTimeout(() => reject(new Error('too late')), 20)
     );
 
-    await withBudget(late, 5, 'sftp_search').catch(() => undefined);
+    await withBudget(late, 5, 'search').catch(() => undefined);
     await new Promise(done => setTimeout(done, 60));
 
     process.removeListener('unhandledRejection', onUnhandled);
@@ -68,6 +68,6 @@ describe('withBudget', () => {
   it('is off when there is no budget', async () => {
     const work = new Promise(resolve => setTimeout(() => resolve('slow'), 20));
 
-    expect(await withBudget(work, 0, 'sftp_list')).toBe('slow');
+    expect(await withBudget(work, 0, 'list')).toBe('slow');
   });
 });

@@ -75,7 +75,7 @@ function createContext(): ToolContext {
 }
 
 const tree = () =>
-  createTools(createContext()).find(t => t.name === 'sftp_tree')!;
+  createTools(createContext()).find(t => t.name === 'tree')!;
 
 beforeEach(() => {
   vol.reset();

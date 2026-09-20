@@ -60,9 +60,9 @@ function createContext(over: Partial<ToolContext> = {}): ToolContext {
 const tool = (context: ToolContext, name: string) =>
   createTools(context).find(t => t.name === name)!;
 
-describe('sftp_servers', () => {
+describe('servers', () => {
   it('lists only exposed connections, with what an agent needs to choose', async () => {
-    const result = await tool(createContext(), 'sftp_servers').run({});
+    const result = await tool(createContext(), 'servers').run({});
 
     expect(result.text).toContain('Staging');
     expect(result.text).toContain('sftp://deploy@staging.example.com:22/srv/app');
@@ -76,22 +76,22 @@ describe('sftp_servers', () => {
       exposure: () => ({ exposedByDefault: true, profile: 'production' }),
     });
 
-    const result = await tool(context, 'sftp_servers').run({});
+    const result = await tool(context, 'servers').run({});
     expect(result.text).toContain('[profile: production]');
   });
 
   it('explains an empty list rather than returning nothing', async () => {
     const context = createContext({ services: () => [] });
 
-    const result = await tool(context, 'sftp_servers').run({});
+    const result = await tool(context, 'servers').run({});
     expect(result.text).toContain('No servers are exposed');
     expect(result.isError).toBeFalsy();
   });
 });
 
-describe('sftp_list', () => {
+describe('list', () => {
   it('lists a directory, folders first', async () => {
-    const result = await tool(createContext(), 'sftp_list').run({
+    const result = await tool(createContext(), 'list').run({
       server: '1',
       path: '/srv/app',
     });
@@ -114,7 +114,7 @@ describe('sftp_list', () => {
       }),
     });
 
-    await tool(context, 'sftp_list').run({ server: '1' });
+    await tool(context, 'list').run({ server: '1' });
     expect(asked).toBe('/srv/app');
   });
 
@@ -127,33 +127,33 @@ describe('sftp_list', () => {
       }),
     });
 
-    const result = await tool(context, 'sftp_list').run({ server: '1' });
+    const result = await tool(context, 'list').run({ server: '1' });
     expect(result.text).toContain('is empty');
   });
 
   it('treats a hidden server as one that does not exist', async () => {
-    const result = await tool(createContext(), 'sftp_list').run({ server: '2' });
+    const result = await tool(createContext(), 'list').run({ server: '2' });
 
     expect(result.isError).toBe(true);
     expect(result.text).toBe('Unknown server.');
   });
 
   it('answers an unknown id identically, so absence is indistinguishable', async () => {
-    const missing = await tool(createContext(), 'sftp_list').run({ server: '404' });
-    const hidden = await tool(createContext(), 'sftp_list').run({ server: '2' });
+    const missing = await tool(createContext(), 'list').run({ server: '404' });
+    const hidden = await tool(createContext(), 'list').run({ server: '2' });
 
     expect(missing.text).toBe(hidden.text);
   });
 
   it('refuses a missing server argument', async () => {
-    const result = await tool(createContext(), 'sftp_list').run({});
+    const result = await tool(createContext(), 'list').run({});
     expect(result.isError).toBe(true);
   });
 });
 
-describe('sftp_stat', () => {
+describe('stat', () => {
   it('reports size, time and where a local copy would live', async () => {
-    const result = await tool(createContext(), 'sftp_stat').run({
+    const result = await tool(createContext(), 'stat').run({
       server: '1',
       path: '/srv/app/index.php',
     });
@@ -174,7 +174,7 @@ describe('sftp_stat', () => {
       }),
     });
 
-    const result = await tool(context, 'sftp_stat').run({
+    const result = await tool(context, 'stat').run({
       server: '1',
       path: '/srv/app/gone.php',
     });
@@ -184,7 +184,7 @@ describe('sftp_stat', () => {
   });
 
   it('requires a path', async () => {
-    const result = await tool(createContext(), 'sftp_stat').run({ server: '1' });
+    const result = await tool(createContext(), 'stat').run({ server: '1' });
     expect(result.isError).toBe(true);
   });
 });
@@ -217,7 +217,7 @@ describe('a directory bigger than anyone reads', () => {
     });
 
   it('shows the first thousand and says how to get the rest', async () => {
-    const result = await tool(paged(), 'sftp_list').run({ server: '1' });
+    const result = await tool(paged(), 'list').run({ server: '1' });
 
     expect(result.text).toContain('(1500, showing 1-1000)');
     expect(result.text).toContain('offset: 1000');
@@ -229,8 +229,8 @@ describe('a directory bigger than anyone reads', () => {
   it('reads on from where it stopped', async () => {
     // "Narrow it with a subdirectory" is not advice anyone can take when the
     // directory has no subdirectories in it.
-    const first: any = await tool(paged(), 'sftp_list').run({ server: '1' });
-    const second: any = await tool(paged(), 'sftp_list').run({
+    const first: any = await tool(paged(), 'list').run({ server: '1' });
+    const second: any = await tool(paged(), 'list').run({
       server: '1',
       offset: first.structured.nextOffset,
     });
@@ -246,7 +246,7 @@ describe('a directory bigger than anyone reads', () => {
   });
 
   it('is unbothered by an offset past the end', async () => {
-    const result: any = await tool(paged(), 'sftp_list').run({
+    const result: any = await tool(paged(), 'list').run({
       server: '1',
       offset: 9000,
     });
@@ -256,7 +256,7 @@ describe('a directory bigger than anyone reads', () => {
   });
 
   it('ignores an offset that is not a number', async () => {
-    const result: any = await tool(paged(), 'sftp_list').run({
+    const result: any = await tool(paged(), 'list').run({
       server: '1',
       offset: 'lots',
     });
@@ -266,7 +266,7 @@ describe('a directory bigger than anyone reads', () => {
   });
 
   it('says nothing about truncation when there is none', async () => {
-    const result = await tool(createContext(), 'sftp_list').run({ server: '1' });
+    const result = await tool(createContext(), 'list').run({ server: '1' });
 
     expect(result.text).not.toContain('more.');
     expect((result.structured as any).truncated).toBe(false);

@@ -173,9 +173,9 @@ describe('searchPaths', () => {
   });
 });
 
-describe('sftp_search', () => {
+describe('search', () => {
   it('finds text and says what it cost', async () => {
-    const result = await tool(createContext(), 'sftp_search').run({
+    const result = await tool(createContext(), 'search').run({
       server: '1',
       query: 'session_start',
     });
@@ -186,7 +186,7 @@ describe('sftp_search', () => {
   });
 
   it('reports path matches alongside content matches', async () => {
-    const result = await tool(createContext(), 'sftp_search').run({
+    const result = await tool(createContext(), 'search').run({
       server: '1',
       query: 'Session',
     });
@@ -195,7 +195,7 @@ describe('sftp_search', () => {
   });
 
   it('never searches a credential file', async () => {
-    const result = await tool(createContext(), 'sftp_search').run({
+    const result = await tool(createContext(), 'search').run({
       server: '1',
       query: 'DB_PASSWORD',
     });
@@ -206,7 +206,7 @@ describe('sftp_search', () => {
   });
 
   it('scopes to a directory', async () => {
-    const result = await tool(createContext(), 'sftp_search').run({
+    const result = await tool(createContext(), 'search').run({
       server: '1',
       query: 'class',
       dir: '/srv/app/src',
@@ -217,9 +217,9 @@ describe('sftp_search', () => {
   });
 
   it('requires a query, and an exposed server', async () => {
-    expect((await tool(createContext(), 'sftp_search').run({ server: '1' })).isError).toBe(true);
+    expect((await tool(createContext(), 'search').run({ server: '1' })).isError).toBe(true);
     expect(
-      (await tool(createContext(), 'sftp_search').run({ server: '9', query: 'x' })).text
+      (await tool(createContext(), 'search').run({ server: '9', query: 'x' })).text
     ).toBe('Unknown server.');
   });
 });

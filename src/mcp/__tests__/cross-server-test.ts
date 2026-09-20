@@ -55,7 +55,7 @@ function createContext(): ToolContext {
 }
 
 const diffTool = () =>
-  createTools(createContext()).find(t => t.name === 'sftp_diff')!;
+  createTools(createContext()).find(t => t.name === 'diff')!;
 
 beforeEach(() => {
   vol.reset();

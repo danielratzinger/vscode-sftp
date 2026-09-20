@@ -92,7 +92,7 @@ describe('PeerRegistry', () => {
 describe('forwarding', () => {
   const message = {
     jsonrpc: '2.0', id: 1, method: 'tools/call',
-    params: { name: 'sftp_list', arguments: { server: 'w2:1', path: '/srv' } },
+    params: { name: 'list', arguments: { server: 'w2:1', path: '/srv' } },
   };
 
   it('finds the server a call is aimed at', () => {
@@ -113,7 +113,7 @@ describe('forwarding', () => {
 describe('dispatcher hooks', () => {
   const tools = (): ToolDefinition[] => [
     {
-      name: 'sftp_list', description: 'list', inputSchema: { type: 'object' },
+      name: 'list', description: 'list', inputSchema: { type: 'object' },
       run: async () => ({ text: 'answered locally' }),
     },
   ];
@@ -132,13 +132,13 @@ describe('dispatcher hooks', () => {
 
     const forwarded: any = await dispatcher.handle({
       jsonrpc: '2.0', id: 1, method: 'tools/call',
-      params: { name: 'sftp_list', arguments: { server: 'w2:1' } },
+      params: { name: 'list', arguments: { server: 'w2:1' } },
     });
     expect(forwarded.result.content[0].text).toBe('answered by w2');
 
     const local: any = await dispatcher.handle({
       jsonrpc: '2.0', id: 2, method: 'tools/call',
-      params: { name: 'sftp_list', arguments: { server: '1' } },
+      params: { name: 'list', arguments: { server: '1' } },
     });
     expect(local.result.content[0].text).toBe('answered locally');
   });
@@ -163,7 +163,7 @@ describe('dispatcher hooks', () => {
     expect(seen).toEqual(['peer/register']);
 
     const listed: any = await dispatcher.handle({ jsonrpc: '2.0', id: 2, method: 'tools/list' });
-    expect(listed.result.tools.map((t: any) => t.name)).toEqual(['sftp_list']);
+    expect(listed.result.tools.map((t: any) => t.name)).toEqual(['list']);
   });
 
   it('still refuses an unknown method that is not a peer one', async () => {

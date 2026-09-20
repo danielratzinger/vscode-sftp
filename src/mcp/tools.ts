@@ -142,10 +142,10 @@ function sliceLines(text: string, from?: number, to?: number): string {
 const DIVERGENCE: { [key: string]: string } = {
   [LocalState.Newer]:
     'Your local copy is newer than the server\u2019s and has not been touched. ' +
-    'The text below is what is on the server; sftp_fetch_local returns yours.',
+    'The text below is what is on the server; `local-copy` returns yours.',
   [LocalState.Older]:
     'The server\u2019s copy is newer than your local one, which has been left alone. ' +
-    'The text below is what is on the server; sftp_fetch_local returns yours.',
+    'The text below is what is on the server; `local-copy` returns yours.',
 };
 
 const errorResult = (text: string): ToolResult => ({ text, isError: true });
@@ -286,7 +286,7 @@ function describeNote(view: { state: NoteState; summary?: string }): string {
   if (view.state === NoteState.Stale) {
     return (
       `A description of an older version says: ${view.summary}. The file has ` +
-      'changed since. If it is no longer right, put it right with sftp_note.'
+      'changed since. If it is no longer right, put it right with `note`.'
     );
   }
 
@@ -369,7 +369,7 @@ export function createTools(
   }
 
   const servers: ToolDefinition = {
-    name: 'sftp_servers',
+    name: 'servers',
     title: 'List servers',
     description:
       'The servers available to read from, with what each one is where known. ' +
@@ -401,7 +401,7 @@ export function createTools(
   };
 
   const list: ToolDefinition = {
-    name: 'sftp_list',
+    name: 'list',
     title: 'List a directory',
     description:
       'One directory on the server, as it is right now. Cheaper than searching ' +
@@ -409,7 +409,7 @@ export function createTools(
     inputSchema: {
       type: 'object',
       properties: {
-        server: { type: 'string', description: 'An id from sftp_servers.' },
+        server: { type: 'string', description: 'An id from `servers`.' },
         path: {
           type: 'string',
           description:
@@ -480,7 +480,7 @@ export function createTools(
           shown.map(describeEntry).join('\n') +
           (next !== undefined
             ? `\n… and ${sorted.length - next} more. Call again with ` +
-              `offset: ${next} for the rest, or use sftp_search to find what ` +
+              `offset: ${next} for the rest, or use \`search\` to find what ` +
               'you are after.'
             : ''),
         structured: {
@@ -502,7 +502,7 @@ export function createTools(
   };
 
   const stat: ToolDefinition = {
-    name: 'sftp_stat',
+    name: 'stat',
     title: 'Compare one path',
     description:
       'How one path stands: whether it exists on the server, whether a local ' +
@@ -514,7 +514,7 @@ export function createTools(
     inputSchema: {
       type: 'object',
       properties: {
-        server: { type: 'string', description: 'An id from sftp_servers.' },
+        server: { type: 'string', description: 'An id from `servers`.' },
         path: { type: 'string', description: 'Absolute remote path.' },
       },
       required: ['server', 'path'],
@@ -581,18 +581,18 @@ export function createTools(
   };
 
   const fetch: ToolDefinition = {
-    name: 'sftp_fetch',
+    name: 'read',
     title: 'Read a file',
     description:
       'The contents of one file as it is on the server. Always the server\u2019s ' +
       'version, even when a local copy exists \u2014 you asked what is deployed. ' +
       'Give start_line and end_line to read part of a large file rather than all ' +
-      'of it. If a local copy differs, the reply says so and sftp_fetch_local ' +
+      'of it. If a local copy differs, the reply says so and `local-copy` ' +
       'returns that instead.',
     inputSchema: {
       type: 'object',
       properties: {
-        server: { type: 'string', description: 'An id from sftp_servers.' },
+        server: { type: 'string', description: 'An id from `servers`.' },
         path: { type: 'string', description: 'Absolute remote path.' },
         start_line: { type: 'integer', description: 'First line, 1-based.' },
         end_line: { type: 'integer', description: 'Last line, inclusive.' },
@@ -633,7 +633,7 @@ export function createTools(
         return errorResult(`${target} is not on the server.`);
       }
       if (remoteStat.type === FileType.Directory) {
-        return errorResult(`${target} is a directory. Use sftp_list.`);
+        return errorResult(`${target} is a directory. Use \`list\`.`);
       }
 
       // Checked before the fetch, so a denied file never reaches the cache
@@ -649,7 +649,7 @@ export function createTools(
           `${target} is ${describeSize(remoteStat.size)}, over the ` +
             `${describeSize(limit)} limit, so it was not fetched. If it is ` +
             'source you need, raise sftp.mcp.maxFileBytes; if it is a log or ' +
-            'a dump, sftp_search finds lines in it without reading it whole.'
+            'a dump, `search` finds lines in it without reading it whole.'
         );
       }
 
@@ -722,16 +722,16 @@ export function createTools(
   };
 
   const fetchLocal: ToolDefinition = {
-    name: 'sftp_fetch_local',
+    name: 'local-copy',
     title: 'Read the working copy',
     description:
       'The contents of the copy on this machine, which is only worth asking ' +
-      'for when sftp_fetch reported that it differs from the server. Everything ' +
+      'for when `read` reported that it differs from the server. Everything ' +
       'else returns the server\u2019s version.',
     inputSchema: {
       type: 'object',
       properties: {
-        server: { type: 'string', description: 'An id from sftp_servers.' },
+        server: { type: 'string', description: 'An id from `servers`.' },
         path: { type: 'string', description: 'Absolute remote path.' },
         start_line: { type: 'integer', description: 'First line, 1-based.' },
         end_line: { type: 'integer', description: 'Last line, inclusive.' },
@@ -786,7 +786,7 @@ export function createTools(
   };
 
   const search: ToolDefinition = {
-    name: 'sftp_search',
+    name: 'search',
     title: 'Search the server',
     description:
       'Find text in the files on the server, and files whose path matches. ' +
@@ -797,7 +797,7 @@ export function createTools(
     inputSchema: {
       type: 'object',
       properties: {
-        server: { type: 'string', description: 'An id from sftp_servers.' },
+        server: { type: 'string', description: 'An id from `servers`.' },
         query: { type: 'string', description: 'Text to find, or a pattern with regex: true.' },
         dir: {
           type: 'string',
@@ -950,7 +950,7 @@ export function createTools(
         }
 
         // Scrubbed before it is searched, so a snippet cannot leak what
-        // sftp_fetch would have hidden.
+        // `read` would have hidden.
         const scrubbed = redact(content, redaction());
         try {
           matches.push(...searchText(file.path, scrubbed.text, searchOption));
@@ -1002,7 +1002,7 @@ export function createTools(
   };
 
   const tree: ToolDefinition = {
-    name: 'sftp_tree',
+    name: 'tree',
     title: 'The shape of the server',
     description:
       'The directory structure, with what each file is for where that is ' +
@@ -1012,7 +1012,7 @@ export function createTools(
     inputSchema: {
       type: 'object',
       properties: {
-        server: { type: 'string', description: 'An id from sftp_servers.' },
+        server: { type: 'string', description: 'An id from `servers`.' },
         dir: { type: 'string', description: 'Where to start. Defaults to the remote root.' },
         depth: { type: 'integer', description: 'How far down to go. Default 3.' },
         offset: {
@@ -1171,7 +1171,7 @@ export function createTools(
           (found.truncated ? ' (walk hit its limit; narrow it with dir)' : '') +
           '.\n' +
           (describedCount < found.files.length
-            ? 'Record what a file is for with sftp_note as you learn it.\n'
+            ? 'Record what a file is for with note as you learn it.\n'
             : '') +
           (next !== undefined
             ? `Call again with offset: ${next} for the rest; the tree is ` +
@@ -1196,17 +1196,17 @@ export function createTools(
   };
 
   const recordNote: ToolDefinition = {
-    name: 'sftp_note',
+    name: 'note',
     title: 'Record what a file is for',
     description:
       'Save a one-line description of a file you have just understood, so it ' +
-      'shows up in sftp_tree next time - for you, later, or for anyone else ' +
+      'shows up in tree next time - for you, later, or for anyone else ' +
       'working on this server. Writes only to this machine, never to the ' +
       'server. Describe the purpose, not the contents.',
     inputSchema: {
       type: 'object',
       properties: {
-        server: { type: 'string', description: 'An id from sftp_servers.' },
+        server: { type: 'string', description: 'An id from `servers`.' },
         path: { type: 'string', description: 'Absolute remote path.' },
         summary: { type: 'string', description: 'One line. What the file is for.' },
       },
@@ -1257,7 +1257,7 @@ export function createTools(
   };
 
   const forgetNotes: ToolDefinition = {
-    name: 'sftp_forget',
+    name: 'forget',
     title: 'Drop descriptions',
     description:
       'Remove the description of one file, or every description for a server. ' +
@@ -1265,7 +1265,7 @@ export function createTools(
     inputSchema: {
       type: 'object',
       properties: {
-        server: { type: 'string', description: 'An id from sftp_servers.' },
+        server: { type: 'string', description: 'An id from `servers`.' },
         path: { type: 'string', description: 'One path. Leave it out to clear the lot.' },
       },
       required: ['server'],
@@ -1300,7 +1300,7 @@ export function createTools(
   };
 
   const overview: ToolDefinition = {
-    name: 'sftp_overview',
+    name: 'overview',
     title: 'What this project is',
     description:
       'What the project on a server appears to be: framework, name and ' +
@@ -1309,7 +1309,7 @@ export function createTools(
     inputSchema: {
       type: 'object',
       properties: {
-        server: { type: 'string', description: 'An id from sftp_servers.' },
+        server: { type: 'string', description: 'An id from `servers`.' },
       },
       required: ['server'],
     },
@@ -1438,7 +1438,7 @@ export function createTools(
     'a download wrote over a local file that differed from the server\u2019s.';
 
   const history: ToolDefinition = {
-    name: 'sftp_history',
+    name: 'history',
     title: 'Earlier versions of a file',
     description:
       'What a file looked like before it was last saved, from the editor\u2019s ' +
@@ -1448,7 +1448,7 @@ export function createTools(
     inputSchema: {
       type: 'object',
       properties: {
-        server: { type: 'string', description: 'An id from sftp_servers.' },
+        server: { type: 'string', description: 'An id from `servers`.' },
         path: { type: 'string', description: 'Absolute remote path.' },
         version: {
           type: 'string',
@@ -1495,7 +1495,7 @@ export function createTools(
             } of ${localPath}, newest first:\n` +
             versions.map((version, at) => describeVersion(version, at)).join('\n') +
             '\n\nName one as version to read it, or compare it with the server ' +
-            'using sftp_diff.',
+            'using diff.',
           structured: {
             path: target,
             localPath,
@@ -1662,24 +1662,24 @@ export function createTools(
   }
 
   const diffTool: ToolDefinition = {
-    name: 'sftp_diff',
+    name: 'diff',
     title: 'Compare two versions',
     description:
       'A unified diff between any two of: the file on the server, the copy on ' +
-      'this machine, an earlier version from sftp_history, and the same file ' +
+      'this machine, an earlier version from history, and the same file ' +
       'on another connection ("server:<id>"). Answers \u201cwhat changed\u201d and ' +
       '\u201cwhat differs between staging and production\u201d directly, instead of ' +
       'making you read both files.',
     inputSchema: {
       type: 'object',
       properties: {
-        server: { type: 'string', description: 'An id from sftp_servers.' },
+        server: { type: 'string', description: 'An id from `servers`.' },
         path: { type: 'string', description: 'Absolute remote path.' },
         left: {
           type: 'string',
           description:
             'The older side: "remote", "local", a version id or index from ' +
-            'sftp_history, or "server:<id>" for the same file on another ' +
+            'history, or "server:<id>" for the same file on another ' +
             'connection. Defaults to "remote".',
         },
         right: {
@@ -1720,7 +1720,7 @@ export function createTools(
       }
 
       // Both sides are scrubbed before they are compared, so a credential
-      // cannot leak through a diff that sftp_fetch would have hidden. A
+      // cannot leak through a diff that read would have hidden. A
       // credential that *changed* therefore shows as no change at all, which
       // is worth saying out loud.
       const leftClean = redact(left.text!, redaction());

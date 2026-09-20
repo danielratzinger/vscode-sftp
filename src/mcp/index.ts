@@ -34,17 +34,17 @@ const SERVER_VERSION = '1.0.0';
  */
 const INSTRUCTIONS =
   'Read-only access to the files on servers configured in the SFTP extension. ' +
-  'Call sftp_servers first: every other tool takes one of its ids, and the ' +
+  'Call `servers` first: every other tool takes one of its ids, and the ' +
   'listing says what each server is. ' +
-  'Prefer sftp_list over exploring blindly, and scope work to a directory - ' +
+  'Prefer `list` over exploring blindly, and scope work to a directory - ' +
   'these are remote servers, so a listing costs a round trip and reading a ' +
   'whole tree is slow. ' +
   'Everything returned is the content on the server, not any local copy. ' +
   'A file exists in three versions - the server\u2019s, the working copy, and ' +
-  'the earlier ones the editor saved - and sftp_diff compares any two of them. ' +
+  'the earlier ones the editor saved - and `diff` compares any two of them. ' +
   'Two questions have a cheaper answer than reading: \u201cwhat changed recently\u201d ' +
-  'is sftp_tree with since, not a search; and \u201cis what I read still current\u201d ' +
-  'is sftp_stat, which costs one round trip and no file.';
+  'is `tree` with since, not a `search`; and \u201cis what I read still current\u201d ' +
+  'is `stat`, which costs one round trip and no file.';
 
 let running: StartedServer | null = null;
 let currentToken = '';

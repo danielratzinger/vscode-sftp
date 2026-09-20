@@ -16,7 +16,7 @@ describe('one leader answering for two windows', () => {
 
   const toolsFor = (label: string): (() => ToolDefinition[]) => () => [
     {
-      name: 'sftp_list',
+      name: 'list',
       description: 'list',
       inputSchema: { type: 'object' },
       run: async (args: any) => ({
@@ -87,7 +87,7 @@ describe('one leader answering for two windows', () => {
     jsonrpc: '2.0',
     id,
     method: 'tools/call',
-    params: { name: 'sftp_list', arguments: { server } },
+    params: { name: 'list', arguments: { server } },
   });
 
   it('registers the follower with the leader', async () => {

@@ -190,11 +190,11 @@ describe('the whole stack against a real server', () => {
     expect(initialised.result.serverInfo.name).toBe('vscode-sftp');
 
     const tools = await call('tools/list');
-    expect(tools.result.tools.map((t: any) => t.name)).toContain('sftp_fetch');
+    expect(tools.result.tools.map((t: any) => t.name)).toContain('read');
   });
 
   it('lists a real directory', async () => {
-    const result = await tool('sftp_list', { server: '1', path: '/' });
+    const result = await tool('list', { server: '1', path: '/' });
     const names = result.structuredContent.entries.map((e: any) => e.name);
 
     expect(names).toContain('index.php');
@@ -202,7 +202,7 @@ describe('the whole stack against a real server', () => {
   });
 
   it('fetches a file byte for byte and leaves it in the workspace', async () => {
-    const result = await tool('sftp_fetch', { server: '1', path: '/index.php' });
+    const result = await tool('read', { server: '1', path: '/index.php' });
 
     expect(textOf(result)).toContain(`require 'app/boot.php';`);
     // The transfer went over a socket and landed on disk unchanged.
@@ -212,7 +212,7 @@ describe('the whole stack against a real server', () => {
   });
 
   it('redacts a credential on the way out but not on disk', async () => {
-    const result = await tool('sftp_fetch', {
+    const result = await tool('read', {
       server: '1',
       path: '/config.php',
       start_line: 1,
@@ -225,20 +225,20 @@ describe('the whole stack against a real server', () => {
   });
 
   it('never serves a denied file', async () => {
-    const result = await tool('sftp_fetch', { server: '1', path: '/.env' });
+    const result = await tool('read', { server: '1', path: '/.env' });
 
     expect(result.isError).toBe(true);
     expect(fs.existsSync(path.join(workspace, '.env'))).toBe(false);
   });
 
   it('searches the real tree and finds a line', async () => {
-    const result = await tool('sftp_search', { server: '1', query: 'echo' });
+    const result = await tool('search', { server: '1', query: 'echo' });
 
     expect(textOf(result)).toContain('boot.php');
   });
 
   it('walks the tree and reports what it found', async () => {
-    const result = await tool('sftp_tree', { server: '1' });
+    const result = await tool('tree', { server: '1' });
 
     expect(result.structuredContent.files.map((f: any) => f.path)).toContain(
       '/app/boot.php'
@@ -248,14 +248,14 @@ describe('the whole stack against a real server', () => {
   it('refuses a path outside the connection', async () => {
     // Connection 2 exposes /app only. Connection 1 is rooted at `/`, which
     // exposes everything below it on purpose.
-    const escape = await tool('sftp_stat', {
+    const escape = await tool('stat', {
       server: '2',
       path: '/app/../index.php',
     });
     expect(escape.isError).toBe(true);
     expect(textOf(escape)).toContain('outside /app');
 
-    const inside = await tool('sftp_stat', { server: '2', path: '/app/boot.php' });
+    const inside = await tool('stat', { server: '2', path: '/app/boot.php' });
     expect(inside.isError).toBe(false);
   });
 
@@ -265,7 +265,7 @@ describe('the whole stack against a real server', () => {
       '# The shop\n\nEdited here.\n'
     );
 
-    const result = await tool('sftp_diff', { server: '1', path: '/README.md' });
+    const result = await tool('diff', { server: '1', path: '/README.md' });
 
     expect(textOf(result)).toContain('+Edited here.');
     expect(textOf(result)).toContain('-A test fixture.');
@@ -279,7 +279,7 @@ describe('when the server stops answering', () => {
     remote.misbehave({ stallStatOf: ['index.php'] });
 
     const started = Date.now();
-    const result = await tool('sftp_stat', { server: '1', path: '/index.php' });
+    const result = await tool('stat', { server: '1', path: '/index.php' });
     const waited = Date.now() - started;
 
     // The operation timeout is 3s here; without it this call never returns.
@@ -299,7 +299,7 @@ describe('when the server stops answering', () => {
     remote.misbehave({ stallReadsOf: ['fresh.log'], bytesBeforeStall: 32768 });
 
     const started = Date.now();
-    const result = await tool('sftp_fetch', {
+    const result = await tool('read', {
       server: '1',
       path: '/app/fresh.log',
       start_line: 1,
@@ -313,7 +313,7 @@ describe('when the server stops answering', () => {
 
   it('still works afterwards', async () => {
     // Whatever the stall did to the connection, the next call recovers.
-    const result = await tool('sftp_list', { server: '1', path: '/' });
+    const result = await tool('list', { server: '1', path: '/' });
 
     expect(result.isError).toBe(false);
   });

@@ -147,22 +147,22 @@ rather than quietly re-pointing the same name at a different machine:
 
 | Tool | |
 | --- | --- |
-| *sftp_servers* | The servers available, and what each one is |
-| *sftp_list* | One directory, as it is now |
-| *sftp_stat* | Whether a path exists, and how a local copy compares |
-| *sftp_fetch* | A file's contents — always the server's version |
-| *sftp_fetch_local* | Your working copy, when it differs |
-| *sftp_search* | Text and path search across the server's files |
-| *sftp_tree* | The shape of the server, annotated with what each file is for — or, with `since`, what changed |
-| *sftp_history* | Earlier versions of a file: the editor’s local history, and copies a download replaced |
-| *sftp_diff* | A unified diff between any two of server, working copy, earlier version, another connection |
-| *sftp_note* | Record what a file is for, so it shows up next time |
-| *sftp_forget* | Drop descriptions |
-| *sftp_overview* | What the project appears to be, from its own files |
+| *servers* | The servers available, and what each one is |
+| *list* | One directory, as it is now |
+| *stat* | Whether a path exists, and how a local copy compares |
+| *read* | A file's contents — always the server's version |
+| *local-copy* | Your working copy, when it differs |
+| *search* | Text and path search across the server's files |
+| *tree* | The shape of the server, annotated with what each file is for — or, with `since`, what changed |
+| *history* | Earlier versions of a file: the editor’s local history, and copies a download replaced |
+| *diff* | A unified diff between any two of server, working copy, earlier version, another connection |
+| *note* | Record what a file is for, so it shows up next time |
+| *forget* | Drop descriptions |
+| *overview* | What the project appears to be, from its own files |
 
 ### What changed
 
-`sftp_tree` with `since: "7d"` (or `"48h"`, or a date) lists only the files
+`tree` with `since: "7d"` (or `"48h"`, or a date) lists only the files
 modified in that window, newest first, with the time on each line. When something
 worked until recently, what the last deploy touched is usually the whole answer
 rather than a hint towards it — and it costs the same one walk as any other tree,
@@ -171,12 +171,12 @@ with the same paging.
 ### Three versions of every file
 
 A file you are working on exists in three forms: the one on the server, the one
-on your disk, and the ones you saved earlier. The first two are what `sftp_fetch`
-and `sftp_fetch_local` return. The third comes from VS Code's own local history,
-which `sftp_history` reads — it is the only record of how your working copy got
+on your disk, and the ones you saved earlier. The first two are what `read`
+and `local-copy` return. The third comes from VS Code's own local history,
+which `history` reads — it is the only record of how your working copy got
 to where it is.
 
-`sftp_diff` compares any two of them: the server against your copy (the default),
+`diff` compares any two of them: the server against your copy (the default),
 an earlier version against what you have now, or an earlier version against the
 server. It answers “what changed” without an agent reading both files in full.
 
@@ -206,7 +206,7 @@ on upload.
 Run **SFTP: Restore File Replaced by a Download** to get one back: it lists the
 copies of the current file by date, and offers a diff before you commit to one.
 Restoring keeps the file it replaces too, so picking the wrong version is not
-the end of the story. The same copies show up in `sftp_history` beside the
+the end of the story. The same copies show up in `history` beside the
 editor's own versions, in one list ordered by time.
 
 | Setting | |
@@ -231,7 +231,7 @@ in either direction — puts the server's version in a separate cache and leaves
 yours alone.
 
 The server never changes a file you already have. What it returns is always the
-server's version; `sftp_fetch_local` is the only way to the other one, and it
+server's version; `local-copy` is the only way to the other one, and it
 says so when they differ.
 
 `mcp: { "materialize": false }` keeps it out of the project folder entirely.
@@ -262,7 +262,7 @@ you work with larger source files. Binary files are reported as such rather than
 returned as text, and a listing of more than a thousand entries says how many it
 left out.
 
-Cached copies of files the server no longer has are removed whenever `sftp_tree`
+Cached copies of files the server no longer has are removed whenever `tree`
 walks a complete tree, alongside the descriptions for those files.
 
 Nothing is a dead end. A listing shows a thousand entries at a time, a tree a
@@ -340,16 +340,16 @@ because a client saving it back would overwrite the live value with the marker.
 
 ### Building up what you know
 
-`sftp_tree` shows the structure with a line about each file, where one has been
+`tree` shows the structure with a line about each file, where one has been
 recorded. An agent that has just worked out what a file does can save that with
-`sftp_note`, and the next session — yours or anyone's — starts with it. Nothing
+`note`, and the next session — yours or anyone's — starts with it. Nothing
 is written to the server; the notes live on this machine.
 
 A note describes one version of a file. When the file changes the note is shown
 as stale rather than quietly describing something that is no longer there, and
 notes for files the server no longer has are cleared out as the tree is walked.
 
-`sftp_overview` reports what the project appears to be — framework, name,
+`overview` reports what the project appears to be — framework, name,
 description — read from `composer.json`, `package.json` and a theme header.
 Facts only: nothing there is guessed.
 

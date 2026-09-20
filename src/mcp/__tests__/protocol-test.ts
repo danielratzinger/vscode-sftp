@@ -238,7 +238,7 @@ describe('toUtf8', () => {
 describe('a call that never returns', () => {
   const hanging = [
     {
-      name: 'sftp_search',
+      name: 'search',
       title: 'Search',
       description: 'Never answers.',
       inputSchema: { type: 'object', properties: {} },
@@ -259,7 +259,7 @@ describe('a call that never returns', () => {
       jsonrpc: '2.0',
       id: 1,
       method: 'tools/call',
-      params: { name: 'sftp_search', arguments: {} },
+      params: { name: 'search', arguments: {} },
     });
 
     expect(response.result.isError).toBe(true);
@@ -279,7 +279,7 @@ describe('a call that never returns', () => {
         jsonrpc: '2.0',
         id: 1,
         method: 'tools/call',
-        params: { name: 'sftp_search', arguments: {} },
+        params: { name: 'search', arguments: {} },
       })
       .then(() => (settled = true));
 
@@ -294,14 +294,14 @@ describe('what tools/list advertises', () => {
     // shape; one that does not is unaffected either way.
     const tools = [
       {
-        name: 'sftp_list',
+        name: 'list',
         description: 'x',
         inputSchema: { type: 'object', properties: {} },
         outputSchema: { type: 'object', properties: { path: { type: 'string' } } },
         run: async () => ({ text: '' }),
       },
       {
-        name: 'sftp_note',
+        name: 'note',
         description: 'y',
         inputSchema: { type: 'object', properties: {} },
         run: async () => ({ text: '' }),

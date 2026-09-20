@@ -147,28 +147,28 @@ describe('factsFrom', () => {
   });
 });
 
-describe('sftp_note and sftp_tree', () => {
+describe('note and tree', () => {
   it('records a description and shows it in the tree', async () => {
-    await tool('sftp_note').run({
+    await tool('note').run({
       server: '1',
       path: '/srv/app/src/Session.php',
       summary: 'session handling',
     });
 
-    const tree = await tool('sftp_tree').run({ server: '1' });
+    const tree = await tool('tree').run({ server: '1' });
 
     expect(tree.text).toContain('/srv/app/src/Session.php — session handling');
     expect(tree.text).toContain('1 described');
   });
 
   it('nudges towards describing what is not yet described', async () => {
-    const tree = await tool('sftp_tree').run({ server: '1' });
-    expect(tree.text).toContain('sftp_note');
+    const tree = await tool('tree').run({ server: '1' });
+    expect(tree.text).toContain('note');
   });
 
   it('flags a description whose file has changed', async () => {
     const cacheRoot = '/cache';
-    await tool('sftp_note').run({
+    await tool('note').run({
       server: '1', path: '/srv/app/index.php', summary: 'entry point',
     });
 
@@ -177,12 +177,12 @@ describe('sftp_note and sftp_tree', () => {
     store.files['/srv/app/index.php'].mtime = MTIME - 500000;
     vol.writeFileSync('/cache/1/notes.json', JSON.stringify(store));
 
-    const tree = await tool('sftp_tree').run({ server: '1' });
+    const tree = await tool('tree').run({ server: '1' });
     expect(tree.text).toContain('stale: the file has changed since');
   });
 
   it('refuses to describe a file the server does not have', async () => {
-    const result = await tool('sftp_note').run({
+    const result = await tool('note').run({
       server: '1', path: '/srv/app/imaginary.php', summary: 'nothing',
     });
 
@@ -190,21 +190,21 @@ describe('sftp_note and sftp_tree', () => {
   });
 
   it('forgets one description, and all of them', async () => {
-    await tool('sftp_note').run({ server: '1', path: '/srv/app/index.php', summary: 'a' });
-    await tool('sftp_note').run({ server: '1', path: '/srv/app/src/Session.php', summary: 'b' });
+    await tool('note').run({ server: '1', path: '/srv/app/index.php', summary: 'a' });
+    await tool('note').run({ server: '1', path: '/srv/app/src/Session.php', summary: 'b' });
 
-    await tool('sftp_forget').run({ server: '1', path: '/srv/app/index.php' });
+    await tool('forget').run({ server: '1', path: '/srv/app/index.php' });
     expect(Object.keys((await load('/cache', '1')).files)).toEqual(['/srv/app/src/Session.php']);
 
-    const all = await tool('sftp_forget').run({ server: '1' });
+    const all = await tool('forget').run({ server: '1' });
     expect(all.text).toContain('Forgot 1');
     expect(Object.keys((await load('/cache', '1')).files)).toEqual([]);
   });
 });
 
-describe('sftp_overview', () => {
+describe('overview', () => {
   it('reports what the project is, from facts alone', async () => {
-    const result = await tool('sftp_overview').run({ server: '1' });
+    const result = await tool('overview').run({ server: '1' });
 
     expect(result.text).toContain('Company website for XY GmbH');
     expect(result.text).toContain('laravel');
@@ -222,7 +222,7 @@ describe('sftp_overview', () => {
     } as any;
 
     const result = await createTools(bare)
-      .find(t => t.name === 'sftp_overview')!
+      .find(t => t.name === 'overview')!
       .run({ server: '1' });
 
     expect(result.text).toContain('Nothing identifying');
@@ -238,11 +238,11 @@ describe('a description is checked wherever the file is', () => {
   }
 
   it('repeats a current description when the file is stat-ed', async () => {
-    await tool('sftp_note').run({
+    await tool('note').run({
       server: '1', path: '/srv/app/index.php', summary: 'entry point',
     });
 
-    const result = await tool('sftp_stat').run({
+    const result = await tool('stat').run({
       server: '1', path: '/srv/app/index.php',
     });
 
@@ -253,29 +253,29 @@ describe('a description is checked wherever the file is', () => {
   it('flags a stale description when the file is stat-ed', async () => {
     // Without this, a wrong description is only ever caught by a tree walk -
     // and nothing makes an agent walk the tree.
-    await tool('sftp_note').run({
+    await tool('note').run({
       server: '1', path: '/srv/app/index.php', summary: 'entry point',
     });
     await ageTheNote('/srv/app/index.php');
 
-    const result = await tool('sftp_stat').run({
+    const result = await tool('stat').run({
       server: '1', path: '/srv/app/index.php',
     });
 
     expect(result.text).toContain('entry point');
     expect(result.text).toContain('changed since');
-    expect(result.text).toContain('sftp_note');
+    expect(result.text).toContain('note');
     expect((result.structured as any).note.state).toBe(NoteState.Stale);
   });
 
   it('flags a stale description to the one caller that can fix it', async () => {
     // Reading the file is the moment the summary can actually be rewritten.
-    await tool('sftp_note').run({
+    await tool('note').run({
       server: '1', path: '/srv/app/index.php', summary: 'entry point',
     });
     await ageTheNote('/srv/app/index.php');
 
-    const result = await tool('sftp_fetch').run({
+    const result = await tool('read').run({
       server: '1', path: '/srv/app/index.php',
     });
 
@@ -285,11 +285,11 @@ describe('a description is checked wherever the file is', () => {
   });
 
   it('says nothing about files nobody has described', async () => {
-    const result = await tool('sftp_stat').run({
+    const result = await tool('stat').run({
       server: '1', path: '/srv/app/index.php',
     });
 
-    expect(result.text).not.toContain('sftp_note');
+    expect(result.text).not.toContain('note');
     expect((result.structured as any).note.state).toBe(NoteState.None);
   });
 });
@@ -301,7 +301,7 @@ describe('the cache is swept when the tree is walked', () => {
       '/cache/1/srv/app/deleted.php': 'gone from the server',
     });
 
-    await tool('sftp_tree').run({ server: '1' });
+    await tool('tree').run({ server: '1' });
 
     // Notes are pruned on a complete walk; the bytes get the same sweep.
     expect(vol.existsSync('/cache/1/srv/app/deleted.php')).toBe(false);
@@ -311,7 +311,7 @@ describe('the cache is swept when the tree is walked', () => {
   it('leaves another connection’s cache alone', async () => {
     vol.fromJSON({ '/cache/2/srv/app/whatever.php': 'not ours to sweep' });
 
-    await tool('sftp_tree').run({ server: '1' });
+    await tool('tree').run({ server: '1' });
 
     expect(vol.existsSync('/cache/2/srv/app/whatever.php')).toBe(true);
   });
@@ -331,7 +331,7 @@ describe('the cache is swept when the tree is walked', () => {
     } as any;
 
     await createTools(narrow)
-      .find(t => t.name === 'sftp_tree')!
+      .find(t => t.name === 'tree')!
       .run({ server: '1' });
 
     expect(vol.existsSync('/cache/1/srv/app/deleted.php')).toBe(true);
@@ -370,7 +370,7 @@ describe('reading on through a large tree', () => {
   }
 
   const treeOf = (ctx: any) =>
-    createTools(ctx).find(t => t.name === 'sftp_tree')!;
+    createTools(ctx).find(t => t.name === 'tree')!;
 
   it('shows a page and says where the rest starts', async () => {
     const result: any = await treeOf(bigContext()).run({ server: '1' });
@@ -412,7 +412,7 @@ describe('reading on through a large tree', () => {
 
 describe('reading on through a search', () => {
   it('says where it stopped and carries on from there', async () => {
-    const first: any = await tool('sftp_search').run({
+    const first: any = await tool('search').run({
       server: '1',
       query: 'boot',
       max_matches: 1,
@@ -422,7 +422,7 @@ describe('reading on through a search', () => {
     expect(first.structured.nextOffset).toBeDefined();
     expect(first.text).toContain('offset:');
 
-    const second: any = await tool('sftp_search').run({
+    const second: any = await tool('search').run({
       server: '1',
       query: 'class',
       offset: first.structured.nextOffset,
@@ -433,7 +433,7 @@ describe('reading on through a search', () => {
   });
 
   it('says nothing about carrying on when it read everything', async () => {
-    const result: any = await tool('sftp_search').run({
+    const result: any = await tool('search').run({
       server: '1',
       query: 'nothing matches this',
     });

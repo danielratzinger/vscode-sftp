@@ -58,12 +58,12 @@ function createContext(over: Partial<ToolContext> = {}): ToolContext & { written
 const tool = (context: ToolContext, name: string) =>
   createTools(context).find(t => t.name === name)!;
 
-describe('sftp_fetch', () => {
+describe('read', () => {
   it('materialises an absent file into the project and returns it', async () => {
     place({});
     const context = createContext();
 
-    const result = await tool(context, 'sftp_fetch').run({
+    const result = await tool(context, 'read').run({
       server: '1',
       path: '/srv/app/index.php',
     });
@@ -77,7 +77,7 @@ describe('sftp_fetch', () => {
   it('serves the server version and flags a newer local copy', async () => {
     place({ '/work/site/index.php': ['my unsaved work', REMOTE_MTIME + 60000] });
 
-    const result = await tool(createContext(), 'sftp_fetch').run({
+    const result = await tool(createContext(), 'read').run({
       server: '1',
       path: '/srv/app/index.php',
     });
@@ -85,7 +85,7 @@ describe('sftp_fetch', () => {
     // The default is always what is deployed, never the working copy.
     expect(result.text).toContain(REMOTE);
     expect(result.text).toContain('local copy is newer');
-    expect(result.text).toContain('sftp_fetch_local');
+    expect(result.text).toContain('local-copy');
     expect((result.structured as any).source).toBe('cache');
     expect((result.structured as any).state).toBe('newer');
   });
@@ -93,7 +93,7 @@ describe('sftp_fetch', () => {
   it('leaves the working copy untouched when it diverges', async () => {
     place({ '/work/site/index.php': ['my unsaved work', REMOTE_MTIME + 60000] });
 
-    await tool(createContext(), 'sftp_fetch').run({
+    await tool(createContext(), 'read').run({
       server: '1',
       path: '/srv/app/index.php',
     });
@@ -104,7 +104,7 @@ describe('sftp_fetch', () => {
   it('returns a numbered range of a file', async () => {
     place({});
 
-    const result = await tool(createContext(), 'sftp_fetch').run({
+    const result = await tool(createContext(), 'read').run({
       server: '1',
       path: '/srv/app/index.php',
       start_line: 2,
@@ -124,13 +124,13 @@ describe('sftp_fetch', () => {
       }),
     });
 
-    const result = await tool(context, 'sftp_fetch').run({
+    const result = await tool(context, 'read').run({
       server: '1',
       path: '/srv/app/src',
     });
 
     expect(result.isError).toBe(true);
-    expect(result.text).toContain('sftp_list');
+    expect(result.text).toContain('list');
   });
 
   it('reports a path the server does not have', async () => {
@@ -145,7 +145,7 @@ describe('sftp_fetch', () => {
       }),
     });
 
-    const result = await tool(context, 'sftp_fetch').run({
+    const result = await tool(context, 'read').run({
       server: '1',
       path: '/srv/app/gone.php',
     });
@@ -158,7 +158,7 @@ describe('sftp_fetch', () => {
     place({});
     const context = createContext({ cacheOption: () => ({ cacheRoot: '/cache', materialize: false }) });
 
-    const result = await tool(context, 'sftp_fetch').run({
+    const result = await tool(context, 'read').run({
       server: '1',
       path: '/srv/app/index.php',
     });
@@ -174,7 +174,7 @@ describe('sftp_fetch', () => {
       exposure: () => ({ exposedByDefault: false }),
     });
 
-    const result = await tool(hidden, 'sftp_fetch').run({
+    const result = await tool(hidden, 'read').run({
       server: '1',
       path: '/srv/app/index.php',
     });
@@ -183,11 +183,11 @@ describe('sftp_fetch', () => {
   });
 });
 
-describe('sftp_fetch_local', () => {
-  it('returns the working copy, which sftp_fetch will not', async () => {
+describe('local-copy', () => {
+  it('returns the working copy, which read will not', async () => {
     place({ '/work/site/index.php': ['my unsaved work', REMOTE_MTIME + 60000] });
 
-    const result = await tool(createContext(), 'sftp_fetch_local').run({
+    const result = await tool(createContext(), 'local-copy').run({
       server: '1',
       path: '/srv/app/index.php',
     });
@@ -199,7 +199,7 @@ describe('sftp_fetch_local', () => {
   it('says plainly when there is no local copy', async () => {
     place({});
 
-    const result = await tool(createContext(), 'sftp_fetch_local').run({
+    const result = await tool(createContext(), 'local-copy').run({
       server: '1',
       path: '/srv/app/index.php',
     });
@@ -230,7 +230,7 @@ describe('the redaction setting reaches the tools', () => {
   }
 
   it('redacts a named assignment by default', async () => {
-    const result = await tool(withContent(), 'sftp_fetch').run({
+    const result = await tool(withContent(), 'read').run({
       server: '1',
       path: '/srv/app/config.php',
       start_line: 1,
@@ -243,7 +243,7 @@ describe('the redaction setting reaches the tools', () => {
     // The layer errs towards redacting, so there has to be a way back.
     const context = withContent({ redaction: () => ({ assignments: false }) });
 
-    const result = await tool(context, 'sftp_fetch').run({
+    const result = await tool(context, 'read').run({
       server: '1',
       path: '/srv/app/config.php',
       start_line: 1,
@@ -290,7 +290,7 @@ describe('what lands on disk is never redacted', () => {
     place({});
     const context = serving(SECRET_FILE);
 
-    const result = await tool(context, 'sftp_fetch').run({
+    const result = await tool(context, 'read').run({
       server: '1',
       path: '/srv/app/config.php',
       start_line: 1,
@@ -306,7 +306,7 @@ describe('what lands on disk is never redacted', () => {
     place({});
     const context = serving(SECRET_FILE);
 
-    const result = await tool(context, 'sftp_search').run({
+    const result = await tool(context, 'search').run({
       server: '1',
       query: 'DB_PASSWORD',
     });
@@ -319,7 +319,7 @@ describe('what lands on disk is never redacted', () => {
     const MINE = `define('DB_PASSWORD', 'Xk7#mQ2vL9pR'); // my edit`;
     place({ '/work/site/config.php': [MINE, REMOTE_MTIME + 60000] });
 
-    await tool(serving(SECRET_FILE), 'sftp_fetch').run({
+    await tool(serving(SECRET_FILE), 'read').run({
       server: '1',
       path: '/srv/app/config.php',
       start_line: 1,
@@ -346,7 +346,7 @@ describe('the connection is a boundary, not a starting point', () => {
       place({});
       const context = createContext();
 
-      const result = await tool(context, 'sftp_fetch').run({
+      const result = await tool(context, 'read').run({
         server: '1',
         path: candidate,
       });
@@ -364,13 +364,13 @@ describe('the connection is a boundary, not a starting point', () => {
     const outside = { server: '1', path: '/etc/passwd' };
 
     const results = await Promise.all([
-      tool(context, 'sftp_stat').run(outside),
-      tool(context, 'sftp_fetch_local').run(outside),
-      tool(context, 'sftp_list').run(outside),
-      tool(context, 'sftp_note').run({ ...outside, summary: 'x' }),
-      tool(context, 'sftp_forget').run(outside),
-      tool(context, 'sftp_search').run({ server: '1', query: 'x', dir: '/etc' }),
-      tool(context, 'sftp_tree').run({ server: '1', dir: '/etc' }),
+      tool(context, 'stat').run(outside),
+      tool(context, 'local-copy').run(outside),
+      tool(context, 'list').run(outside),
+      tool(context, 'note').run({ ...outside, summary: 'x' }),
+      tool(context, 'forget').run(outside),
+      tool(context, 'search').run({ server: '1', query: 'x', dir: '/etc' }),
+      tool(context, 'tree').run({ server: '1', dir: '/etc' }),
     ]);
 
     results.forEach(result => {
@@ -381,7 +381,7 @@ describe('the connection is a boundary, not a starting point', () => {
 
   it('accepts the same file however it is spelled', async () => {
     place({});
-    const result = await tool(createContext(), 'sftp_stat').run({
+    const result = await tool(createContext(), 'stat').run({
       server: '1',
       path: '/srv/app//./config.php',
     });
@@ -421,7 +421,7 @@ describe('what is too big or not text', () => {
     place({});
     const context = serving('small on disk, huge on paper', 50 * 1024 * 1024);
 
-    const result = await tool(context, 'sftp_fetch').run({
+    const result = await tool(context, 'read').run({
       server: '1',
       path: '/srv/app/dump.sql',
     });
@@ -438,7 +438,7 @@ describe('what is too big or not text', () => {
     const context = serving('text', 3 * 1024 * 1024);
     (context as any).maxFileBytes = () => 8 * 1024 * 1024;
 
-    const result = await tool(context, 'sftp_fetch').run({
+    const result = await tool(context, 'read').run({
       server: '1',
       path: '/srv/app/dump.sql',
       start_line: 1,
@@ -451,7 +451,7 @@ describe('what is too big or not text', () => {
     place({});
     const context = serving(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x1a, 0x0a]));
 
-    const result = await tool(context, 'sftp_fetch').run({
+    const result = await tool(context, 'read').run({
       server: '1',
       path: '/srv/app/dump.sql',
       start_line: 1,
@@ -467,7 +467,7 @@ describe('what is too big or not text', () => {
     place({});
     const context = serving(Buffer.from([0x00, 0x01, 0x02, 0x03, 0x04, 0x05]));
 
-    const result = await tool(context, 'sftp_search').run({
+    const result = await tool(context, 'search').run({
       server: '1',
       query: 'anything',
     });
@@ -510,7 +510,7 @@ describe('a search that runs out of time', () => {
   it('returns what it found instead of an error', async () => {
     place({});
 
-    const result = await tool(slowContext(60, 40), 'sftp_search').run({
+    const result = await tool(slowContext(60, 40), 'search').run({
       server: '1',
       query: 'needle',
     });
@@ -525,7 +525,7 @@ describe('a search that runs out of time', () => {
   it('says nothing about time when there was enough of it', async () => {
     place({});
 
-    const result = await tool(slowContext(0, 5000), 'sftp_search').run({
+    const result = await tool(slowContext(0, 5000), 'search').run({
       server: '1',
       query: 'needle',
     });
@@ -561,7 +561,7 @@ describe('a search that could not read anything', () => {
         } as any),
     });
 
-    const result: any = await tool(context, 'sftp_search').run({
+    const result: any = await tool(context, 'search').run({
       server: '1',
       query: 'needle',
     });
@@ -599,7 +599,7 @@ describe('a search that could not read anything', () => {
         } as any),
     });
 
-    const result: any = await tool(context, 'sftp_search').run({
+    const result: any = await tool(context, 'search').run({
       server: '1',
       query: 'needle',
     });

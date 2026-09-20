@@ -69,9 +69,9 @@ beforeEach(() => {
   forgetIndex();
 });
 
-describe('sftp_history', () => {
+describe('history', () => {
   it('lists the versions the editor still holds, newest first', async () => {
-    const result: any = await tool(createContext(), 'sftp_history').run({
+    const result: any = await tool(createContext(), 'history').run({
       server: '1',
       path: '/srv/app/index.php',
     });
@@ -85,12 +85,12 @@ describe('sftp_history', () => {
   });
 
   it('returns one version by id, and by position', async () => {
-    const byId: any = await tool(createContext(), 'sftp_history').run({
+    const byId: any = await tool(createContext(), 'history').run({
       server: '1',
       path: '/srv/app/index.php',
       version: 'aaaa.php',
     });
-    const byIndex: any = await tool(createContext(), 'sftp_history').run({
+    const byIndex: any = await tool(createContext(), 'history').run({
       server: '1',
       path: '/srv/app/index.php',
       version: '1',
@@ -102,7 +102,7 @@ describe('sftp_history', () => {
   });
 
   it('says plainly when there is no history for a file', async () => {
-    const result: any = await tool(createContext(), 'sftp_history').run({
+    const result: any = await tool(createContext(), 'history').run({
       server: '1',
       path: '/srv/app/untouched.php',
     });
@@ -114,7 +114,7 @@ describe('sftp_history', () => {
   it('says so when the editor keeps no history at all', async () => {
     const off = createContext({ historyRoot: () => undefined });
 
-    const result: any = await tool(off, 'sftp_history').run({
+    const result: any = await tool(off, 'history').run({
       server: '1',
       path: '/srv/app/index.php',
     });
@@ -124,7 +124,7 @@ describe('sftp_history', () => {
 
   it('will not serve the history of a file it would not serve', async () => {
     // A denied file's earlier versions are just as much a credential.
-    const result: any = await tool(createContext(), 'sftp_history').run({
+    const result: any = await tool(createContext(), 'history').run({
       server: '1',
       path: '/srv/app/.env',
     });
@@ -133,7 +133,7 @@ describe('sftp_history', () => {
   });
 
   it('refuses a path outside the connection', async () => {
-    const result: any = await tool(createContext(), 'sftp_history').run({
+    const result: any = await tool(createContext(), 'history').run({
       server: '1',
       path: '/etc/passwd',
     });
@@ -143,9 +143,9 @@ describe('sftp_history', () => {
   });
 });
 
-describe('sftp_diff', () => {
+describe('diff', () => {
   it('compares the server with the working copy by default', async () => {
-    const result: any = await tool(createContext(), 'sftp_diff').run({
+    const result: any = await tool(createContext(), 'diff').run({
       server: '1',
       path: '/srv/app/index.php',
     });
@@ -159,7 +159,7 @@ describe('sftp_diff', () => {
   });
 
   it('compares an earlier version with what is on disk now', async () => {
-    const result: any = await tool(createContext(), 'sftp_diff').run({
+    const result: any = await tool(createContext(), 'diff').run({
       server: '1',
       path: '/srv/app/index.php',
       left: 'aaaa.php',
@@ -171,7 +171,7 @@ describe('sftp_diff', () => {
   });
 
   it('says when two sides are identical', async () => {
-    const result: any = await tool(createContext(), 'sftp_diff').run({
+    const result: any = await tool(createContext(), 'diff').run({
       server: '1',
       path: '/srv/app/index.php',
       left: 'remote',
@@ -183,7 +183,7 @@ describe('sftp_diff', () => {
   });
 
   it('explains which side it could not read', async () => {
-    const result: any = await tool(createContext(), 'sftp_diff').run({
+    const result: any = await tool(createContext(), 'diff').run({
       server: '1',
       path: '/srv/app/index.php',
       left: 'nonsense.php',
@@ -211,7 +211,7 @@ describe('sftp_diff', () => {
         } as any),
     });
 
-    const result: any = await tool(context, 'sftp_diff').run({
+    const result: any = await tool(context, 'diff').run({
       server: '1',
       path: '/srv/app/config.php',
     });
@@ -238,7 +238,7 @@ describe('copies kept when a download overwrote something', () => {
   }
 
   it('lists them beside the editor’s own versions, in one order', async () => {
-    const result: any = await tool(withReplaced(), 'sftp_history').run({
+    const result: any = await tool(withReplaced(), 'history').run({
       server: '1',
       path: '/srv/app/index.php',
     });
@@ -255,7 +255,7 @@ describe('copies kept when a download overwrote something', () => {
   });
 
   it('reads one back', async () => {
-    const result: any = await tool(withReplaced(), 'sftp_history').run({
+    const result: any = await tool(withReplaced(), 'history').run({
       server: '1',
       path: '/srv/app/index.php',
       version: 'replaced:1699999000000',
@@ -265,7 +265,7 @@ describe('copies kept when a download overwrote something', () => {
   });
 
   it('diffs one against the server', async () => {
-    const result: any = await tool(withReplaced(), 'sftp_diff').run({
+    const result: any = await tool(withReplaced(), 'diff').run({
       server: '1',
       path: '/srv/app/index.php',
       left: 'replaced:1699999000000',
@@ -277,7 +277,7 @@ describe('copies kept when a download overwrote something', () => {
   });
 
   it('still works when nothing was ever replaced', async () => {
-    const result: any = await tool(createContext(), 'sftp_history').run({
+    const result: any = await tool(createContext(), 'history').run({
       server: '1',
       path: '/srv/app/index.php',
     });

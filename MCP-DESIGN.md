@@ -228,7 +228,7 @@ work in progress. An agent asking what is on the server would get an answer
 describing your laptop.
 
 A file present locally but absent from the remote manifest is **local-only**:
-`sftp_stat` reports it as such, and it appears in no listing, no tree and no
+`stat` reports it as such, and it appears in no listing, no tree and no
 search result, because it is not on the server.
 
 ### Reading
@@ -246,7 +246,7 @@ The same rule governs the search index — searching must not match your
 uncommitted edits and report them as what is deployed.
 
 The working copy is reachable only through a separate, explicitly named tool
-(`sftp_fetch_local`). A named tool rather than a `version` argument, because an
+(`local-copy`). A named tool rather than a `version` argument, because an
 argument is easy for a model to omit by accident and the distinction matters.
 
 ### Invalidation
@@ -384,7 +384,7 @@ It attaches to the manifest, so it needs no invalidation machinery of its own.
 Three routes, in the order worth building them:
 
 1. **The client writes back what it learns.** An agent reads a file to answer a
-   question, understands it, and calls `sftp_note(path, summary)`. The index
+   question, understands it, and calls `note(path, summary)`. The index
    accumulates as a side effect of work already happening — no batch cost, no
    separate model call — and it persists, so the next session starts oriented.
    This is a write to our local index, never to the server, so it stays inside
@@ -423,7 +423,7 @@ Much of it is deterministic, from files the manifest already lists:
 A model turns those into a sentence when one is available; without one, the raw
 facts are still worth returning.
 
-This belongs in `sftp_servers()`, not only in `sftp_overview()`. An agent
+This belongs in `servers()`, not only in `overview()`. An agent
 choosing between five connections should see *"XY GmbH company website
 (WordPress)"* rather than five hostnames — the same orientation problem as the
 annotated tree, one level up, and the point at which a wrong guess is most
@@ -459,7 +459,7 @@ Pruned when:
   describing a project that has moved on.
 - **The store exceeds its cap**, evicting least-recently-used, as a backstop.
 
-`sftp_forget(server, path?)` drops notes deliberately, and the same pruning pass
+`forget(server, path?)` drops notes deliberately, and the same pruning pass
 removes manifest entries for paths that no longer exist — one sweep, one set of
 rules, so the two stores cannot drift apart.
 
@@ -469,18 +469,18 @@ Names and shapes are the part users live with longest.
 
 | Tool | Purpose |
 | --- | --- |
-| `sftp_servers` | The exposed connections: id, project, host, remote path, active profile, and what each one *is* where known |
-| `sftp_search` | Content and path search over the remote file set; path, line, snippet. `rank: "model"` when one is available |
-| `sftp_fetch` | One file or line range — **always the server's content**, refreshed if stale |
-| `sftp_fetch_local` | The working copy, when it differs. Explicit by design |
-| `sftp_list` | A live directory listing, from the remote manifest |
-| `sftp_tree` | Remote structure to a given depth, annotated with each file's purpose where known. The first call an agent should make |
-| `sftp_stat` | One path's state: same, diverged, local-only, with both timestamps |
-| `sftp_sync` | Explicit refresh of a subtree, reporting what changed |
-| `sftp_overview` | How the project is built: detected facts, plus a derived narrative when available |
-| `sftp_note` | Record what a file is for. Writes the local index, never the server |
-| `sftp_forget` | Drop notes for a path or a whole connection |
-| *(later)* `sftp_write` | Gated behind write scope and per-operation confirmation |
+| `servers` | The exposed connections: id, project, host, remote path, active profile, and what each one *is* where known |
+| `search` | Content and path search over the remote file set; path, line, snippet. `rank: "model"` when one is available |
+| `read` | One file or line range — **always the server's content**, refreshed if stale |
+| `local-copy` | The working copy, when it differs. Explicit by design |
+| `list` | A live directory listing, from the remote manifest |
+| `tree` | Remote structure to a given depth, annotated with each file's purpose where known. The first call an agent should make |
+| `stat` | One path's state: same, diverged, local-only, with both timestamps |
+| `sync` | Explicit refresh of a subtree, reporting what changed |
+| `overview` | How the project is built: detected facts, plus a derived narrative when available |
+| `note` | Record what a file is for. Writes the local index, never the server |
+| `forget` | Drop notes for a path or a whole connection |
+| *(later)* `write` | Gated behind write scope and per-operation confirmation |
 
 `search` and `fetch` additionally carry OpenAI's compatibility shape
 (`{results: [{id, title, url}]}` and `{id, title, text, url, metadata}` as
@@ -505,7 +505,7 @@ is on disk. The question an agent most often needs answered is between them -
 editor's own local history.
 
 There is no API for reading it. The Timeline is a provider interface, not a
-reader, so `sftp_history` reads VS Code's store on disk: `User/History/<hash of
+reader, so `history` reads VS Code's store on disk: `User/History/<hash of
 the file URI>/entries.json`, with each version's content beside it. The store
 is VS Code's, so it is only ever read.
 
@@ -524,7 +524,7 @@ Three things make that safe to depend on rather than reckless:
   denied files, size limits, redaction. An earlier version of `.env` is just as
   much a credential as the current one.
 
-`sftp_diff` then compares any two of the three - or of four, since a side can
+`diff` then compares any two of the three - or of four, since a side can
 name another connection (`server:<id>`). Two servers hosting one project mount
 it at different roots, so the counterpart is the same path *below* the root
 rather than the same absolute path, and resolving it through the other
@@ -679,9 +679,9 @@ Every bound is there because something unbounded has an owner who pays for it.
   connection, the one failure everything above already recovers from.
 - **Every limit has a way past it.** A limit that only says "ask something
   smaller" is a dead end when there is nothing smaller to ask: a flat directory
-  of ten thousand uploads has no subdirectory to narrow to. So `sftp_list`,
-  `sftp_tree` and `sftp_search` take an `offset` and return a `nextOffset`,
-  and `sftp_fetch` already took line ranges. The budget running out is itself
+  of ten thousand uploads has no subdirectory to narrow to. So `list`,
+  `tree` and `search` take an `offset` and return a `nextOffset`,
+  and `read` already took line ranges. The budget running out is itself
   a resume point now, rather than only an apology.
 
   Paging is only worth offering if page two is cheaper than page one, so a walk
@@ -782,12 +782,12 @@ A second pass, once this was built, found four more:
 - **“What changed” is a different question from “what exists”**, and a much
   cheaper one. Their playbook puts it plainly: when something worked until
   recently, what the last deploy touched is often the whole of the answer
-  rather than a hint towards it. `sftp_tree` takes `since` (“7d”, “48h”, a
+  rather than a hint towards it. `tree` takes `since` (“7d”, “48h”, a
   date) and `sort`, reusing the walk, the manifest cache and the paging that
   were already there — no new tool, because the walk already carried the times
   that answer it.
 - **Descriptions are where a model decides what to reach for**, so the cost
-  hints belong in them rather than in a design document. `sftp_stat` now says
+  hints belong in them rather than in a design document. `stat` now says
   what it is for: size and modification time without transferring anything, so
   a range can be chosen deliberately instead of pulling a megabyte to find out
   it was a megabyte.

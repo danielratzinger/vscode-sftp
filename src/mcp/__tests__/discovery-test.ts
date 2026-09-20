@@ -22,7 +22,7 @@ describe('discovery and the stdio bridge', () => {
 
   const tools = (): ToolDefinition[] => [
     {
-      name: 'sftp_servers',
+      name: 'servers',
       description: 'servers',
       inputSchema: { type: 'object' },
       run: async () => ({ text: 'one server', structured: { servers: [{ id: '1' }] } }),
@@ -36,7 +36,7 @@ describe('discovery and the stdio bridge', () => {
     server = await startServer({
       token,
       dispatcher: createDispatcher(
-        { name: 'vscode-sftp', version: '1.0.0', instructions: 'Call sftp_servers first.' },
+        { name: 'vscode-sftp', version: '1.0.0', instructions: 'Call servers first.' },
         tools
       ),
     });
@@ -108,7 +108,7 @@ describe('discovery and the stdio bridge', () => {
         jsonrpc: '2.0',
         id: 3,
         method: 'tools/call',
-        params: { name: 'sftp_servers', arguments: {} },
+        params: { name: 'servers', arguments: {} },
       }),
     ]);
 
@@ -118,10 +118,10 @@ describe('discovery and the stdio bridge', () => {
     const initialize = JSON.parse(replies[0]);
     expect(initialize.id).toBe(1);
     expect(initialize.result.serverInfo.name).toBe('vscode-sftp');
-    expect(initialize.result.instructions).toContain('sftp_servers');
+    expect(initialize.result.instructions).toContain('servers');
 
     const list = JSON.parse(replies[1]);
-    expect(list.result.tools[0].name).toBe('sftp_servers');
+    expect(list.result.tools[0].name).toBe('servers');
 
     const call = JSON.parse(replies[2]);
     expect(call.result.content[0].text).toBe('one server');
