@@ -48,6 +48,15 @@ still waiting when the window closes is picked up when it opens. One writer
 per connection, across windows as well as within one. See
 [docs/commands.md](./docs/commands.md#autosync-worktree).
 
+**Cleaning up what a server accumulated.** `SFTP: Remove Files Deleted from
+the Project` asks git what the project has dropped over its history and offers
+to take those files off the server — downloads write and never remove, and a
+deploy uploads what exists rather than removing what stopped existing. Only
+paths git once tracked are ever named, so a runtime directory, upload folder
+or cache the repository ignores cannot appear in the list. That is the
+difference from `Sync Local -> Remote` with `syncOption.delete`, which lists
+the server and removes whatever is not on this machine.
+
 **A way back from a bad deploy.** Before autosync first writes over a file it
 fetches what the server had and keeps it, once per file per session; if the
 server cannot be reached to make that copy, the file is not overwritten.
