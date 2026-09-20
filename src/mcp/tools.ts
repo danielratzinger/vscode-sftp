@@ -369,15 +369,22 @@ async function hashOfCopy(
   return undefined;
 }
 
-function describeNote(view: { state: NoteState; summary?: string }): string {
+function describeNote(view: {
+  state: NoteState;
+  summary?: string;
+  detail?: string;
+}): string {
+  const more = view.detail ? `\n${view.detail}` : '';
+
   if (view.state === NoteState.Current) {
-    return `Noted: ${view.summary}`;
+    return `Noted: ${view.summary}${more}`;
   }
 
   if (view.state === NoteState.Stale) {
     return (
       `A description of an older version says: ${view.summary}. The file has ` +
-      'changed since. If it is no longer right, put it right with `note`.'
+      'changed since. If it is no longer right, put it right with `note`.' +
+      more
     );
   }
 
@@ -674,10 +681,12 @@ export function createTools(
         summary: stringField,
         describedMtime: numberField,
         /** Descriptions this one replaced, newest first. */
-        previous: {
-          type: 'array',
-          items: objectSchema({ summary: stringField, updated: numberField }),
-        },
+        detail: stringField,
+        previous: objectSchema({
+          summary: stringField,
+          detail: stringField,
+          updated: numberField,
+        }),
       }),
     }),
     annotations: { readOnlyHint: true, openWorldHint: true },
@@ -780,10 +789,12 @@ export function createTools(
         summary: stringField,
         describedMtime: numberField,
         /** Descriptions this one replaced, newest first. */
-        previous: {
-          type: 'array',
-          items: objectSchema({ summary: stringField, updated: numberField }),
-        },
+        detail: stringField,
+        previous: objectSchema({
+          summary: stringField,
+          detail: stringField,
+          updated: numberField,
+        }),
       }),
     }),
     annotations: { readOnlyHint: true, openWorldHint: true },
@@ -1461,7 +1472,17 @@ export function createTools(
         },
         summary: {
           type: 'string',
-          description: 'What it is for. One line for a file; a few for a project.',
+          description:
+            'One line: what it is for. It appears beside the path in `tree`, ' +
+            'so it has to stay a line.',
+        },
+        detail: {
+          type: 'string',
+          description:
+            'Everything else worth knowing about it, as it stands. Read what ' +
+            'is already here, fold in what you have just learned, and write ' +
+            'the whole thing back - this is the description developing, not a ' +
+            'note appended to the last one.',
         },
       },
       required: ['server', 'summary'],
@@ -1477,17 +1498,26 @@ export function createTools(
       }
 
       const summary = args.summary.trim();
+      const detail =
+        typeof args.detail === 'string' && args.detail.trim() !== ''
+          ? args.detail.trim()
+          : undefined;
       const describingProject = args.path === undefined || args.path === '';
-      const longest = describingProject ? LONGEST_PROJECT_NOTE : LONGEST_FILE_NOTE;
 
-      if (summary.length > longest) {
+      if (summary.length > LONGEST_SUMMARY) {
         return errorResult(
-          `That description is ${summary.length} characters; ${longest} is the ` +
-            `limit for ${describingProject ? 'a project' : 'a file'}. ` +
-            (describingProject
-              ? 'Say what the project does and how its parts fit together.'
-              : 'A file\u2019s description shares a line with its path in `tree`, ' +
-                'so it has to say what the file is for and stop.')
+          `That line is ${summary.length} characters; ${LONGEST_SUMMARY} is ` +
+            'the limit. It shares a line with the path in `tree`, so it has ' +
+            'to say what this is for and stop - everything else goes in ' +
+            '`detail`, which has room for it.'
+        );
+      }
+
+      if (detail && detail.length > LONGEST_DETAIL) {
+        return errorResult(
+          `That description is ${detail.length} characters; ${LONGEST_DETAIL} ` +
+            'is the limit. It is meant to be what is worth knowing about ' +
+            'this, synthesised - not everything anybody has ever noticed.'
         );
       }
 
@@ -1499,7 +1529,7 @@ export function createTools(
         await saveNotes(
           root,
           key,
-          putOverview(held, summary),
+          putOverview(held, summary, detail),
           identityOf(service.workspace, service.getConfig())
         );
 
@@ -1543,11 +1573,17 @@ export function createTools(
       await saveNotes(
         cacheRoot,
         id,
-        putNote(store, target, summary, {
-          mtime: remoteStat.mtime,
-          size: remoteStat.size,
-          hash: await hashOfCopy(context, service, target, remoteStat.size),
-        }),
+        putNote(
+          store,
+          target,
+          summary,
+          {
+            mtime: remoteStat.mtime,
+            size: remoteStat.size,
+            hash: await hashOfCopy(context, service, target, remoteStat.size),
+          },
+          detail
+        ),
         identityOf(service.workspace, service.getConfig())
       );
 
@@ -1636,6 +1672,7 @@ export function createTools(
       facts: { type: 'object', additionalProperties: { type: 'string' } },
       /** What somebody recorded with `note`, which the facts cannot tell you. */
       narrative: stringField,
+      detail: stringField,
       recorded: numberField,
       stale: booleanField,
     }),
@@ -1672,6 +1709,7 @@ export function createTools(
         lines.push(
           '',
           recorded.summary +
+            (recorded.detail ? `\n${recorded.detail}` : '') +
             (recorded.stale
               ? `\n(recorded ${describeVersionAge(recorded.updated)} and not confirmed since)`
               : '')
@@ -1700,6 +1738,7 @@ export function createTools(
           root,
           facts,
           narrative: recorded ? recorded.summary : undefined,
+          detail: recorded ? recorded.detail : undefined,
           recorded: recorded ? recorded.updated : undefined,
           stale: recorded ? recorded.stale : undefined,
         },
@@ -2204,8 +2243,8 @@ const WORTH_DESCRIBING = 2000;
  * Refused rather than truncated. Half a description reads like a whole one
  * and says something else.
  */
-const LONGEST_FILE_NOTE = 300;
-const LONGEST_PROJECT_NOTE = 1500;
+const LONGEST_SUMMARY = 200;
+const LONGEST_DETAIL = 2000;
 
 /**
  * Asked once per file per window, so a second read of the same file is not a

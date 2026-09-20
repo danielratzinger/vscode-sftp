@@ -42,11 +42,10 @@ now diverges from upstream's.
   password was never part of either, so changing one moves nothing. Where two
   connections could claim the same notes, neither gets them. Cached files
   can be fetched twice; a note is the only thing in that cache that cannot.
-- A description keeps the three it replaced, and `read` hands them to whoever
-  reads the file next. A description is written by whoever read the file, for
-  whatever they were reading it for; the next reader knows something it does
-  not say, and a line that replaces the last one can quietly delete what
-  somebody already worked out.
+- A description is a short line and, optionally, the synthesis behind it. The
+  line appears beside the path in `tree`; the synthesis is where the
+  understanding accumulates, read and rewritten whole by each person who
+  learns something. The line it replaced is kept as an undo.
 - A description is anchored to what the file's bytes hash to, not only to its
   timestamp and size. Every deploy here is an upload, and an upload restamps
   every file it copies - so redeploying unchanged code used to mark every

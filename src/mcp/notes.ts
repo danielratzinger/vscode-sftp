@@ -29,23 +29,28 @@ export interface Note {
    * whose bytes differ has moved on however the timestamp reads.
    */
   hash?: string;
+  /**
+   * The synthesis: everything worth knowing about this file, as it stands.
+   *
+   * The summary is a line, because it appears on a line beside eight hundred
+   * paths. But a file that does five things cannot be said in a line without
+   * losing four of them, and a description that has to fit one will oscillate
+   * - each reader writing the aspect they came for over the aspect the last
+   * one came for. This is where the understanding accumulates instead: read
+   * what is here, fold in what you now know, write the whole thing back.
+   */
+  detail?: string;
   /** When it was last written or confirmed. */
   updated: number;
   /**
-   * The descriptions this one replaced, newest first.
+   * The one it replaced, in case a rewrite dropped something.
    *
-   * A description is written by whoever read the file, for whatever they were
-   * reading it for. The next reader comes to the same file for something else
-   * and knows something the line does not say - but they are also writing
-   * from one angle, and a line that replaces the last one can quietly delete
-   * what somebody already worked out. Keeping the ones it replaced makes that
-   * recoverable, and gives the next writer something to merge rather than
-   * overwrite.
-   *
-   * A few, not a log: the point is what is still worth knowing, not an
-   * archive of how the understanding got here.
+   * Not a history. The point is a description that develops - each reader
+   * folding what they learned into what is there - and a stack of superseded
+   * lines is what you keep instead of doing that. One is an undo; several
+   * would be an invitation to append rather than synthesise.
    */
-  previous?: Array<{ summary: string; updated: number }>;
+  previous?: { summary: string; detail?: string; updated: number };
 }
 
 export interface Version {
@@ -258,10 +263,12 @@ export const enum NoteState {
 export interface NoteView {
   state: NoteState;
   summary?: string;
+  /** Everything worth knowing about the file, where there is more than a line. */
+  detail?: string;
   /** Set when the note describes an older version. */
   describedMtime?: number;
-  /** Descriptions this one replaced, newest first. */
-  previous?: Array<{ summary: string; updated: number }>;
+  /** The description this one replaced, in case a rewrite dropped something. */
+  previous?: { summary: string; detail?: string; updated: number };
 }
 
 /**
@@ -284,10 +291,16 @@ export function viewOf(
   // A hash on both sides settles it outright, in either direction.
   if (current && current.hash && note.hash) {
     return current.hash === note.hash
-      ? { state: NoteState.Current, summary: note.summary, previous: note.previous }
+      ? {
+          state: NoteState.Current,
+          summary: note.summary,
+          detail: note.detail,
+          previous: note.previous,
+        }
       : {
           state: NoteState.Stale,
           summary: note.summary,
+          detail: note.detail,
           describedMtime: note.mtime,
         };
   }
@@ -300,29 +313,29 @@ export function viewOf(
     return {
       state: NoteState.Stale,
       summary: note.summary,
+      detail: note.detail,
       describedMtime: note.mtime,
     };
   }
 
-  return { state: NoteState.Current, summary: note.summary, previous: note.previous };
+  return {
+    state: NoteState.Current,
+    summary: note.summary,
+    detail: note.detail,
+    previous: note.previous,
+  };
 }
-
-/** How many replaced descriptions are kept. */
-const KEEP_PREVIOUS = 3;
 
 export function put(
   store: NoteStore,
   remotePath: string,
   summary: string,
-  version: Version
+  version: Version,
+  detail?: string
 ): NoteStore {
   const before = store.files[remotePath];
-  const superseded =
-    before && before.summary !== summary
-      ? [{ summary: before.summary, updated: before.updated }]
-          .concat(before.previous || [])
-          .slice(0, KEEP_PREVIOUS)
-      : before && before.previous;
+  const changed =
+    before && (before.summary !== summary || before.detail !== detail);
 
   return {
     ...store,
@@ -330,11 +343,18 @@ export function put(
       ...store.files,
       [remotePath]: {
         summary,
+        detail,
         mtime: version.mtime,
         size: version.size,
         hash: version.hash,
         updated: Date.now(),
-        previous: superseded && superseded.length > 0 ? superseded : undefined,
+        previous: changed
+          ? {
+              summary: before!.summary,
+              detail: before!.detail,
+              updated: before!.updated,
+            }
+          : before && before.previous,
       },
     },
   };
@@ -387,15 +407,32 @@ export function reanchor(
  * No version to key it to, since it describes no single file, so it goes
  * stale by age alone.
  */
-export function putOverview(store: NoteStore, summary: string): NoteStore {
+export function putOverview(
+  store: NoteStore,
+  summary: string,
+  detail?: string
+): NoteStore {
+  const before = store.overview;
+  const changed = before && (before.summary !== summary || before.detail !== detail);
+
   return {
     ...store,
-    overview: { summary, mtime: 0, size: 0, updated: Date.now() },
+    overview: {
+      summary,
+      detail,
+      mtime: 0,
+      size: 0,
+      updated: Date.now(),
+      previous: changed
+        ? { summary: before!.summary, detail: before!.detail, updated: before!.updated }
+        : before && before.previous,
+    },
   };
 }
 
 export interface OverviewView {
   summary: string;
+  detail?: string;
   updated: number;
   /** True once nobody has confirmed it for `maxAge`. */
   stale: boolean;
@@ -412,6 +449,7 @@ export function overviewOf(
 
   return {
     summary: store.overview.summary,
+    detail: store.overview.detail,
     updated: store.overview.updated,
     stale: now - store.overview.updated > maxAge,
   };

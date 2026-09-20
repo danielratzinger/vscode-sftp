@@ -790,7 +790,7 @@ describe('asking for a description where the file is read', () => {
     expect(again.structured.hint).toBeUndefined();
   });
 
-  it('refuses a description too long for the line it lives on', async () => {
+  it('refuses a line too long for the line it lives on', async () => {
     const files = { '/srv/app/big.php': BIG };
     const tools = createTools(serving(files));
 
@@ -801,19 +801,36 @@ describe('asking for a description where the file is read', () => {
     });
 
     expect(result.isError).toBe(true);
-    expect(result.text).toContain('300 is the limit');
+    expect(result.text).toContain('200 is the limit');
+    // And says where the rest belongs, rather than only refusing.
+    expect(result.text).toContain('`detail`');
   });
 
-  it('gives a project description more room than a file one', async () => {
-    // It is read on its own rather than beside eight hundred paths.
+  it('takes a long description beside the short line', async () => {
     const tools = createTools(serving({ '/srv/app/big.php': BIG }));
 
     const result: any = await tools.find(t => t.name === 'note')!.run({
       server: 'Staging',
-      summary: 'x'.repeat(400),
+      path: '/srv/app/big.php',
+      summary: 'parses the feed',
+      detail: 'x'.repeat(1500),
     });
 
     expect(result.isError).toBeFalsy();
+  });
+
+  it('refuses a description that is no longer a synthesis of anything', async () => {
+    const tools = createTools(serving({ '/srv/app/big.php': BIG }));
+
+    const result: any = await tools.find(t => t.name === 'note')!.run({
+      server: 'Staging',
+      path: '/srv/app/big.php',
+      summary: 'parses the feed',
+      detail: 'x'.repeat(2500),
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.text).toContain('synthesised');
   });
 
   it('still returns the file, whatever it asks for', async () => {
@@ -1003,24 +1020,36 @@ describe('a description is written from somewhere', () => {
   // replaces the last one can quietly delete what somebody worked out.
   const version = { mtime: 1, size: 1, hash: 'abc' };
 
-  it('keeps the description it replaced', () => {
+  it('keeps the description it replaced, as an undo', () => {
     let store = put({ files: {} }, '/a.php', 'parses the feed', version);
-    store = put(store, '/a.php', 'parses the feed; retries twice on a 5xx', version);
+    store = put(store, '/a.php', 'parses the feed; retries on a 5xx', version);
 
-    expect(store.files['/a.php'].summary).toContain('retries twice');
-    expect(store.files['/a.php'].previous).toEqual([
-      expect.objectContaining({ summary: 'parses the feed' }),
-    ]);
+    expect(store.files['/a.php'].summary).toContain('retries');
+    expect(store.files['/a.php'].previous!.summary).toBe('parses the feed');
   });
 
-  it('keeps a few, not a log', () => {
+  it('keeps one, not a history', () => {
+    // A stack of superseded lines is what you keep instead of developing the
+    // description. One is an undo; several invite appending.
     let store = put({ files: {} }, '/a.php', 'one', version);
-    ['two', 'three', 'four', 'five'].forEach(summary => {
+    ['two', 'three', 'four'].forEach(summary => {
       store = put(store, '/a.php', summary, version);
     });
 
-    const previous = store.files['/a.php'].previous!;
-    expect(previous.map(one => one.summary)).toEqual(['four', 'three', 'two']);
+    expect(store.files['/a.php'].previous!.summary).toBe('three');
+  });
+
+  it('develops the long description and keeps the line short', () => {
+    let store = put({ files: {} }, '/a.php', 'parses the feed', version, 'Reads the XML.');
+    store = put(
+      store, '/a.php', 'parses the feed', version,
+      'Reads the XML. Retries twice on a 5xx, then gives up and logs.'
+    );
+
+    expect(store.files['/a.php'].summary).toBe('parses the feed');
+    expect(store.files['/a.php'].detail).toContain('Retries twice');
+    // A changed description is a changed description, line or not.
+    expect(store.files['/a.php'].previous!.detail).toBe('Reads the XML.');
   });
 
   it('does not stack the same line against itself', () => {
@@ -1055,7 +1084,7 @@ describe('a description is written from somewhere', () => {
       .run({ server: 'Staging', path: '/srv/app/big.php' });
 
     expect(result.structured.note.summary).toBe('parses the feed, badly');
-    expect(result.structured.note.previous[0].summary).toBe('parses the feed');
+    expect(result.structured.note.previous.summary).toBe('parses the feed');
   });
 
   it('asks the next reader to merge rather than overwrite', async () => {
@@ -1083,5 +1112,88 @@ describe('a description is written from somewhere', () => {
       .run({ server: 'Staging', path: '/srv/app/big.php' });
 
     expect(result.structured.hint).toContain('keep what still holds');
+  });
+});
+
+describe('a description that develops rather than stacks', () => {
+  const text = 'x'.repeat(4000);
+  const serving: any = {
+    services: () => [STAGING],
+    exposure: () => ({ exposedByDefault: true }),
+    cacheOption: () => ({ cacheRoot: '/cache', materialize: true }),
+    remoteFs: async () => ({
+      list: async (dir: string) =>
+        dir === '/srv/app'
+          ? [
+              {
+                name: 'big.php',
+                fspath: '/srv/app/big.php',
+                type: FileType.File,
+                size: text.length,
+                mtime: MTIME,
+                atime: MTIME,
+                mode: 0o644,
+              },
+            ]
+          : [],
+      lstat: async () => ({ type: FileType.File, size: text.length, mtime: MTIME }),
+      readFile: async () => text,
+    }),
+  };
+
+  const use = (name: string) => createTools(serving).find(t => t.name === name)!;
+
+  beforeEach(() => forgetWhatWasAsked());
+
+  it('hands the whole synthesis to whoever reads the file next', async () => {
+    await use('read').run({ server: 'Staging', path: '/srv/app/big.php' });
+    await use('note').run({
+      server: 'Staging',
+      path: '/srv/app/big.php',
+      summary: 'parses the provider feed',
+      detail:
+        'Reads the XML into events. Retries twice on a 5xx and then gives up. ' +
+        'Called from the poll worker, never from a request.',
+    });
+
+    const result: any = await use('read').run({
+      server: 'Staging',
+      path: '/srv/app/big.php',
+    });
+
+    expect(result.structured.note.summary).toBe('parses the provider feed');
+    expect(result.structured.note.detail).toContain('never from a request');
+    // In the text too, under the line rather than in place of it.
+    expect(result.text).toContain('Noted: parses the provider feed');
+    expect(result.text).toContain('Retries twice');
+  });
+
+  it('keeps the tree a tree', async () => {
+    await use('read').run({ server: 'Staging', path: '/srv/app/big.php' });
+    await use('note').run({
+      server: 'Staging',
+      path: '/srv/app/big.php',
+      summary: 'parses the provider feed',
+      detail: 'A paragraph that has no business in a listing. '.repeat(10),
+    });
+
+    const tree: any = await use('tree').run({ server: 'Staging' });
+
+    expect(tree.text).toContain('parses the provider feed');
+    expect(tree.text).not.toContain('no business in a listing');
+  });
+
+  it('gives a project its synthesis as well', async () => {
+    await use('note').run({
+      server: 'Staging',
+      summary: 'the scraper pipeline',
+      detail: 'search → fetch → extract → match → store, drained by cron.',
+    });
+
+    const result: any = await use('overview').run({ server: 'Staging' });
+
+    expect(result.structured.narrative).toBe('the scraper pipeline');
+    expect(result.structured.detail).toContain('drained by cron');
+    expect(result.text).toContain('drained by cron');
   });
 });
