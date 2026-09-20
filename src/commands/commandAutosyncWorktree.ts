@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { COMMAND_CONTINUOUS_SYNC } from '../constants';
+import { COMMAND_AUTOSYNC_WORKTREE } from '../constants';
 import { checkCommand } from './abstract/createCommand';
 import { getAllFileService, getFileService } from '../modules/serviceManager';
 import { chooseWorktree } from '../modules/worktreeSync';
@@ -60,7 +60,7 @@ export async function whichConnection(
 }
 
 export default checkCommand({
-  id: COMMAND_CONTINUOUS_SYNC,
+  id: COMMAND_AUTOSYNC_WORKTREE,
 
   async handleCommand(...args: any[]) {
     const service = await whichConnection(...args);

@@ -95,9 +95,9 @@ export function sayIfPaused(service: FileService): boolean {
     logger
       .for(connectionLabel(service.getConfig() as any))
       .info(
-        `[sync] upload-on-save is standing down: this connection is syncing ` +
-          `${chosen.branch || chosen.root} continuously. ` +
-          '"SFTP: Stop Continuous Sync" hands it back.'
+        `[autosync] upload-on-save is standing down: this connection autosyncs ` +
+          `${chosen.branch || chosen.root}. ` +
+          '"SFTP: Stop Autosync Worktree" hands it back.'
       );
   }
 
@@ -147,7 +147,7 @@ async function upload(service: FileService, root: string, file: string) {
   await withConnection(connectionLabel(service.getConfig() as any), async () => {
     try {
       await uploadFile(contextFor(service, root, file) as any);
-      logger.info(`[worktree] ${path.relative(root, file)}`);
+      logger.info(`[autosync] ${path.relative(root, file)}`);
     } catch (error) {
       logger.error(error, `worktree upload ${file}`);
     }
@@ -162,7 +162,7 @@ async function remove(service: FileService, root: string, file: string) {
   await withConnection(connectionLabel(service.getConfig() as any), async () => {
     try {
       await removeRemote(contextFor(service, root, file) as any);
-      logger.info(`[worktree] removed ${path.relative(root, file)}`);
+      logger.info(`[autosync] removed ${path.relative(root, file)}`);
     } catch (error) {
       logger.error(error, `worktree delete ${file}`);
     }
@@ -229,7 +229,7 @@ function watchWorktree(service: FileService, chosen: Chosen): vscode.Disposable[
   logger
     .for(connectionLabel(config as any))
     .info(
-      `[worktree] syncing ${chosen.branch || root} from ${root}` +
+      `[autosync] syncing ${chosen.branch || root} from ${root}` +
         (samePath(root, service.baseDir) ? '' : '; this window is paused')
     );
 
@@ -254,7 +254,7 @@ function stopWatching(id: string): void {
 async function sayWhetherAnythingIsSyncing(): Promise<void> {
   await vscode.commands.executeCommand(
     'setContext',
-    'sftp.continuousSyncing',
+    'sftp.autosyncWorktreeing',
     Object.keys(chosenAll()).length > 0
   );
 }
@@ -283,7 +283,7 @@ async function remember(service: FileService, chosen?: Chosen): Promise<void> {
   } else {
     logger
       .for(connectionLabel(service.getConfig() as any))
-      .info('[worktree] stopped; this window uploads again.');
+      .info('[autosync] stopped; this window uploads again.');
   }
 }
 
@@ -352,7 +352,7 @@ async function offerToCatchUp(
 
       for (const file of toUpload) {
         if (token.isCancellationRequested) {
-          logger.info(`[worktree] catch-up stopped after ${done} of ${toUpload.length}.`);
+          logger.info(`[autosync] catch-up stopped after ${done} of ${toUpload.length}.`);
           return;
         }
 
@@ -375,7 +375,7 @@ async function offerToCatchUp(
       }
 
       logger.info(
-        `[worktree] caught up: ${done} uploaded` +
+        `[autosync] caught up: ${done} uploaded` +
           (autoDelete && toDelete.length ? `, ${toDelete.length} removed` : '') +
           '.'
       );
@@ -438,7 +438,7 @@ export async function chooseWorktree(service: FileService): Promise<void> {
 
   const picked = await vscode.window.showQuickPick(items, {
     placeHolder:
-      `Sync ${connectionLabel(service.getConfig() as any)} continuously from…`,
+      `Autosync ${connectionLabel(service.getConfig() as any)} from…`,
   });
 
   if (!picked) {

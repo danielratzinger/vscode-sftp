@@ -91,14 +91,14 @@ On folders, in both explorers: opens the machine's own terminal on that folder �
 
 `openInTerminal` is the editor's command for the external terminal and `openInIntegratedTerminal` for the built-in one. They are separate commands, so `terminal.explorerKind` — which decides which of the two the *editor* offers in its own menus — does not redirect this one. Whatever is set in `terminal.external.osxExec`, `terminal.external.windowsExec` or `terminal.external.linuxExec` is the terminal that opens.
 
-### Continuous Sync
-On a connection in the Remote Explorer, on a folder in the file explorer, or from the palette. Asks which folder this connection should deploy from, and then uploads everything that changes there — saved in this window or written by anything else. `Stop Continuous Sync` sits beside it and appears only while something is syncing.
+### Autosync Worktree
+On a connection in the Remote Explorer, on a folder in the file explorer, or from the palette. Asks which folder this connection should deploy from, and then uploads everything that changes there — saved in this window or written by anything else. `Stop Autosync Worktree` sits beside it and appears only while something is syncing.
 
 Where the project is a git repository the folders on offer are its worktrees, which is the case this was built for: an agent working on a branch gets its own checkout, usually nowhere near the workspace. Where it is not a repository — which is most connections — there is one candidate, the project folder itself, and choosing it is how you say "keep this on the server" without writing a `watcher` block into `sftp.json`.
 
 The list of worktrees comes from git's own metadata under `.git/worktrees` — every checkout of the repository, with the branch each is on, whether or not it is open in an editor. Nothing is scanned for and `git` need not be on the PATH.
 
-**One writer.** A connection has one remote path, so it syncs from exactly one folder at a time. While it does, `uploadOnSave` for that connection stands down — two mechanisms uploading the same save is one upload too many, and the watcher sees everything a save does and more. The cost is that a save goes up when it has settled rather than the instant it is written. The log says so once rather than leaving you to wonder. `Stop Continuous Sync`, or `Stop syncing` in the picker, hands it back.
+**One writer.** A connection has one remote path, so it syncs from exactly one folder at a time. While it does, `uploadOnSave` for that connection stands down — two mechanisms uploading the same save is one upload too many, and the watcher sees everything a save does and more. The cost is that a save goes up when it has settled rather than the instant it is written. The log says so once rather than leaving you to wonder. `Stop Autosync Worktree`, or `Stop syncing` in the picker, hands it back.
 
 For a worktree, picking one usually happens after the work has started — an agent has been writing for twenty minutes before anybody looks — so you are offered the catch-up: the files that checkout has and the deployed branch does not, plus whatever is not committed there yet. Git answers that, not the server, so it costs no connection to work out. The count is shown before anything moves, and the upload can be cancelled while it runs.
 

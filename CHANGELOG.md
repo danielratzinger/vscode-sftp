@@ -34,7 +34,7 @@ now diverges from upstream's.
   menu, on anything that has been downloaded: opens the system's file manager
   on the local copy. `Reveal in File Explorer` on Windows, `Open Containing
   Folder` on Linux.
-- `SFTP: Continuous Sync` and `SFTP: Stop Continuous Sync`, on a connection in
+- `SFTP: Autosync Worktree` and `SFTP: Stop Autosync Worktree`, on a connection in
   the Remote Explorer and on a folder in the file explorer: upload everything
   that changes in a chosen folder, saved in this window or not. In a git
   repository the folders on offer are its worktrees - a checkout the editor

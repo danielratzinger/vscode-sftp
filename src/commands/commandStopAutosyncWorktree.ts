@@ -1,10 +1,10 @@
-import { COMMAND_STOP_CONTINUOUS_SYNC } from '../constants';
+import { COMMAND_STOP_AUTOSYNC_WORKTREE } from '../constants';
 import { checkCommand } from './abstract/createCommand';
 import { stopSyncing } from '../modules/worktreeSync';
-import { whichConnection } from './commandContinuousSync';
+import { whichConnection } from './commandAutosyncWorktree';
 
 export default checkCommand({
-  id: COMMAND_STOP_CONTINUOUS_SYNC,
+  id: COMMAND_STOP_AUTOSYNC_WORKTREE,
 
   async handleCommand(...args: any[]) {
     const service = await whichConnection(...args);
