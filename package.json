@@ -447,6 +447,11 @@
         "category": "SFTP"
       },
       {
+        "command": "sftp.stopWorktreeSync",
+        "title": "Stop Worktree Sync",
+        "category": "SFTP"
+      },
+      {
         "command": "sftp.revealInRemoteExplorer",
         "title": "Reveal in Remote Explorer",
         "category": "SFTP"
@@ -738,6 +743,16 @@
           "command": "sftp.revealInTerminal",
           "group": "navigation@21",
           "when": "sftp.enabled && explorerResourceIsFolder"
+        },
+        {
+          "command": "sftp.syncWorktree",
+          "group": "sftp.trans@4",
+          "when": "sftp.enabled && explorerResourceIsFolder"
+        },
+        {
+          "command": "sftp.stopWorktreeSync",
+          "group": "sftp.trans@5",
+          "when": "sftp.enabled && explorerResourceIsFolder && sftp.worktreeSyncing"
         }
       ],
       "editor/context": [
@@ -871,6 +886,11 @@
           "command": "sftp.syncWorktree",
           "group": "3_trans@5",
           "when": "sftp.enabled && viewItem =~ /^root/"
+        },
+        {
+          "command": "sftp.stopWorktreeSync",
+          "group": "3_trans@6",
+          "when": "sftp.enabled && viewItem =~ /^root/ && sftp.worktreeSyncing"
         },
         {
           "command": "sftp.clear.localFolder",

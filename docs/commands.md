@@ -92,11 +92,11 @@ On folders, in both explorers: opens the machine's own terminal on that folder �
 `openInTerminal` is the editor's command for the external terminal and `openInIntegratedTerminal` for the built-in one. They are separate commands, so `terminal.explorerKind` — which decides which of the two the *editor* offers in its own menus — does not redirect this one. Whatever is set in `terminal.external.osxExec`, `terminal.external.windowsExec` or `terminal.external.linuxExec` is the terminal that opens.
 
 ### Sync Worktree
-On a connection in the Remote Explorer, or from the palette. Asks which checkout of the repository this connection should deploy from, and then watches that one instead of the folder this window has open.
+On a connection in the Remote Explorer, on a folder in the file explorer, or from the palette. Asks which checkout of the repository this connection should deploy from, and then watches that one instead of the folder this window has open. `Stop Worktree Sync` sits beside it and appears only while something is syncing.
 
 An agent working on a branch gets its own git worktree, usually nowhere near the workspace. The list comes from git's own metadata under `.git/worktrees` — every checkout of the repository, with the branch each is on, whether or not it is open in an editor. Nothing is scanned for and `git` need not be on the PATH.
 
-**One writer.** A connection has one remote path, so it syncs from exactly one checkout at a time. While that is not this window, saves here are not uploaded and the log says so once rather than leaving you to wonder. `Stop syncing` in the same picker hands the connection back to this window.
+**One writer.** A connection has one remote path, so it syncs from exactly one checkout at a time. While that is not this window, saves here are not uploaded and the log says so once rather than leaving you to wonder. `Stop Worktree Sync`, or `Stop syncing` in the picker, hands the connection back to this window.
 
 Picking one usually happens after the work has started — an agent has been writing for twenty minutes before anybody looks — so you are offered the catch-up: the files that checkout has and the deployed branch does not, plus whatever is not committed there yet. Git answers that, not the server, so it costs no connection to work out. The count is shown before anything moves, and the upload can be cancelled while it runs.
 

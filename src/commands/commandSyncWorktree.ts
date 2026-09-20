@@ -13,7 +13,7 @@ import { FileService } from '../core';
  * obvious, or from the palette, where it is whichever connection there is -
  * and a choice when there is more than one.
  */
-async function whichConnection(hint: any): Promise<FileService | undefined> {
+export async function whichConnection(hint: any): Promise<FileService | undefined> {
   if (hint && hint.resource && hint.resource.uri) {
     const service = getFileService(hint.resource.uri);
     if (service) {

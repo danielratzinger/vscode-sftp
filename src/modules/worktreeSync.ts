@@ -240,6 +240,21 @@ function stopWatching(id: string): void {
   }
 }
 
+/**
+ * Lets a menu show `Stop` only when something is running.
+ *
+ * One key for the window rather than one per connection, because that is what
+ * a `when` clause can see. It says "something here is syncing a worktree", and
+ * the command itself works out whether that is the connection you clicked.
+ */
+async function sayWhetherAnythingIsSyncing(): Promise<void> {
+  await vscode.commands.executeCommand(
+    'setContext',
+    'sftp.worktreeSyncing',
+    Object.keys(chosenAll()).length > 0
+  );
+}
+
 async function remember(service: FileService, chosen?: Chosen): Promise<void> {
   if (!storage) {
     return;
@@ -255,6 +270,7 @@ async function remember(service: FileService, chosen?: Chosen): Promise<void> {
   }
 
   await storage.update(REMEMBERED, all);
+  await sayWhetherAnythingIsSyncing();
   said.delete(`${id}|${chosen ? chosen.root : ''}`);
 
   stopWatching(id);
@@ -360,6 +376,25 @@ async function offerToCatchUp(
           '.'
       );
     }
+  );
+}
+
+/** The command: hand a connection back to the window it belongs to. */
+export async function stopSyncing(service: FileService): Promise<void> {
+  const chosen = activeWorktree(service);
+  const where = connectionLabel(service.getConfig() as any);
+
+  if (!chosen) {
+    vscode.window.showInformationMessage(
+      `${where} is already deploying from this window.`
+    );
+    return;
+  }
+
+  await remember(service, undefined);
+  vscode.window.showInformationMessage(
+    `${where} deploys from this window again. ` +
+      `${chosen.branch || chosen.root} is no longer watched.`
   );
 }
 
@@ -512,6 +547,8 @@ export function initWorktreeSync(context: vscode.ExtensionContext): void {
       settling.clear();
     },
   });
+
+  sayWhetherAnythingIsSyncing().catch(() => undefined);
 
   start().catch(error =>
     logger.debug(`could not start worktree sync: ${error.message}`)
