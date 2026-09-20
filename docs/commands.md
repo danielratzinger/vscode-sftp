@@ -82,7 +82,7 @@ Every folder is walked by default. To leave some out, name them in `sftp.downloa
 Both settings ignore case. The connection's own `ignore` rules still apply on top.
 
 ### Clear Local Folder
-Sits under `Download Scripts` in the Remote Explorer's menu, on folders. Deletes the contents of the *local* copy of that folder and never touches the server.
+Sits under `Download Scripts` in the Remote Explorer's menu, on folders and on a connection's root — nowhere else. Deletes the contents of the *local* copy of that folder and never touches the server.
 
 `Download Scripts` writes files and never removes them, so a folder downloaded across a year of deploys holds files the server deleted months ago — and nothing downstream can tell those apart from current ones. This is the other half of it: clear the folder, download it again, and what is on disk is what is on the server.
 
@@ -90,7 +90,7 @@ You are asked first, with the number of files and how much they come to, and tol
 
 Two things are never removed: anything the connection's own `ignore` rules cover, and `.git`, `.svn`, `.hg` and `.vscode` at any depth. A repository is not an old copy of the deployed files — it is the history of them, it is not on the server, and no download would put it back. A folder holding something kept back is emptied around it rather than removed.
 
-The folder you asked about stays; only its contents go.
+The folder you asked about goes with its contents — that is what clearing it means. Two exceptions, and both are the folder being unable to go rather than a preference: the connection's own root stays, because the editor has it open and taking it away leaves a window pointed at nothing; and a folder holding something kept back stays to hold it.
 
 ### Before a download replaces your file
 Downloading a single file — with `Download File`, from the Remote Explorer, or through `downloadOnOpen` — first compares what is on disk against what is on the server.

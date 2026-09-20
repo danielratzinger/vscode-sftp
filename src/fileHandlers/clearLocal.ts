@@ -36,16 +36,27 @@ function describeSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function describePlan(local: string, plan: Clearance, root: boolean): string {
+function describePlan(
+  local: string,
+  plan: Clearance,
+  folderGoesToo: boolean,
+  root: boolean
+): string {
   const what =
     `${plan.files} file${plan.files === 1 ? '' : 's'} (${describeSize(plan.bytes)})`;
 
   return (
-    `Delete ${what} from ${simplifyPath(local)}?` +
-    (root ? '\nThis is the whole local copy of this connection.' : '') +
-    (plan.kept
-      ? `\n${plan.kept} kept back — ${plan.keptFor}.`
+    (folderGoesToo
+      ? `Delete ${simplifyPath(local)} and everything in it — ${what}?`
+      : `Delete ${what} from ${simplifyPath(local)}?`) +
+    (root
+      ? '\nThis is the whole local copy of this connection; the folder itself ' +
+        'stays, because the editor has it open.'
       : '') +
+    (!root && !folderGoesToo
+      ? '\nThe folder itself stays, because something in it is kept back.'
+      : '') +
+    (plan.kept ? `\n${plan.kept} kept back — ${plan.keptFor}.` : '') +
     '\nThe server is not touched. Files go to the trash where the system ' +
     'supports it.'
   );
@@ -97,8 +108,17 @@ export const clearLocalFolder = createFileHandler<ClearOption>({
       return;
     }
 
+    // The folder that was right-clicked goes with its contents - that is what
+    // clearing a folder means. Two exceptions, and both are the folder being
+    // unable to go rather than a preference: the connection's own root is open
+    // in the editor, and taking it away leaves a window pointed at nothing;
+    // and a folder holding something kept back has to stay to hold it.
+    const isRoot = isWithin(local, root);
+    const folderGoesToo = !isRoot && plan.kept === 0;
+    const going = folderGoesToo ? [local] : plan.paths;
+
     const confirmed = await showConfirmMessage(
-      describePlan(local, plan, isWithin(local, root)),
+      describePlan(local, plan, folderGoesToo, isRoot),
       'Delete',
       'Cancel'
     );
@@ -109,7 +129,7 @@ export const clearLocalFolder = createFileHandler<ClearOption>({
     }
 
     let removed = 0;
-    for (const target of plan.paths) {
+    for (const target of going) {
       try {
         await remove(target);
         removed += 1;
@@ -120,9 +140,10 @@ export const clearLocalFolder = createFileHandler<ClearOption>({
 
     logger.info(
       `[clear] removed ${plan.files} file${plan.files === 1 ? '' : 's'} ` +
-        `(${describeSize(plan.bytes)}) from ${local}` +
-        (removed < plan.paths.length
-          ? `; ${plan.paths.length - removed} could not be removed`
+        `(${describeSize(plan.bytes)}) ` +
+        `${folderGoesToo ? 'with' : 'from'} ${local}` +
+        (removed < going.length
+          ? `; ${going.length - removed} could not be removed`
           : '') +
         (plan.kept ? `, keeping ${plan.kept}` : '') +
         '.'

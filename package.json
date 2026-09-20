@@ -804,7 +804,7 @@
         {
           "command": "sftp.clear.localFolder",
           "group": "3_trans@4",
-          "when": "sftp.enabled && viewItem != file"
+          "when": "sftp.enabled && (viewItem == folder || viewItem == root)"
         },
         {
           "command": "sftp.download.file",

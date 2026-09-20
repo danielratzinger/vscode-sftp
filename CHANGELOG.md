@@ -31,7 +31,8 @@ now diverges from upstream's.
 ### Added
 
 - `Clear Local Folder`, under `Download Scripts` in the Remote Explorer's
-  menu: deletes the contents of the local copy of a folder, so a download can
+  menu on folders and roots: deletes the local copy of a folder and everything
+  in it, so a download can
   start from nothing. `Download Scripts` writes files and never removes them,
   so a folder downloaded across a year of deploys holds files the server
   deleted months ago. Asked first, with the count and the size; moved to the
