@@ -6,8 +6,8 @@ import { whichConnection } from './commandSyncWorktree';
 export default checkCommand({
   id: COMMAND_STOP_WORKTREE_SYNC,
 
-  async handleCommand(hint: any) {
-    const service = await whichConnection(hint);
+  async handleCommand(...args: any[]) {
+    const service = await whichConnection(...args);
     if (service) {
       await stopSyncing(service);
     }

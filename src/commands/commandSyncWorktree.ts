@@ -3,19 +3,36 @@ import { COMMAND_SYNC_WORKTREE } from '../constants';
 import { checkCommand } from './abstract/createCommand';
 import { getAllFileService, getFileService } from '../modules/serviceManager';
 import { chooseWorktree } from '../modules/worktreeSync';
+import { uriFromExplorerContextOrEditorContext } from './shared';
+import { getActiveTextEditor } from '../host';
 import connectionLabel from '../core/connectionLabel';
 import { FileService } from '../core';
 
 /**
- * Which checkout a connection deploys from.
+ * Which connection a worktree command is about.
  *
- * Reached from a connection in the Remote Explorer, where the answer is
- * obvious, or from the palette, where it is whichever connection there is -
- * and a choice when there is more than one.
+ * Nearly always the context knows: a folder right-clicked in the file
+ * explorer, a connection right-clicked in the Remote Explorer, the file being
+ * edited. Asking in any of those cases is asking somebody to repeat
+ * themselves. The question is for the one case that cannot be answered - the
+ * palette, with nothing open and more than one connection configured.
  */
-export async function whichConnection(hint: any): Promise<FileService | undefined> {
-  if (hint && hint.resource && hint.resource.uri) {
-    const service = getFileService(hint.resource.uri);
+export async function whichConnection(
+  ...args: any[]
+): Promise<FileService | undefined> {
+  const fromContext = uriFromExplorerContextOrEditorContext(args[0], args[1]);
+  const clicked = Array.isArray(fromContext) ? fromContext[0] : fromContext;
+
+  if (clicked) {
+    const service = getFileService(clicked);
+    if (service) {
+      return service;
+    }
+  }
+
+  const editing = getActiveTextEditor();
+  if (editing && editing.document) {
+    const service = getFileService(editing.document.uri);
     if (service) {
       return service;
     }
@@ -45,8 +62,8 @@ export async function whichConnection(hint: any): Promise<FileService | undefine
 export default checkCommand({
   id: COMMAND_SYNC_WORKTREE,
 
-  async handleCommand(hint: any) {
-    const service = await whichConnection(hint);
+  async handleCommand(...args: any[]) {
+    const service = await whichConnection(...args);
     if (service) {
       await chooseWorktree(service);
     }
