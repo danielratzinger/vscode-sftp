@@ -9,6 +9,7 @@ import { createTools, ToolContext } from '../src/mcp/tools';
 import { createDispatcher } from '../src/mcp/protocol';
 import { startServer, StartedServer } from '../src/mcp/server';
 import { startSftpServer, RunningServer } from './sftpServer';
+import { validate } from './schemaCheck';
 
 /**
  * The whole stack, end to end, against a real server over a real socket.
@@ -193,8 +194,29 @@ describe('the whole stack against a real server', () => {
     expect(tools.result.tools.map((t: any) => t.name)).toContain('read');
   });
 
+  it('gives an id that survives the editor renumbering its connections', async () => {
+    // What an agent actually does: read the listing, then use the id from it.
+    // The editor numbers connections as it loads them, so the number a client
+    // wrote down this morning belongs to another server this afternoon.
+    const listed = await tool('servers', {});
+    const fixture = listed.structuredContent.servers.find(
+      (one: any) => one.name === 'Fixture'
+    );
+
+    expect(fixture.id).not.toBe('1');
+
+    const byId = await tool('list', { server: fixture.id, path: '/' });
+    expect(byId.structuredContent.entries.map((e: any) => e.name)).toContain(
+      'index.php'
+    );
+
+    // And the number it replaced addresses nothing at all.
+    const byNumber = await tool('list', { server: '1', path: '/' });
+    expect(byNumber.isError).toBe(true);
+  });
+
   it('lists a real directory', async () => {
-    const result = await tool('list', { server: '1', path: '/' });
+    const result = await tool('list', { server: 'Fixture', path: '/' });
     const names = result.structuredContent.entries.map((e: any) => e.name);
 
     expect(names).toContain('index.php');
@@ -202,7 +224,7 @@ describe('the whole stack against a real server', () => {
   });
 
   it('fetches a file byte for byte and leaves it in the workspace', async () => {
-    const result = await tool('read', { server: '1', path: '/index.php' });
+    const result = await tool('read', { server: 'Fixture', path: '/index.php' });
 
     expect(textOf(result)).toContain(`require 'app/boot.php';`);
     // The transfer went over a socket and landed on disk unchanged.
@@ -213,7 +235,7 @@ describe('the whole stack against a real server', () => {
 
   it('redacts a credential on the way out but not on disk', async () => {
     const result = await tool('read', {
-      server: '1',
+      server: 'Fixture',
       path: '/config.php',
       start_line: 1,
     });
@@ -225,20 +247,20 @@ describe('the whole stack against a real server', () => {
   });
 
   it('never serves a denied file', async () => {
-    const result = await tool('read', { server: '1', path: '/.env' });
+    const result = await tool('read', { server: 'Fixture', path: '/.env' });
 
     expect(result.isError).toBe(true);
     expect(fs.existsSync(path.join(workspace, '.env'))).toBe(false);
   });
 
   it('searches the real tree and finds a line', async () => {
-    const result = await tool('search', { server: '1', query: 'echo' });
+    const result = await tool('search', { server: 'Fixture', query: 'echo' });
 
     expect(textOf(result)).toContain('boot.php');
   });
 
   it('walks the tree and reports what it found', async () => {
-    const result = await tool('tree', { server: '1' });
+    const result = await tool('tree', { server: 'Fixture' });
 
     expect(result.structuredContent.files.map((f: any) => f.path)).toContain(
       '/app/boot.php'
@@ -249,13 +271,13 @@ describe('the whole stack against a real server', () => {
     // Connection 2 exposes /app only. Connection 1 is rooted at `/`, which
     // exposes everything below it on purpose.
     const escape = await tool('stat', {
-      server: '2',
+      server: 'Scoped',
       path: '/app/../index.php',
     });
     expect(escape.isError).toBe(true);
     expect(textOf(escape)).toContain('outside /app');
 
-    const inside = await tool('stat', { server: '2', path: '/app/boot.php' });
+    const inside = await tool('stat', { server: 'Scoped', path: '/app/boot.php' });
     expect(inside.isError).toBe(false);
   });
 
@@ -265,7 +287,7 @@ describe('the whole stack against a real server', () => {
       '# The shop\n\nEdited here.\n'
     );
 
-    const result = await tool('diff', { server: '1', path: '/README.md' });
+    const result = await tool('diff', { server: 'Fixture', path: '/README.md' });
 
     expect(textOf(result)).toContain('+Edited here.');
     expect(textOf(result)).toContain('-A test fixture.');
@@ -279,7 +301,7 @@ describe('when the server stops answering', () => {
     remote.misbehave({ stallStatOf: ['index.php'] });
 
     const started = Date.now();
-    const result = await tool('stat', { server: '1', path: '/index.php' });
+    const result = await tool('stat', { server: 'Fixture', path: '/index.php' });
     const waited = Date.now() - started;
 
     // The operation timeout is 3s here; without it this call never returns.
@@ -300,7 +322,7 @@ describe('when the server stops answering', () => {
 
     const started = Date.now();
     const result = await tool('read', {
-      server: '1',
+      server: 'Fixture',
       path: '/app/fresh.log',
       start_line: 1,
     });
@@ -313,8 +335,117 @@ describe('when the server stops answering', () => {
 
   it('still works afterwards', async () => {
     // Whatever the stall did to the connection, the next call recovers.
-    const result = await tool('list', { server: '1', path: '/' });
+    const result = await tool('list', { server: 'Fixture', path: '/' });
 
     expect(result.isError).toBe(false);
+  });
+});
+
+/**
+ * What a tool declares is what it returns.
+ *
+ * A tool that declares an output schema is telling the client to read the
+ * structured half of the reply and ignore the text - which is what a client
+ * does. `read` declared one and put the file only in the text, so a real
+ * client got the path, the state and the timestamps of a file whose contents
+ * it never saw, and every test passed because every test read the text.
+ *
+ * So each tool is called for real, and the reply is checked against its own
+ * promise: the schema it published, and the one thing it exists to return.
+ */
+
+describe('what every tool promises', () => {
+  /**
+   * One real call per tool, and what the answer has to contain to be worth
+   * making. A tool added without a line here fails the last test in this
+   * block, which is the point of it.
+   */
+  const CALLS: {
+    [name: string]: { args: any; substance?(structured: any, text: string): void };
+  } = {
+    servers: { args: {} },
+    list: {
+      args: { server: 'Fixture', path: '/' },
+      substance: structured =>
+        expect(structured.entries.map((e: any) => e.name)).toContain('index.php'),
+    },
+    stat: {
+      args: { server: 'Fixture', path: '/index.php' },
+      substance: structured => {
+        expect(structured.size).toBe(SERVER_FILES['index.php'].length);
+        expect(structured.mtime).toBeGreaterThan(0);
+      },
+    },
+    read: {
+      args: { server: 'Fixture', path: '/index.php' },
+      // The one that shipped broken: everything about the file except the file.
+      substance: structured =>
+        expect(structured.content).toContain(`require 'app/boot.php';`),
+    },
+    'local-copy': { args: { server: 'Fixture', path: '/index.php' } },
+    search: {
+      args: { server: 'Fixture', query: 'echo' },
+      substance: structured =>
+        expect(structured.matches.map((m: any) => m.path).join()).toContain('boot.php'),
+    },
+    tree: {
+      args: { server: 'Fixture' },
+      substance: structured =>
+        expect(structured.files.map((f: any) => f.path)).toContain('/app/boot.php'),
+    },
+    note: { args: { server: 'Fixture', path: '/index.php', summary: 'the front controller' } },
+    overview: { args: { server: 'Fixture' } },
+    history: { args: { server: 'Fixture', path: '/index.php' } },
+    diff: { args: { server: 'Fixture', path: '/README.md' } },
+    forget: { args: { server: 'Fixture', path: '/index.php' } },
+  };
+
+  let declared: any[];
+
+  beforeAll(async () => {
+    declared = (await call('tools/list')).result.tools;
+  });
+
+  it('answers every one of them against a real server', async () => {
+    const failures: string[] = [];
+
+    for (const definition of declared) {
+      const planned = CALLS[definition.name];
+      if (!planned) {
+        continue; // Reported by the last test in this block.
+      }
+
+      const result = await tool(definition.name, planned.args);
+      const text = result.content && result.content[0] ? result.content[0].text : '';
+
+      if (result.isError) {
+        failures.push(`${definition.name}: ${text}`);
+        continue;
+      }
+
+      if (definition.outputSchema) {
+        // Declaring a schema is a promise that the answer is in the structured
+        // half, so there has to be one.
+        if (!result.structuredContent) {
+          failures.push(`${definition.name}: declares an output schema and returned none`);
+          continue;
+        }
+        failures.push(
+          ...validate(result.structuredContent, definition.outputSchema, definition.name)
+        );
+      }
+
+      if (planned.substance) {
+        planned.substance(result.structuredContent || {}, text);
+      }
+    }
+
+    expect(failures).toEqual([]);
+  });
+
+  it('has a call here for every tool it offers', () => {
+    expect(declared.map((one: any) => one.name).sort()).toEqual(
+      Object.keys(CALLS).sort()
+    );
   });
 });

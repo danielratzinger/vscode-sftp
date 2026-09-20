@@ -11,6 +11,8 @@ import {
   withTls,
 } from '../src/core/ftpsPolicy';
 import { startFtpServer, RunningFtpServer } from './ftpServer';
+import { createTools } from '../src/mcp/tools';
+import { validate } from './schemaCheck';
 
 /**
  * FTP against a server that speaks the protocol.
@@ -290,5 +292,102 @@ describe('FTP against a real server', () => {
     expect(waited).toBeLessThan(20000);
     expect(error === undefined || error instanceof Object).toBe(true);
     fileSystem.end();
+  });
+});
+
+/**
+ * The MCP tools over FTP.
+ *
+ * Everything an agent reads goes through one of these, and every test of them
+ * until now has been against SFTP or a fake. FTP is the protocol with the
+ * connection pool, the hidden-file probe and the clock-offset correction
+ * behind it, so "the tools work" and "the tools work over FTP" are two
+ * different claims.
+ */
+describe('the MCP tools over FTP', () => {
+  let tools: ReturnType<typeof createTools>;
+  let workspace: string;
+  let cacheRoot: string;
+
+  beforeEach(async () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'ftp-mcp-'));
+    workspace = path.join(base, 'workspace');
+    cacheRoot = path.join(base, 'cache');
+    fse.ensureDirSync(workspace);
+
+    const fileSystem = await connect();
+    const service: any = {
+      id: 1,
+      name: 'Fixture over FTP',
+      workspace,
+      baseDir: workspace,
+      getConfig: () => ({
+        name: 'Fixture over FTP',
+        protocol: 'ftp',
+        host: '127.0.0.1',
+        port: server.port,
+        remotePath: '/',
+      }),
+    };
+
+    tools = createTools({
+      services: () => [service],
+      exposure: () => ({ exposedByDefault: true }),
+      remoteFs: async () => fileSystem as any,
+      cacheOption: () => ({ cacheRoot }),
+      callTimeout: () => 20000,
+    } as any);
+  });
+
+  const run = (name: string, args: any) =>
+    tools.find(one => one.name === name)!.run(args);
+
+  const schemaOf = (name: string) =>
+    (tools.find(one => one.name === name) as any).outputSchema;
+
+  it('lists a directory, with the times the server reported', async () => {
+    const result: any = await run('list', { server: 'Fixture over FTP', path: '/' });
+
+    expect(result.structured.entries.map((e: any) => e.name)).toContain('index.php');
+    // A timestamp the clock-offset correction turned into NaN used to arrive
+    // here as a schema violation and nothing else.
+    result.structured.entries.forEach((entry: any) =>
+      expect(Number.isFinite(entry.mtime)).toBe(true)
+    );
+    expect(validate(result.structured, schemaOf('list'), 'list')).toEqual([]);
+  });
+
+  it('reads a file over the data connection', async () => {
+    const result: any = await run('read', { server: 'Fixture over FTP', path: '/index.php' });
+
+    expect(result.isError).toBeFalsy();
+    expect(result.structured.content).toBe(FILES['index.php']);
+    expect(validate(result.structured, schemaOf('read'), 'read')).toEqual([]);
+  });
+
+  it('stats a file without transferring it', async () => {
+    const result: any = await run('stat', { server: 'Fixture over FTP', path: '/index.php' });
+
+    expect(result.structured.size).toBe(FILES['index.php'].length);
+    expect(Number.isFinite(result.structured.mtime)).toBe(true);
+    expect(validate(result.structured, schemaOf('stat'), 'stat')).toEqual([]);
+  });
+
+  it('walks the tree, hidden files included', async () => {
+    const result: any = await run('tree', { server: 'Fixture over FTP' });
+    const paths = result.structured.files.map((f: any) => f.path);
+
+    expect(paths).toContain('/index.php');
+    expect(paths).toContain('/app/boot.php');
+    expect(validate(result.structured, schemaOf('tree'), 'tree')).toEqual([]);
+  });
+
+  it('searches the files it fetched', async () => {
+    const result: any = await run('search', { server: 'Fixture over FTP', query: 'function run' });
+
+    expect(result.structured.matches.map((m: any) => m.path).join()).toContain(
+      'boot.php'
+    );
+    expect(validate(result.structured, schemaOf('search'), 'search')).toEqual([]);
   });
 });

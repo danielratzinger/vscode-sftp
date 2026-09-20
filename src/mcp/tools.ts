@@ -532,6 +532,12 @@ export function createTools(
       size: numberField,
       mtime: numberField,
       type: stringField,
+      // See `read`: declared, because it is returned.
+      note: objectSchema({
+        state: stringField,
+        summary: stringField,
+        describedMtime: numberField,
+      }),
     }),
     annotations: { readOnlyHint: true, openWorldHint: true },
     async run(args: any) {
@@ -617,6 +623,14 @@ export function createTools(
       localMtime: numberField,
       remoteMtime: numberField,
       redacted: { type: 'array', items: stringField },
+      // What `note` recorded about this file, if anything: a declared field
+      // rather than an undeclared extra, because a client that validates the
+      // schema strictly is entitled to reject what it was not promised.
+      note: objectSchema({
+        state: stringField,
+        summary: stringField,
+        describedMtime: numberField,
+      }),
     }),
     annotations: { readOnlyHint: true, openWorldHint: true },
     async run(args: any) {
