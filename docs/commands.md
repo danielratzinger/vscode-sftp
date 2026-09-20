@@ -164,6 +164,8 @@ rather than quietly re-pointing the same name at a different machine:
 
 `sftp.mcp.exposed` is the default for connections that do not say.
 
+Every tool takes an id from `servers`, or the name beside it where no other connection answers to that name. An id is derived from where the connection points — the project, the host, the account, the path and the name — so it means the same thing after a reload, and one from an earlier session is still good. It is not the editor's own connection number, which lands on a different server every time a window reloads.
+
 ### Tools
 
 | Tool | |
@@ -177,9 +179,18 @@ rather than quietly re-pointing the same name at a different machine:
 | *tree* | The shape of the server, annotated with what each file is for — or, with `since`, what changed |
 | *history* | Earlier versions of a file: the editor’s local history, and copies a download replaced |
 | *diff* | A unified diff between any two of server, working copy, earlier version, another connection |
-| *note* | Record what a file is for, so it shows up next time |
+| *note* | Record what a file — or the project — is for, so it shows up next time |
 | *forget* | Drop descriptions |
-| *overview* | What the project appears to be, from its own files |
+| *overview* | What the project appears to be, from its own files and from what somebody recorded |
+
+### Descriptions
+`note` records what something is for, on this machine and never on the server. With a path it describes that file and appears beside it in `tree`; without one it describes the whole project, and appears in `overview` and on that connection's line in `servers` — which is where to put what a server is actually *for*, since `overview` can otherwise only repeat what `composer.json` says about itself, and says nothing at all about a project without one.
+
+A description is a short line and, optionally, the synthesis behind it. The line is capped at 200 characters because it shares a line with a path in a listing of eight hundred; the synthesis has two thousand and is read with the file. The split is there because a description that has to fit one line oscillates: whoever reads a file reads it for something and writes the line they needed, and the next reader is there for something else. The synthesis is where the understanding accumulates instead — read what is there, fold in what you have just learned, write the whole thing back. The one it replaced is kept, in case a rewrite dropped something.
+
+A description is anchored to what the file's bytes hash to, not to its timestamp. Every deploy here is an upload and an upload restamps every file it copies, so against a timestamp a redeploy of unchanged code would mark every description on a server stale at once. Against the content, a file whose bytes are the same keeps its description however often it is uploaded — and one whose bytes differ has moved on however the timestamp reads, including a change that keeps the size.
+
+None of that happens unless descriptions get written, so `read` asks: for one when a substantial file has none, for a correction when the one it has describes an older version, and for a better line when reading has turned up something it does not say. Once each per file per window.
 
 ### What changed
 

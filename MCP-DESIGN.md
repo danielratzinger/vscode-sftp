@@ -434,11 +434,27 @@ expensive.
 A note describes one version of a file. **A confidently wrong summary is worse
 than no summary**, so notes get the same discipline as cache entries.
 
-Keyed by `(path, mtime, size)`, exactly like a cache entry. A file that moves on
-does not silently keep its old description: the note is marked **stale**, carries
-the version it described, and is never served as current. It is kept rather than
-dropped, because a small edit rarely changes what a file is *for*, and a stale
-note is cheap to refresh and useful as a starting point.
+Keyed by `(path, mtime, size)` and, where the bytes were to hand when it was
+written, by **what they hashed to**. The timestamp and the size are what a
+*listing* gives, which is why the cheap check is built on them - but they
+answer the wrong question here. Every deploy is an upload, and an upload
+restamps every file it copies, so redeploying unchanged code would mark every
+description on a server stale at once: the first real use of the feature would
+be the one that emptied it. The hash settles it in both directions - a file
+whose bytes are the same keeps its description however often it is uploaded,
+and one whose bytes differ has moved on however the timestamp reads, including
+the change that keeps the size.
+
+`read` is the only caller holding the bytes rather than a listing, so it is
+where this is settled: a description whose hash still matches is re-anchored to
+the version in front of it, which is what stops `tree` - which only ever has a
+listing - from calling it stale afterwards.
+
+A file that moves on does not silently keep its old description: the note is
+marked **stale**, carries the version it described, and is never served as
+current. It is kept rather than dropped, because a small edit rarely changes
+what a file is *for*, and a stale note is cheap to refresh and useful as a
+starting point.
 
 Unlike cache entries, notes are **not** purged by a transfer. A cache entry
 records a disagreement and is meaningless once the copies agree; a note records
@@ -458,6 +474,36 @@ Pruned when:
   files' versions, like any other note, and goes stale rather than silently
   describing a project that has moved on.
 - **The store exceeds its cap**, evicting least-recently-used, as a backstop.
+
+### What a description is, and how it develops
+
+A description is a **line** and, behind it, a **synthesis**. The line is capped
+at 200 characters because it shares a line with a path in `tree`; the synthesis
+has two thousand, and is read with the file rather than beside eight hundred
+others.
+
+The split exists because a description that has to fit one line will
+oscillate. Whoever reads a file reads it for something and writes the line they
+needed; the next reader is there for something else and knows what that line
+does not say - but is writing from one angle too, and a line that replaces the
+last one quietly deletes what somebody already worked out. So the synthesis is
+where the understanding accumulates: read what is there, fold in what you have
+just learned, write the whole thing back. One replaced version is kept as an
+undo; several would be an invitation to append rather than synthesise.
+
+None of which happens unless descriptions get written, and nothing writes them.
+The only prompt used to live in `tree`, which is where you go *before* you
+understand anything - so after a day of heavy use exactly one note existed.
+`read` now asks at the moment a file has just been read: for a description when
+there is none, for a correction when the one there describes an older version,
+and for a better line when reading has turned up something it does not say.
+Once each per file per window, and in the structured output as well as the
+text, because a client that reads structured output stops reading the text.
+
+`note` without a path describes the **project** rather than a file, which is
+what `overview` reports above the facts and what `servers` carries on that
+connection's line. It describes no single file, so it cannot be staled against
+an mtime; it ages instead.
 
 `forget(server, path?)` drops notes deliberately, and the same pruning pass
 removes manifest entries for paths that no longer exist — one sweep, one set of

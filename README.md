@@ -58,6 +58,17 @@ what an extension writes.
 project — source, JSON, Markdown, templates, configuration — and leaves the
 media and archives behind.
 
+**Getting out of the editor.** `Reveal in Terminal` opens a folder in the
+machine's own terminal rather than the built-in one; `Reveal in Finder` shows
+the local copy in the system's file manager. Both appear only where there is
+something on disk to open.
+
+**Starting again.** `Clear Local Folder` deletes the local copy of a folder so
+a download can start from nothing — downloads write files and never remove
+them, so a folder fetched across a year of deploys holds files the server
+deleted months ago. It asks first, moves what it removes to the trash, and is
+not offered on anything inside a repository.
+
 **Hidden files and server clocks.** FTP listings ask for hidden files and fall
 back gracefully when the server does not understand the flag; a server whose
 clock disagrees with this machine is measured once and corrected for, so
