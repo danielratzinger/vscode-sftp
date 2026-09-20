@@ -9,6 +9,7 @@ import { createTools, ToolContext } from './tools';
 import { ServiceLike } from './exposure';
 import { startServer, StartedServer } from './server';
 import { suppressWrite } from '../modules/writeSuppression';
+import { pruneOldConnectionFolders } from './cache';
 import { DEFAULT_PORT, isAddressInUse, whoHasThePort } from './leader';
 import { DEFAULT_WALK } from './search';
 import { historyRootFrom } from './localHistory';
@@ -51,6 +52,16 @@ const INSTRUCTIONS =
 let running: StartedServer | null = null;
 let currentToken = '';
 let cacheRoot = '';
+
+/**
+ * Below what an MCP client will usually wait for an answer.
+ *
+ * A call that overruns this returns what it has - a partial tree, the matches
+ * found so far, and where to carry on from. A call that overruns the client
+ * returns nothing at all, and the agent cannot tell that apart from a server
+ * with nothing to say.
+ */
+const DEFAULT_CALL_TIMEOUT = 45000;
 /** Set while another window holds the port, so this one can take over later. */
 let standbyTimer: NodeJS.Timer | null = null;
 /** Set while this window is a follower, keeping its registration alive. */
@@ -97,7 +108,7 @@ function toolContext(): ToolContext {
       assignments: settings().get<boolean>('mcp.redactAssignments', true),
     }),
     maxFileBytes: () => settings().get<number>('mcp.maxFileBytes', 0),
-    callTimeout: () => settings().get<number>('mcp.callTimeout', 120000),
+    callTimeout: () => settings().get<number>('mcp.callTimeout', DEFAULT_CALL_TIMEOUT),
     historyRoot: () =>
       settings().get<boolean>('mcp.exposeHistory', true) &&
       vscode.workspace.getConfiguration('workbench').get<boolean>('localHistory.enabled', true)
@@ -163,7 +174,7 @@ export async function startMcpServer(): Promise<void> {
       onCall: auditCall,
       peer: handlePeerMethod,
       forward: forwardToOwner,
-      callTimeout: () => settings().get<number>('mcp.callTimeout', 120000),
+      callTimeout: () => settings().get<number>('mcp.callTimeout', DEFAULT_CALL_TIMEOUT),
     }
   );
 
@@ -431,6 +442,22 @@ function firstWorkspaceName(): string | undefined {
  */
 export function initMcp(context: vscode.ExtensionContext) {
   cacheRoot = context.globalStoragePath;
+
+  // Once, at startup: folders left by the numbering this replaced. See
+  // `identity.ts`.
+  pruneOldConnectionFolders(
+    path.join(cacheRoot, 'mcp-cache'),
+    ((getAllFileService() as unknown) as ServiceLike[]).map(stableId)
+  )
+    .then(removed => {
+      if (removed.length > 0) {
+        logger.info(
+          `[mcp] removed ${removed.length} cache folder` +
+            `${removed.length === 1 ? '' : 's'} from the old connection numbering.`
+        );
+      }
+    })
+    .catch(error => logger.debug(`could not sweep the old cache: ${error.message}`));
 
   const sync = () => {
     if (settings().get<boolean>('mcp.enabled', false)) {

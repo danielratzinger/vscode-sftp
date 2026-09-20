@@ -324,3 +324,46 @@ export async function pruneMissing(
 
   return removed;
 }
+
+/**
+ * Removes cache folders from the scheme this one replaced.
+ *
+ * Connections used to be filed under the number the editor gave them, which
+ * meant a different server after every reload; they are filed under a stable
+ * id now. The folders left behind hold copies of real projects' files that
+ * nothing will ever read again or sweep, so they go - and only ever a folder
+ * named like one of those numbers, never one that is a live connection's id.
+ */
+export async function pruneOldConnectionFolders(
+  cacheRoot: string,
+  currentIds: string[]
+): Promise<string[]> {
+  const removed: string[] = [];
+
+  let entries: string[];
+  try {
+    entries = await fse.readdir(cacheRoot);
+  } catch (error) {
+    return removed; // Nothing cached yet.
+  }
+
+  for (const name of entries) {
+    // A stable id is eight hex characters; the old ones counted from 1. An id
+    // that happens to be all digits is spared by being a live connection's.
+    if (!/^[0-9]{1,7}$/.test(name) || currentIds.indexOf(name) !== -1) {
+      continue;
+    }
+
+    try {
+      const full = path.join(cacheRoot, name);
+      if ((await fse.stat(full)).isDirectory()) {
+        await fse.remove(full);
+        removed.push(name);
+      }
+    } catch (error) {
+      // Gone, or not ours to remove.
+    }
+  }
+
+  return removed;
+}

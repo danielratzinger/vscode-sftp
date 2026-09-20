@@ -9,6 +9,7 @@ import {
   materialise,
   pruneCache,
   resolve,
+  pruneOldConnectionFolders,
 } from '../cache';
 
 const OPTION = { cacheRoot: '/cache' };
@@ -303,5 +304,37 @@ describe('two calls for the same file at once', () => {
     ]);
 
     expect(order).toEqual(['fast', 'slow']);
+  });
+});
+
+describe('the folders left by the old connection numbering', () => {
+  it('removes them, and nothing else', async () => {
+    vol.fromJSON({
+      '/cache/1/srv/app/index.php': 'filed under a number that means nothing now',
+      '/cache/104/httpdocs/config.php': 'likewise',
+      '/cache/3f9a1c22/srv/app/index.php': 'a live connection',
+      '/cache/notes.json': 'not a connection folder at all',
+    });
+
+    const removed = await pruneOldConnectionFolders('/cache', ['3f9a1c22']);
+
+    expect(removed.sort()).toEqual(['1', '104']);
+    expect(vol.existsSync('/cache/1')).toBe(false);
+    expect(vol.existsSync('/cache/104')).toBe(false);
+    expect(vol.existsSync('/cache/3f9a1c22/srv/app/index.php')).toBe(true);
+    expect(vol.existsSync('/cache/notes.json')).toBe(true);
+  });
+
+  it('spares an id that happens to be all digits', async () => {
+    // One in forty of them is, and deleting a live connection's cache because
+    // its id reads like a number is not a trade worth making.
+    vol.fromJSON({ '/cache/12345678/srv/app/index.php': 'live, and numeric' });
+
+    expect(await pruneOldConnectionFolders('/cache', ['12345678'])).toEqual([]);
+    expect(vol.existsSync('/cache/12345678/srv/app/index.php')).toBe(true);
+  });
+
+  it('says nothing when there is no cache at all', async () => {
+    expect(await pruneOldConnectionFolders('/nowhere', [])).toEqual([]);
   });
 });
