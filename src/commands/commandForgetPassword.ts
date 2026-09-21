@@ -39,6 +39,7 @@ export default checkCommand({
             store: getSecretStore(),
             prompt: async () => undefined,
             runCommand: async () => '',
+            runWriteCommand: async () => undefined,
             runProgram: async () => '',
             storeFor: () => undefined,
             defaultManager: () => true,

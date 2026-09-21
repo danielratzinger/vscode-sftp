@@ -20,12 +20,14 @@ const configScheme = {
   username: Joi.string().required(),
   password: nullable(Joi.string().allow(true)),
   passwordCommand: nullable(Joi.string()),
+  passwordWriteCommand: nullable(Joi.string()),
   passwordManager: nullable(Joi.string().allow(true)),
 
   agent: nullable(Joi.string()),
   privateKeyPath: nullable(Joi.string()),
   passphrase: nullable(Joi.string().allow(true)),
   passphraseCommand: nullable(Joi.string()),
+  passphraseWriteCommand: nullable(Joi.string()),
   passphraseManager: nullable(Joi.string().allow(true)),
   interactiveAuth: Joi.alternatives([
     Joi.boolean(),

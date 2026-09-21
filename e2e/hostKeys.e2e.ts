@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import upath from '../src/core/upath';
 import SFTPFileSystem from '../src/core/fs/sftpFileSystem';
-import { setHostKeyCheck } from '../src/core/remote-client/hostKeys';
+import { setHostKeyChecker } from '../src/core/remote-client/hostKeys';
 import { fingerprintOf, judge, keysFor } from '../src/core/knownHosts';
 import { startSftpServer, RunningServer } from './sftpServer';
 
@@ -45,6 +45,20 @@ function connectTo(port: number): Promise<SFTPFileSystem> {
     .then(() => fileSystem);
 }
 
+/**
+ * A checker that answers synchronously, as the real one must.
+ *
+ * `decide` returning a boolean there and then is the whole point: an `await`
+ * inside it leaves ssh2 holding the old decipher when `EXT_INFO` arrives.
+ */
+function watching(decide: (key: Buffer) => boolean): void {
+  setHostKeyChecker({
+    prepare: async () => undefined,
+    decide: (host, port, key) => decide(key),
+    askAgain: async () => false,
+  });
+}
+
 /** The server's key as a `known_hosts` line would carry it. */
 function lineFor(host: string, port: number, publicKey: string): string {
   const name = port === 22 ? host : `[${host}]:${port}`;
@@ -58,7 +72,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  setHostKeyCheck(undefined);
+  setHostKeyChecker(undefined);
   await server.close();
 });
 
@@ -69,7 +83,7 @@ describe('the key the server presents', () => {
     // verifier mid-handshake. If these ever differ, nothing above works.
     let offered: Buffer | undefined;
 
-    setHostKeyCheck(async (host, port, key) => {
+    watching(key => {
       offered = key;
       return true;
     });
@@ -91,7 +105,7 @@ describe('the key the server presents', () => {
 
   it('has a fingerprint in the form people compare', async () => {
     let print = '';
-    setHostKeyCheck(async (host, port, key) => {
+    watching(key => {
       print = fingerprintOf(key);
       return true;
     });
@@ -105,7 +119,7 @@ describe('the key the server presents', () => {
 
 describe('what the answer does to the connection', () => {
   it('connects when the key is accepted', async () => {
-    setHostKeyCheck(async () => true);
+    watching(() => true);
 
     const fileSystem = await connectTo(server.port);
     expect(await fileSystem.readFile('/a.txt')).toBeDefined();
@@ -114,13 +128,13 @@ describe('what the answer does to the connection', () => {
 
   it('refuses to connect when it is not', async () => {
     // No password is sent, because the handshake never gets that far.
-    setHostKeyCheck(async () => false);
+    watching(() => false);
 
     await expect(connectTo(server.port)).rejects.toThrow();
   });
 
   it('still connects when nothing is checking, as it always did', async () => {
-    setHostKeyCheck(undefined);
+    setHostKeyChecker(undefined);
 
     const fileSystem = await connectTo(server.port);
     await fileSystem.end();
@@ -139,7 +153,7 @@ describe('a server whose key changed', () => {
     server = impostor;
 
     let offered: Buffer | undefined;
-    setHostKeyCheck(async (host, p, key) => {
+    watching(key => {
       offered = key;
       return true;
     });
@@ -159,7 +173,7 @@ describe('a server whose key changed', () => {
     server = await startSftpServer(root, { port });
 
     let offered: Buffer | undefined;
-    setHostKeyCheck(async (host, p, key) => {
+    watching(key => {
       offered = key;
       return true;
     });
@@ -186,7 +200,7 @@ describe('a server whose key changed', () => {
     expect(server.publicKey).toBe(publicKey);
 
     let offered: Buffer | undefined;
-    setHostKeyCheck(async (host, p, key) => {
+    watching(key => {
       offered = key;
       return true;
     });

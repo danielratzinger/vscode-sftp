@@ -67,6 +67,58 @@ function isWorkspaceTrusted(): boolean {
  * workspace code. That's only allowed in a trusted workspace, the same bar
  * VS Code puts on tasks.
  */
+/**
+ * Runs a command the user wrote, with a secret on its standard input.
+ *
+ * Standard input rather than the command line: an argument is visible to
+ * anything that can run `ps`, for as long as the process lives. The same
+ * reason the Keychain store feeds `security` through `-i`.
+ *
+ * Output is ignored and never logged. A manager that prints the secret back
+ * on success - several do - would otherwise put it in the output panel.
+ */
+function runCredentialWriteCommand(command: string, value: string): Promise<void> {
+  if (!isWorkspaceTrusted()) {
+    return Promise.reject(
+      new Error(
+        'Credential commands only run in a trusted workspace. ' +
+          'Trust this workspace, or set the password directly.'
+      )
+    );
+  }
+
+  return new Promise<void>((resolve, reject) => {
+    logger.info(`Running credential write command: ${command}`);
+
+    const child = exec(
+      command,
+      {
+        timeout: COMMAND_TIMEOUT,
+        maxBuffer: MAX_OUTPUT,
+        cwd: workspaceRoot(),
+      },
+      (error, _stdout, stderr) => {
+        if (error) {
+          // Never the output: on some managers that is the secret itself.
+          reject(
+            new Error(
+              `the write command failed (${(error as any).code || 'no exit code'})` +
+                (stderr && stderr.trim() ? `: ${stderr.trim().split('\n')[0]}` : '')
+            )
+          );
+          return;
+        }
+
+        resolve();
+      }
+    );
+
+    if (child.stdin) {
+      child.stdin.end(value);
+    }
+  });
+}
+
 function runCredentialCommand(command: string): Promise<string> {
   if (!isWorkspaceTrusted()) {
     return Promise.reject(
@@ -214,13 +266,28 @@ function defaultManager(kind: 'password' | 'passphrase'): ManagerSetting {
     .get<ManagerSetting>(`${kind}Manager`, true);
 }
 
+/**
+ * A writable store by name, for anything outside the resolver that needs one.
+ *
+ * Held from `initCredentials` because building a VS Code secret store needs
+ * the extension context, and the one thing that asks for this - moving every
+ * password out of every config at once - runs long after activation.
+ */
+let storeByName: ((manager: string) => SecretStore | undefined) | undefined;
+
+export function secretStoreFor(manager: string): SecretStore | undefined {
+  return storeByName ? storeByName(manager) : undefined;
+}
+
 export default function initCredentials(context: vscode.ExtensionContext) {
   const builtIn = chooseStore(context);
+  storeByName = manager => storeFor(context, builtIn, manager);
 
   configureCredentials({
     store: builtIn,
     prompt: promptForPassword,
     runCommand: runCredentialCommand,
+    runWriteCommand: runCredentialWriteCommand,
     runProgram: runCredentialProgram,
     storeFor: manager => storeFor(context, builtIn, manager),
     defaultManager,

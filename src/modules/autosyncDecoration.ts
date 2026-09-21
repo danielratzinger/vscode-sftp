@@ -26,11 +26,21 @@ import {
  * the current theme does that, and takes it away again when the sync stops.
  */
 
-/** Syncing the folder this window has open. */
+/** Watching the folder this window has open, with nothing to send. */
 const HERE = '⟳';
 
-/** Syncing a checkout that is not open here: the work is coming from away. */
+/** Watching a checkout that is not open here: the work is coming from away. */
 const ELSEWHERE = '↗';
+
+/**
+ * Nothing here changes while a file is on its way up.
+ *
+ * The mark means "this folder is being deployed", and that is true of the
+ * minute between uploads as much as of the second during one. A colour that
+ * came and went with each transfer would be answering a question nobody asked
+ * - what matters is whether it is on, which is the same question as whether
+ * `Stop Autosync` would do anything.
+ */
 
 class AutosyncDecorations implements vscode.FileDecorationProvider {
   private _changed = new vscode.EventEmitter<vscode.Uri[] | undefined>();
@@ -48,23 +58,27 @@ class AutosyncDecorations implements vscode.FileDecorationProvider {
       }
 
       if (this._isThisConnection(service, state, uri)) {
+        // A real `FileDecoration`, not an object that looks like one: the
+        // editor reads these across a process boundary, and the class is what
+        // the conversion on the other side is written against.
+        // One colour, because the colour answers one question: is autosync on.
+        // Which folder it is deploying is what the badge and the tooltip are
+        // for. A second colour here meant a project deploying an agent's
+        // checkout looked like a warning, and sat among the folders git had
+        // already coloured for its own reasons.
+        const on = new vscode.ThemeColor('notificationsInfoIcon.foreground');
+
         return state.external
-          ? {
-              badge: ELSEWHERE,
-              tooltip: `Autosyncing ${state.label} from ${state.root} — this window's saves are paused`,
-              // The colour a list uses for "look at this": the window is not
-              // doing what it normally does.
-              color: new vscode.ThemeColor('list.warningForeground'),
-            }
-          : {
-              badge: HERE,
-              tooltip: `Autosyncing this folder (${state.label})`,
-              // The colour themes use for "this has changed", which is what
-              // is happening to it.
-              color: new vscode.ThemeColor(
-                'gitDecoration.modifiedResourceForeground'
-              ),
-            };
+          ? new vscode.FileDecoration(
+              ELSEWHERE,
+              `Autosync is on, deploying ${state.root} — this window's saves are paused`,
+              on
+            )
+          : new vscode.FileDecoration(
+              HERE,
+              `Autosync is on for this folder (${state.label})`,
+              on
+            );
       }
     }
 

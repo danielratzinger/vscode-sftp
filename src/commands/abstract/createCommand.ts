@@ -37,8 +37,17 @@ export function createCommand(commandOption: CommandOption & { name: string }) {
       this.name = commandOption.name;
     }
 
+    /**
+     * Returned, not merely called.
+     *
+     * `Command.run` awaits this inside a try/catch that reports what it
+     * catches - and for the whole life of this file it caught nothing,
+     * because the promise was dropped on the floor here. Every palette
+     * command that failed did so in complete silence: no dialog, no log line,
+     * nothing on screen to distinguish "it went wrong" from "it did nothing".
+     */
     doCommandRun(...args) {
-      commandOption.handleCommand.apply(this, args);
+      return commandOption.handleCommand.apply(this, args);
     }
   };
 }

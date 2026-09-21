@@ -100,6 +100,7 @@ export function createFileService(config: any, workspace: string) {
 
   serviceManager.add(normalizedBasePath, service);
   service.name = config.name;
+
   service.setConfigValidator(validateConfig);
   service.setWatcherService(watcherService);
   service.beforeTransfer(task => {

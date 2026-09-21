@@ -25,6 +25,7 @@ function useStore(store: SecretStore) {
     store,
     prompt: async () => undefined,
     runCommand: async () => '',
+    runWriteCommand: async () => undefined,
     runProgram: async () => '',
     storeFor: manager => (manager === true ? store : undefined),
     defaultManager: () => true,

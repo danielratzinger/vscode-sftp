@@ -1,8 +1,23 @@
 import * as output from './ui/output';
 import { getExtensionSetting } from './modules/ext';
 
-const extSetting = getExtensionSetting();
-const debug = extSetting.debug || extSetting.printDebugLog;
+/**
+ * Whether the verbose lines are wanted, asked each time rather than once.
+ *
+ * This was read at import, which is a setting that silently needs a window
+ * reload - and the one moment anybody turns it on is the moment something is
+ * already going wrong, when an empty output panel reads as "nothing happened"
+ * rather than "the switch has not taken effect yet". Reading it per line costs
+ * a lookup in VS Code's own cached configuration.
+ */
+function wantsDebug(): boolean {
+  try {
+    const setting = getExtensionSetting();
+    return Boolean(setting.debug || setting.printDebugLog);
+  } catch (error) {
+    return false;
+  }
+}
 
 const paddingTime = time => ('00' + time).slice(-2);
 
@@ -102,13 +117,13 @@ class VSCodeLogger implements Logger {
   }
 
   trace(message: string, ...args: any[]) {
-    if (debug) {
+    if (wantsDebug()) {
       this.log(this.tag('trace'), message, ...args);
     }
   }
 
   debug(message: string, ...args: any[]) {
-    if (debug) {
+    if (wantsDebug()) {
       this.log(this.tag('debug'), message, ...args);
     }
   }

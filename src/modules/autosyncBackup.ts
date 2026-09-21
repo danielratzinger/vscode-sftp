@@ -4,6 +4,7 @@ import * as fse from 'fs-extra';
 import logger from '../logger';
 import { getUserSetting } from '../host';
 import { FileService } from '../core';
+import { FileType } from '../core/fs/fileSystem';
 import connectionLabel from '../core/connectionLabel';
 import { connectionKeyFor } from './replacedFiles';
 import {
@@ -113,7 +114,7 @@ function sizeLimit(): number {
 async function fetchRemote(
   service: FileService,
   remotePath: string
-): Promise<Fetched | 'tooBig'> {
+): Promise<Fetched | 'tooBig' | 'notAFile'> {
   try {
     const config = service.getConfig();
     const remoteFs = await service.getRemoteFileSystem(config);
@@ -129,6 +130,13 @@ async function fetchRemote(
 
     if (!stat) {
       return { kind: 'absent' };
+    }
+
+    // A directory has no bytes to keep, and reading one fails in a way that
+    // looks exactly like a server that cannot be reached - which is how the
+    // queue ended up retrying the watched root for ever.
+    if (stat.type === FileType.Directory) {
+      return 'notAFile';
     }
 
     // The copy is held in memory on the way to disk, so a database dump or a
@@ -181,6 +189,13 @@ export async function clearToOverwrite(
   }
 
   const fetched = await fetchRemote(service, remotePath);
+
+  if (fetched === 'notAFile') {
+    // Nothing is written down for it: a directory is not a thing a restore
+    // puts back, and recording it as absent would tell one to remove it.
+    seen.add(remotePath);
+    return true;
+  }
 
   if (fetched === 'tooBig') {
     // Nothing is written down for it at all. Recording it as absent would

@@ -202,3 +202,82 @@ describe('the menu patterns against the values the tree produces', () => {
     expect(menuShows('sftp.autosyncReveal.terminal', 'root-local')).toBe(false);
   });
 });
+
+/**
+ * The file explorer is not ours: there is no per-item value to match on, only
+ * window-wide context keys. So anything decided per connection must not be
+ * gated on one - `sftp.autosyncWorktreeing` means "something in this window is
+ * syncing", and using it to hide `Autosync Worktree` left every other project
+ * in the window unable to start.
+ */
+function inExplorer(command: string): any {
+  return manifest.contributes.menus['explorer/context'].find(
+    (one: any) => one.command === command
+  );
+}
+
+function explorerShows(command: string, keys: { [key: string]: boolean }): boolean {
+  const entry = inExplorer(command);
+  expect(entry).toBeDefined();
+
+  return (entry.when || '').split('&&').every((term: string) => {
+    const clause = term.trim();
+
+    if (clause.charAt(0) === '!') {
+      return !keys[clause.slice(1)];
+    }
+
+    return Boolean(keys[clause]);
+  });
+}
+
+describe('the file explorer menu, which has no per-item value of ours', () => {
+
+  it('offers Autosync whether or not something else is already syncing', () => {
+    // The window-wide flag must not decide this: one project syncing took the
+    // option away from every other project in the window.
+    expect(inExplorer('sftp.autosyncWorktree').when).not.toContain(
+      'sftp.autosyncWorktreeing'
+    );
+  });
+
+  it('asks about the folder itself, not about the window', () => {
+    // The fix for both halves of this: `resourcePath in <key>` asks about the
+    // item a menu is on, which `sftp.autosyncWorktreeing` never could. On that
+    // key `Stop` appeared on every project or, once it was removed, on none.
+    const stop = inExplorer('sftp.stopAutosyncWorktree').when;
+    const start = inExplorer('sftp.autosyncWorktree').when;
+
+    expect(stop).toContain('resourcePath in sftp.autosyncPaths');
+    expect(start).toContain('!(resourcePath in sftp.autosyncPaths)');
+    expect(stop).not.toContain('sftp.autosyncWorktreeing');
+    expect(start).not.toContain('sftp.autosyncWorktreeing');
+  });
+
+  it('never offers Start and Stop on the same folder', () => {
+    const clauses = ['sftp.autosyncWorktree', 'sftp.stopAutosyncWorktree'].map(
+      one => inExplorer(one).when
+    );
+
+    // One asks for the folder to be in the list, the other for it not to be.
+    expect(clauses[0]).toContain('!(resourcePath in');
+    expect(clauses[1]).toContain('resourcePath in');
+    expect(clauses[1]).not.toContain('!(resourcePath in');
+  });
+
+  it('keeps all of them in the Remote Explorer, where they can be precise', () => {
+    const there = manifest.contributes.menus['view/item/context'].map(
+      (one: any) => one.command
+    );
+
+    expect(there).toContain('sftp.stopAutosyncWorktree');
+    expect(there).toContain('sftp.switchAutosyncWorktree');
+    expect(there).toContain('sftp.autosyncReveal.terminal');
+  });
+
+  it('does not offer it on a file', () => {
+    expect(explorerShows('sftp.autosyncWorktree', { 'sftp.enabled': true })).toBe(
+      false
+    );
+  });
+});

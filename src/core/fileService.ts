@@ -39,6 +39,8 @@ interface Host {
   password: string | boolean;
   /** Shell command whose output is the password. */
   passwordCommand?: string;
+  /** A command that saves the password, reading it on standard input. */
+  passwordWriteCommand?: string;
   /** Where the password lives: true for the built-in store, or a manager name. */
   passwordManager?: string | boolean;
   remotePath: string;
@@ -85,6 +87,8 @@ interface SftpOption {
   passphrase: string | true;
   /** Shell command whose output is the private key passphrase. */
   passphraseCommand?: string;
+  /** The same, for a key passphrase. */
+  passphraseWriteCommand?: string;
   /** Where the passphrase lives. Same form as passwordManager. */
   passphraseManager?: string | boolean;
   interactiveAuth: boolean | string[];
@@ -559,8 +563,15 @@ export default class FileService {
   }
 
   async getRemoteFileSystem(config: ServiceConfig): Promise<FileSystem> {
+    const hostInfo = getHostInfo(config) as any;
+
+    // Carried separately from the name the log uses, which falls back to the
+    // host: a credential is keyed per project, and only a configured name is
+    // one. Taken back out before anything is handed to a client.
+    hostInfo.connectionName = config.name;
+
     const fileSystem = await createRemoteIfNoneExist(
-      getHostInfo(config),
+      hostInfo,
       connectionLabel(config)
     );
 

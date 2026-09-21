@@ -20,11 +20,32 @@ export interface CredentialSource {
   host: string;
   port: number;
   username?: string;
+  /**
+   * The connection's own name, which is what makes a record per project.
+   *
+   * Without it a credential is keyed by the account, and several sites on one
+   * hosting account share a single record - which is true of the *server* but
+   * not of how anybody thinks about their sites, and leaves two connections on
+   * one account unable to hold different passwords at all.
+   */
+  name?: string;
   privateKeyPath?: string;
   password?: string | boolean;
   passphrase?: string | boolean;
   passwordCommand?: string;
+  /**
+   * A command that *saves* the password, reading it on standard input.
+   *
+   * The other half of `passwordCommand`. Without it a manager reached by
+   * command is read-only: the extension can fetch a secret from `pass` or
+   * `op` but has nowhere to put one it was just given, so a password entered
+   * at a prompt is used once and lost. With it, any manager with a CLI is a
+   * place credentials can live - including ones nothing here has heard of.
+   */
+  passwordWriteCommand?: string;
   passphraseCommand?: string;
+  /** The same, for a key passphrase. */
+  passphraseWriteCommand?: string;
   /**
    * Where the credential lives. `true` (the default) is the built-in store,
    * `false` is nowhere - ask every time - and a string names a manager,
@@ -39,6 +60,8 @@ export interface CredentialDeps {
   prompt(message: string): Promise<string | undefined>;
   /** Runs a shell command line the user wrote themselves. */
   runCommand(command: string): Promise<string>;
+  /** The same, with a secret on standard input and no output wanted. */
+  runWriteCommand(command: string, value: string): Promise<void>;
   /** Runs a program directly, with no shell to quote for. */
   runProgram(argv: string[]): Promise<string>;
   /**
@@ -68,6 +91,7 @@ let deps: CredentialDeps = {
   store: NO_STORE,
   prompt: () => Promise.resolve(undefined),
   runCommand: NOT_AVAILABLE,
+  runWriteCommand: NOT_AVAILABLE,
   runProgram: NOT_AVAILABLE,
   storeFor: manager => (manager === true ? NO_STORE : undefined),
   defaultManager: () => true,
@@ -98,8 +122,14 @@ export function isAuthFailure(error: any): boolean {
 }
 
 /**
- * What Keychain Access shows in its "Name" column. Passwords and key
- * passphrases are split so a list of them reads sensibly.
+ * The "Where" column in Keychain Access, and half of the lookup key.
+ *
+ * Never change these. They are what `find-generic-password` searches on, so a
+ * new value does not rename anything - it orphans every password already
+ * stored under the old one, silently, and the only symptom is being asked for
+ * passwords you know you saved.
+ *
+ * Passwords and key passphrases are split so a list of them reads sensibly.
  */
 export const KEYCHAIN_SERVICE_PASSWORD = 'vscode-sftp';
 export const KEYCHAIN_SERVICE_PASSPHRASE = 'vscode-sftp-passphrase';
@@ -120,29 +150,78 @@ export function toKeychainItem(key: string): KeychainItem {
   const id = separator === -1 ? key : key.slice(separator + 1);
 
   if (kind === 'passphrase') {
+    const file = id.split('/').pop() || id;
     return {
       service: KEYCHAIN_SERVICE_PASSPHRASE,
       account: id,
-      label: `SFTP key passphrase: ${id}`,
+      label: `${file} (SSH key passphrase)`,
     };
   }
 
   return {
     service: KEYCHAIN_SERVICE_PASSWORD,
     account: id,
-    label: `SFTP: ${id}`,
+    label: nameFor(id),
   };
 }
 
+/**
+ * What the "Name" column should read.
+ *
+ * It is the only field here nobody looks anything up by, so it exists for a
+ * person reading a list of a hundred generic passwords - and it used to be the
+ * account repeated verbatim behind a prefix, which told them nothing the
+ * Account column beside it was not already saying.
+ *
+ * `user@host`, the form ssh itself uses, which is how anybody who deals with
+ * these servers already names them - followed by the projects that use it,
+ * because that is the word somebody types into a search box. The user is kept rather than dropped
+ * because shared hosting reaches one host as several accounts, and two rows
+ * with the same name is the state you are in when you are trying to work out
+ * which of them to delete.
+ *
+ * The port is left out, and so is the protocol, and so is `vscode-sftp`: the
+ * Account column spells out all three, and the Where column is literally the
+ * last of them.
+ */
+function nameFor(account: string): string {
+  const parsed = /^[a-z]+:\/\/(?:([^@]*)@)?([^/]*)(?:\/(.*))?$/i.exec(account);
+  if (!parsed) {
+    return account;
+  }
+
+  const [, user, where, project] = parsed;
+  const host = where.replace(/:\d+$/, '');
+  const server = user ? `${user}@${host}` : host;
+
+  return project ? `${server} (${project})` : server;
+}
+
+/** The account alone, which every project on it shares. */
 function accountKey(source: CredentialSource): string {
   return `${source.protocol}://${source.username || ''}@${source.host}:${
     source.port
   }`;
 }
 
-export function passwordKeyFor(source: CredentialSource): string {
-  return `password:${accountKey(source)}`;
+/**
+ * The account and the project, which is one record per connection.
+ *
+ * A slash, because the account half is already a URL and this reads as a path
+ * under it. A name containing one is flattened rather than refused: the key
+ * only has to be unique and stable, not reversible.
+ */
+function projectKey(source: CredentialSource): string {
+  const account = accountKey(source);
+  const name = (source.name || '').trim().replace(/\//g, '_');
+
+  return name ? `${account}/${name}` : account;
 }
+
+export function passwordKeyFor(source: CredentialSource): string {
+  return `password:${projectKey(source)}`;
+}
+
 
 /**
  * A passphrase unlocks a key file, not a host, so it's keyed by the file when
@@ -390,6 +469,19 @@ export class CredentialResolver {
       return;
     }
 
+    // A command the user wrote wins over any store: naming one is saying where
+    // this credential lives, and writing it somewhere else as well would leave
+    // two copies to disagree later.
+    const write =
+      kind === 'password'
+        ? this._source.passwordWriteCommand
+        : this._source.passphraseWriteCommand;
+
+    if (write) {
+      await this._storeByCommand(kind, write, value);
+      return;
+    }
+
     const store = this._storeFor(kind);
     if (!store) {
       logger.warn(`There is nowhere to save the ${kind} for ${this._source.host}.`);
@@ -402,6 +494,60 @@ export class CredentialResolver {
     } catch (error) {
       logger.warn(`Can't save the ${kind}: ${error.message}`);
     }
+  }
+
+  /**
+   * Hands the secret to a command, then asks for it back.
+   *
+   * Read back because the command is somebody else's and there is no other
+   * way to know it worked: `pass insert` and its kind report success on
+   * writing to the wrong path as readily as the right one. A save that cannot
+   * be confirmed is said not to have happened, so nothing later assumes the
+   * secret is somewhere it is not.
+   */
+  private async _storeByCommand(
+    kind: 'password' | 'passphrase',
+    command: string,
+    value: string
+  ): Promise<void> {
+    try {
+      await this._deps.runWriteCommand(command, value);
+    } catch (error) {
+      logger.warn(`Can't save the ${kind}: ${error.message}`);
+      return;
+    }
+
+    const read =
+      kind === 'password'
+        ? this._source.passwordCommand
+        : this._source.passphraseCommand;
+
+    if (!read) {
+      logger.info(
+        `Saved the ${kind} for ${this._source.host}. There is no ` +
+          `"${kind}Command" to read it back with, so it was not checked.`
+      );
+      return;
+    }
+
+    try {
+      const back = await this._deps.runCommand(read);
+      if (back.trim() !== value.trim()) {
+        logger.warn(
+          `Saved the ${kind} for ${this._source.host}, but reading it back ` +
+            'gave something else. Check the two commands address the same item.'
+        );
+        return;
+      }
+    } catch (error) {
+      logger.warn(
+        `Saved the ${kind} for ${this._source.host}, but it could not be read ` +
+          `back: ${error.message}`
+      );
+      return;
+    }
+
+    logger.info(`Saved the ${kind} for ${this._source.host} and read it back.`);
   }
 
   private async _forget(key: string, reason: string): Promise<void> {

@@ -2,6 +2,7 @@ import {
   CredentialResolver,
   isAuthFailure,
   SecretStore,
+  toKeychainItem,
 } from '../credentialResolver';
 
 function createStore(initial: { [key: string]: string } = {}) {
@@ -47,6 +48,7 @@ function createResolver(source: any, store: any, answers: (string | undefined)[]
         commands.push(command);
         return Promise.resolve('from-command');
       },
+      runWriteCommand: async () => undefined,
       runProgram: argv => {
         programs.push(argv);
         return Promise.resolve('from-provider\nsecond line');
@@ -458,6 +460,7 @@ describe('CredentialResolver', () => {
         store,
         prompt: async () => undefined,
         runCommand: async () => '',
+        runWriteCommand: async () => undefined,
         runProgram: async () => '',
         storeFor: () => undefined,
         defaultManager: () => true,
@@ -485,5 +488,173 @@ describe('isAuthFailure', () => {
     );
     expect(isAuthFailure(new Error('Timeout while connecting to server'))).toBe(false);
     expect(isAuthFailure(undefined)).toBe(false);
+  });
+});
+
+/**
+ * The three fields a keychain item has do different jobs, and only one of them
+ * is for a person. `service` and `account` are the lookup key - changing
+ * either orphans every password already stored rather than renaming it - while
+ * `label` is only ever read, in the Name column, beside an Account column that
+ * already says the account.
+ */
+describe('what a credential is called in Keychain Access', () => {
+  it('looks a password up under a name that must never change', () => {
+    const item = toKeychainItem('password:sftp://dr@example.com:22');
+
+    expect(item.service).toBe('vscode-sftp');
+    expect(item.account).toBe('sftp://dr@example.com:22');
+  });
+
+  it('keeps passphrases in their own service, so a list reads sensibly', () => {
+    const item = toKeychainItem('passphrase:/Users/x/.ssh/id_ed25519');
+
+    expect(item.service).toBe('vscode-sftp-passphrase');
+    expect(item.label).toBe('id_ed25519 (SSH key passphrase)');
+  });
+
+  it('does not repeat the account back at the reader', () => {
+    const item = toKeychainItem('password:sftp://dr@example.com:22');
+
+    // It used to be `SFTP: sftp://dr@example.com:22` - the Account column
+    // verbatim, behind a prefix, saying nothing the column beside it did not.
+    expect(item.label).not.toBe(`SFTP: ${item.account}`);
+    expect(item.label).not.toContain('://');
+  });
+
+  it('reads the way ssh names a server, with the project it belongs to', () => {
+    expect(
+      toKeychainItem('password:sftp://dr@example.com:22/sportswise.com').label
+    ).toBe('dr@example.com (sportswise.com)');
+  });
+
+  it('says the account alone when a connection has no name', () => {
+    expect(toKeychainItem('password:sftp://dr@example.com:22').label).toBe(
+      'dr@example.com'
+    );
+    expect(toKeychainItem('password:ftp://web@example.com:21').label).toBe(
+      'web@example.com'
+    );
+  });
+
+  it('gives two sites on one account a record each', () => {
+    // The whole point of keying per project: one hosting account serves six
+    // sites, and until now they shared a single record that could hold only
+    // one password between them.
+    const one = toKeychainItem('password:sftp://k@shared.example.com:22/first.ch');
+    const two = toKeychainItem('password:sftp://k@shared.example.com:22/second.ch');
+
+    expect(one.account).not.toBe(two.account);
+    expect(one.label).toBe('k@shared.example.com (first.ch)');
+    expect(two.label).toBe('k@shared.example.com (second.ch)');
+  });
+
+  it('says the host alone when there is no user', () => {
+    expect(toKeychainItem('password:sftp://example.com:22').label).toBe(
+      'example.com'
+    );
+  });
+
+  it('does not put the extension name in the column that already shows it', () => {
+    const item = toKeychainItem('password:sftp://dr@example.com:22');
+
+    expect(item.service).toBe('vscode-sftp');
+    expect(item.label).not.toContain('vscode-sftp');
+  });
+
+  it('still says something for a key it cannot parse', () => {
+    expect(toKeychainItem('password:whatever').label).toBe('whatever');
+  });
+});
+
+/**
+ * A manager reached by command used to be read-only: the extension could
+ * fetch a secret from `pass` or `op` but had nowhere to put one it was just
+ * given, so a password entered at a prompt was used once and lost.
+ */
+describe('saving through a command the user wrote', () => {
+  function withCommands(source: any) {
+    const written: Array<{ command: string; value: string }> = [];
+    let readBack: string | undefined = 'typed';
+
+    const resolver = new CredentialResolver(source, {
+      store: createStore(),
+      prompt: async () => 'typed',
+      runCommand: async () => {
+        if (readBack === undefined) {
+          throw new Error('no such item');
+        }
+        return readBack;
+      },
+      runWriteCommand: async (command, value) => {
+        written.push({ command, value });
+      },
+      runProgram: async () => '',
+      storeFor: () => undefined,
+      defaultManager: () => true,
+    } as any);
+
+    return {
+      resolver,
+      written,
+      answers: (value: string | undefined) => {
+        readBack = value;
+      },
+    };
+  }
+
+  const source = {
+    protocol: 'sftp',
+    host: 'example.com',
+    port: 22,
+    username: 'dr',
+    passwordCommand: 'pass show servers/example',
+    passwordWriteCommand: 'pass insert -m servers/example',
+  };
+
+  it('hands the secret to the write command', async () => {
+    const { resolver, written } = withCommands({ ...source, passwordCommand: undefined });
+
+    await resolver.resolve();
+    // A secret becomes pending when it is typed, and is written only once the
+    // server has accepted it.
+    await resolver.ask('Enter your password', {
+      kind: 'password',
+      host: 'example.com',
+    });
+    await resolver.commit();
+
+    expect(written).toEqual([
+      { command: 'pass insert -m servers/example', value: 'typed' },
+    ]);
+  });
+
+  it('prefers the command over any store', async () => {
+    // Naming a command is saying where this credential lives; writing it to a
+    // store as well would leave two copies to disagree later.
+    const store = createStore();
+    const { resolver } = withCommands({ ...source, passwordCommand: undefined });
+
+    await resolver.resolve();
+    await resolver.ask('Enter your password', {
+      kind: 'password',
+      host: 'example.com',
+    });
+    await resolver.commit();
+
+    expect(store.values.size).toBe(0);
+  });
+
+  it('does not claim to have saved what it cannot read back', async () => {
+    const { resolver, answers } = withCommands(source);
+    answers('something else entirely');
+
+    await resolver.resolve();
+    await resolver.ask('Enter your password', {
+      kind: 'password',
+      host: 'example.com',
+    });
+    // Nothing thrown: a save that cannot be confirmed is reported, not fatal.
+    await resolver.commit();
   });
 });

@@ -193,6 +193,16 @@ export interface AutosyncState {
    * opening a menu to find out.
    */
   external: boolean;
+  /**
+   * Whether anything is going up right now, as opposed to being watched for.
+   *
+   * Two different things to know and they look the same from outside: a folder
+   * that is being monitored is quiet and correct, a folder that is mid-upload
+   * is busy and will be quiet again shortly. Worth telling apart, because
+   * "nothing has moved for ten minutes" means one thing in the first state and
+   * quite another in the second.
+   */
+  busy: boolean;
 }
 
 /** What a connection is autosyncing, if it is. */
@@ -202,10 +212,13 @@ export function autosyncState(service: FileService): AutosyncState | undefined {
     return undefined;
   }
 
+  const running = live.get(stableId(service as any));
+
   return {
     label: chosen.branch || path.basename(chosen.root),
     root: chosen.root,
     external: !samePath(chosen.root, service.baseDir),
+    busy: Boolean(running && (running.working || running.queue.size > 0)),
   };
 }
 
@@ -435,6 +448,8 @@ async function flush(service: FileService, id: string): Promise<void> {
   }
 
   running.working = true;
+  announcer().fire();
+
   const root = running.root;
   const label = connectionLabel(service.getConfig() as any);
 
@@ -457,7 +472,26 @@ async function flush(service: FileService, id: string): Promise<void> {
         .filter(one => sending.indexOf(one) === -1)
         .forEach(one => running.queue.drop(one.file));
 
-      const uploads = sending.filter(one => one.op === 'upload');
+      // Only files. A watcher reports a directory whenever anything inside it
+      // changes, and that something has its own event - while `transfer()`
+      // dispatches a directory to `transferFolder`, which would re-upload the
+      // whole tree underneath it. The queue held the watched root itself.
+      const wanted = sending.filter(one => one.op === 'upload');
+      const uploads: QueuedOp[] = [];
+
+      for (const one of wanted) {
+        try {
+          if ((await fse.lstat(one.file)).isFile()) {
+            uploads.push(one);
+            continue;
+          }
+        } catch (error) {
+          // Gone between the event and now. Nothing to send.
+        }
+
+        running.queue.drop(one.file);
+      }
+
       const removals = sending.filter(one => one.op === 'remove');
 
       // Held back because the server's copy could not be kept, which is a
@@ -532,6 +566,7 @@ async function flush(service: FileService, id: string): Promise<void> {
     });
   } finally {
     running.working = false;
+    announcer().fire();
     await writeDownOutstanding(id, running.queue);
     // Everything that had arrived when this batch started has now been dealt
     // with, so that is how far this folder is known about.
@@ -862,6 +897,40 @@ async function sayWhetherAnythingIsSyncing(): Promise<void> {
     'setContext',
     'sftp.autosyncElsewhere',
     elsewhere
+  );
+
+  // The folders in this window whose connection is syncing, so the file
+  // explorer can be precise after all. A `when` clause cannot ask about the
+  // item it is on - but it can ask whether `resourcePath` is *in* a list, and
+  // a list is something we can keep. Without this the only question available
+  // there was "is anything in this window syncing", which put `Stop` on every
+  // project or on none.
+  const syncing: string[] = [];
+  getAllFileService().forEach(service => {
+    if (!autosyncState(service)) {
+      return;
+    }
+
+    syncing.push(service.baseDir);
+    // And the folder being deployed, when the window happens to have it open.
+    const chosen = activeWorktree(service);
+    if (chosen && !samePath(chosen.root, service.baseDir)) {
+      syncing.push(chosen.root);
+    }
+  });
+
+  await vscode.commands.executeCommand(
+    'setContext',
+    'sftp.autosyncPaths',
+    syncing
+  );
+
+  // The one list behind both the menu and the mark in the file explorer, so
+  // when a project shows neither, what it should have matched is on record.
+  logger.debug(
+    `[autosync] folders marked in the file explorer: ${
+      syncing.length ? syncing.join(', ') : 'none'
+    }`
   );
 }
 
@@ -1817,6 +1886,12 @@ export async function resumeAutosync(): Promise<void> {
   }
 
   await sayWhetherAnythingIsSyncing();
+
+  // Everything showing what is syncing was asked before any connection
+  // existed - the decorations are registered during activation, and the
+  // connections are built after it - so it all answered "nothing" and had no
+  // reason to ask again. This is the moment there is an answer.
+  announcer().fire();
 }
 
 export function initWorktreeSync(context: vscode.ExtensionContext): void {

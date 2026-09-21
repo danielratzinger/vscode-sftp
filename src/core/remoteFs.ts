@@ -130,8 +130,11 @@ class KeepAliveRemoteFs {
       passphrase: option.passphrase,
       passwordCommand: option.passwordCommand,
       passphraseCommand: option.passphraseCommand,
+      passwordWriteCommand: (option as any).passwordWriteCommand,
+      passphraseWriteCommand: (option as any).passphraseWriteCommand,
       passwordManager: option.passwordManager,
       passphraseManager: option.passphraseManager,
+      name: (option as any).connectionName,
     });
 
     app.sftpBarItem.showMsg('connecting...', connectOption.connectTimeout);
@@ -176,8 +179,11 @@ class KeepAliveRemoteFs {
     // The clients have no use for these, and they shouldn't reach a debug log.
     delete connectOption.passwordCommand;
     delete connectOption.passphraseCommand;
+    delete connectOption.passwordWriteCommand;
+    delete connectOption.passphraseWriteCommand;
     delete connectOption.passwordManager;
     delete connectOption.passphraseManager;
+    delete connectOption.connectionName;
 
     // TLS is attempted rather than predicted. If the server cannot manage it,
     // the failure happens here, before anything has been asked of it, and the

@@ -2,7 +2,7 @@
   "name": "sftp",
   "displayName": "SFTP",
   "description": "SFTP/FTP sync, with an MCP server that lets local AI clients read your servers",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "publisher": "danielratzinger",
   "author": "Daniel Ratzinger (https://github.com/danielratzinger)",
   "engines": {
@@ -61,12 +61,13 @@
         "sftp.printDebugLog": {
           "type": "boolean",
           "default": false,
-          "description": "print debug log on sftp output channel.(reload vscode when change this)"
+          "markdownDescription": "The older name for `#sftp.debug#`. Either one turns the same lines on; this is kept so configurations that set it keep working.",
+          "markdownDeprecationMessage": "Use `#sftp.debug#` instead. Both do the same thing."
         },
         "sftp.debug": {
           "type": "boolean",
           "default": false,
-          "description": "print debug log on sftp output channel.(reload vscode when change this)"
+          "markdownDescription": "Write the verbose lines to the SFTP output channel: every protocol step of a connection, each file a walk looks at, what a credential command was asked. Useful when a connection fails in a way the error alone does not explain. It takes effect immediately - no reload - which matters, because the moment anyone turns this on is a moment something is already going wrong."
         },
         "sftp.passwordManager": {
           "type": [
@@ -500,6 +501,16 @@
         "category": "SFTP"
       },
       {
+        "command": "sftp.migratePasswords",
+        "title": "Move All Passwords…",
+        "category": "SFTP"
+      },
+      {
+        "command": "sftp.rotatePassword",
+        "title": "Change a Server’s Password…",
+        "category": "SFTP"
+      },
+      {
         "command": "sftp.removeDeleted",
         "title": "Remove Files Deleted from the Project",
         "category": "SFTP"
@@ -579,6 +590,14 @@
         {
           "command": "sftp.switchAutosyncWorktree",
           "when": "sftp.enabled && sftp.autosyncWorktreeing"
+        },
+        {
+          "command": "sftp.migratePasswords",
+          "when": "sftp.enabled"
+        },
+        {
+          "command": "sftp.rotatePassword",
+          "when": "sftp.enabled"
         },
         {
           "command": "sftp.removeDeleted",
@@ -853,37 +872,17 @@
         {
           "command": "sftp.autosyncWorktree",
           "group": "sftp.trans@1",
-          "when": "sftp.enabled && explorerResourceIsFolder && !sftp.autosyncWorktreeing"
+          "when": "sftp.enabled && explorerResourceIsFolder && !(resourcePath in sftp.autosyncPaths)"
         },
         {
           "command": "sftp.switchAutosyncWorktree",
           "group": "sftp.trans@1",
-          "when": "sftp.enabled && explorerResourceIsFolder && sftp.autosyncWorktreeing"
-        },
-        {
-          "command": "sftp.autosyncReveal.mac",
-          "group": "sftp.trans@3",
-          "when": "sftp.enabled && isMac && explorerResourceIsFolder && sftp.autosyncElsewhere"
-        },
-        {
-          "command": "sftp.autosyncReveal.windows",
-          "group": "sftp.trans@3",
-          "when": "sftp.enabled && isWindows && explorerResourceIsFolder && sftp.autosyncElsewhere"
-        },
-        {
-          "command": "sftp.autosyncReveal.linux",
-          "group": "sftp.trans@3",
-          "when": "sftp.enabled && isLinux && explorerResourceIsFolder && sftp.autosyncElsewhere"
-        },
-        {
-          "command": "sftp.autosyncReveal.terminal",
-          "group": "sftp.trans@4",
-          "when": "sftp.enabled && explorerResourceIsFolder && sftp.autosyncElsewhere"
+          "when": "sftp.enabled && explorerResourceIsFolder && resourcePath in sftp.autosyncPaths"
         },
         {
           "command": "sftp.stopAutosyncWorktree",
           "group": "sftp.trans@2",
-          "when": "sftp.enabled && explorerResourceIsFolder && sftp.autosyncWorktreeing"
+          "when": "sftp.enabled && explorerResourceIsFolder && resourcePath in sftp.autosyncPaths"
         }
       ],
       "editor/context": [

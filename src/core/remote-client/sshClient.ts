@@ -21,7 +21,7 @@ function sftpFileSystemClass(): typeof SFTPFileSystemType {
 }
 import logger from '../../logger';
 import CustomError from '../customError';
-import { hostKeyCheck } from './hostKeys';
+import { hostKeyChecker } from './hostKeys';
 
 let MAX_OPEN_FD_NUM = 222;
 
@@ -272,6 +272,44 @@ export default class SSHClient extends RemoteClient {
       }
     }
 
+    // Before the socket, so the verifier can answer without awaiting anything.
+    await this._prepareHostKeys(option);
+
+    try {
+      return await this._openSSH(
+        client,
+        option,
+        interactiveAuth,
+        connectTimeout,
+        config
+      );
+    } catch (error) {
+      if (!(await this._mayTryAgain(option, error))) {
+        throw error;
+      }
+
+      // Somebody has just said to trust this host. What was loaded before the
+      // question is now out of date, and the client is spent.
+      await this._prepareHostKeys(option);
+      logger.info(`[host key] ${option.host} trusted; connecting again.`);
+
+      return this._openSSH(
+        (this._client = this._initClient()),
+        option,
+        interactiveAuth,
+        connectTimeout,
+        config
+      );
+    }
+  }
+
+  private _openSSH(
+    client,
+    option: any,
+    interactiveAuth: any,
+    connectTimeout: any,
+    config: Config
+  ): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       if (interactiveAuth) {
         client.on('keyboard-interactive', function redo(
@@ -349,34 +387,78 @@ export default class SSHClient extends RemoteClient {
    * The callback ssh2 runs with the key the server offered, before a password
    * is anywhere near the wire.
    *
+   * **Synchronous, and it has to be.** ssh2 advertises `ext-info-c`, so an
+   * OpenSSH server sends `EXT_INFO` in the same breath as `NEWKEYS`, encrypted
+   * under the new keys. A verifier that has not answered by then leaves ssh2
+   * holding the old decipher, that packet is decrypted with the wrong cipher,
+   * and the connection dies with `Bad packet length`. Everything that needs
+   * reading was read by `prepare` before the socket was opened.
+   *
    * `undefined` when there is nobody to ask or the connection has opted out,
-   * and ssh2 then does what it always did - which is not check at all. The
-   * callback form rather than a return value, because answering may mean
-   * putting a question on screen and waiting for it.
+   * and ssh2 then does what it always did, which is not check at all.
    */
   private _verifier(option: ConnectOption): any {
-    const check = hostKeyCheck();
-    if (!check || (option as any).hostVerification === false) {
+    const checker = hostKeyChecker();
+    if (!checker || (option as any).hostVerification === false) {
       return undefined;
     }
 
     const host = option.host;
     const port = option.port || 22;
 
-    const how = {
+    return (key: Buffer) => {
+      try {
+        return checker.decide(host, port, key);
+      } catch (error) {
+        logger.error(error, `verifying the host key of ${host}`);
+        return false;
+      }
+    };
+  }
+
+  /** What `_verifier` will compare against, read while there is time to. */
+  private async _prepareHostKeys(option: ConnectOption): Promise<void> {
+    const checker = hostKeyChecker();
+    if (!checker || (option as any).hostVerification === false) {
+      return;
+    }
+
+    try {
+      await checker.prepare(option.host, option.port || 22, {
+        knownHostsPath: (option as any).knownHostsPath,
+        acceptNew: (option as any).acceptNewHostKeys === true,
+      });
+    } catch (error) {
+      logger.error(error, `reading what is known about ${option.host}`);
+    }
+  }
+
+  /**
+   * Whether a failed connection was this refusing the host key, and whether
+   * somebody has now said to trust it.
+   *
+   * The question is put here rather than inside the verifier because a dialog
+   * cannot be opened in the middle of a key exchange without killing it. The
+   * cost is one wasted connection the first time a host is seen, which is a
+   * fair price for a handshake that behaves.
+   */
+  private async _mayTryAgain(
+    option: ConnectOption,
+    error: Error
+  ): Promise<boolean> {
+    const checker = hostKeyChecker();
+    if (!checker || (option as any).hostVerification === false) {
+      return false;
+    }
+
+    if (!/verification failed|host denied/i.test(error.message)) {
+      return false;
+    }
+
+    return checker.askAgain(option.host, option.port || 22, {
       knownHostsPath: (option as any).knownHostsPath,
       acceptNew: (option as any).acceptNewHostKeys === true,
-    };
-
-    return (key: Buffer, accept: (ok: boolean) => void) => {
-      check(host, port, key, how).then(
-        ok => accept(ok),
-        error => {
-          logger.error(error, `verifying the host key of ${host}`);
-          accept(false);
-        }
-      );
-    };
+    });
   }
 
   private _getSftp(client): Promise<any> {

@@ -4,7 +4,10 @@ import * as vscode from 'vscode';
 import * as fse from 'fs-extra';
 import logger from '../logger';
 import { getUserSetting } from '../host';
-import { HostKeyOption, setHostKeyCheck } from '../core/remote-client/hostKeys';
+import {
+  HostKeyOption,
+  setHostKeyChecker,
+} from '../core/remote-client/hostKeys';
 import {
   HostKeyEntry,
   fingerprintOf,
@@ -37,7 +40,18 @@ interface Stored {
   addedAt: number;
 }
 
+/** What `prepare` loaded, for `decide` to answer from without waiting. */
+interface Loaded {
+  known: HostKeyEntry[];
+  option?: HostKeyOption;
+}
+
 let storeFile = '';
+
+const loaded = new Map<string, Loaded>();
+
+/** The key a refused host offered, so the question can name it afterwards. */
+const offered = new Map<string, Buffer>();
 
 /** One question per host, however many connections are waiting on the answer. */
 const asking = new Map<string, Promise<boolean>>();
@@ -45,35 +59,149 @@ const asking = new Map<string, Promise<boolean>>();
 export function initHostVerification(context: vscode.ExtensionContext): void {
   storeFile = path.join(context.globalStoragePath, STORE);
 
-  setHostKeyCheck(async (host, port, key, option) => {
-    if (!enabled()) {
-      return true;
-    }
-
-    const at = `${host}:${port}`;
-    const waiting = asking.get(at);
-    if (waiting) {
-      return waiting;
-    }
-
-    // One question per host, however many connections are waiting on it: 156
-    // connections here share 26 hosts, and several of them open at once.
-    const answer = decide(host, port, key, option).then(
-      ok => {
-        asking.delete(at);
-        return ok;
-      },
-      error => {
-        asking.delete(at);
-        throw error;
+  setHostKeyChecker({
+    async prepare(host, port, option) {
+      if (!enabled()) {
+        return;
       }
-    );
-    asking.set(at, answer);
 
-    return answer;
+      loaded.set(`${host}:${port}`, {
+        known: await onRecord(host, port, option && option.knownHostsPath),
+        option,
+      });
+    },
+
+    /**
+     * The whole decision, with nothing awaited. See the note in `hostKeys.ts`:
+     * an `await` here costs the connection, not just time.
+     */
+    decide(host, port, key) {
+      if (!enabled()) {
+        return true;
+      }
+
+      const at = `${host}:${port}`;
+      const held = loaded.get(at);
+
+      if (!held) {
+        // `prepare` did not run, so nothing is known and nothing can be
+        // compared. Refusing every connection because of a bookkeeping gap
+        // would be worse than the behaviour this replaced.
+        logger.warn(`[host key] nothing was loaded for ${host}; not checking.`);
+        return true;
+      }
+
+      const verdict = judge(held.known, key);
+
+      if (verdict === 'trusted') {
+        logger.debug(`host key for ${host} is the one on record (${fingerprintOf(key)})`);
+        return true;
+      }
+
+      if (verdict === 'unknown' && held.option && held.option.acceptNew) {
+        // `StrictHostKeyChecking accept-new`: a host nobody has seen before is
+        // taken on trust, a host whose key changed still is not. Written down
+        // after the handshake, since that cannot be awaited here either.
+        offered.set(at, key);
+        remember(host, port, key).catch(() => undefined);
+        logger.info(`[host key] ${host} accepted as new; accept-new is set.`);
+        return true;
+      }
+
+      offered.set(at, key);
+      logger.info(
+        `[host key] ${host} refused for now (${verdict}, ${fingerprintOf(key)}); asking.`
+      );
+
+      return false;
+    },
+
+    async askAgain(host, port) {
+      if (!enabled()) {
+        return false;
+      }
+
+      const at = `${host}:${port}`;
+      const waiting = asking.get(at);
+      if (waiting) {
+        return waiting;
+      }
+
+      const answer = ask(host, port).then(
+        ok => {
+          asking.delete(at);
+          return ok;
+        },
+        error => {
+          asking.delete(at);
+          throw error;
+        }
+      );
+      asking.set(at, answer);
+
+      return answer;
+    },
   });
 
-  context.subscriptions.push({ dispose: () => setHostKeyCheck(undefined) });
+  context.subscriptions.push({ dispose: () => setHostKeyChecker(undefined) });
+}
+
+/**
+ * The question, put after the handshake has already failed.
+ *
+ * Answering yes writes the key down and says the connection is worth another
+ * try; the caller makes it again, and this time `decide` says yes without
+ * asking anything.
+ */
+async function ask(host: string, port: number): Promise<boolean> {
+  const at = `${host}:${port}`;
+  const key = offered.get(at);
+  const held = loaded.get(at);
+
+  if (!key || !held) {
+    return false;
+  }
+
+  const print = fingerprintOf(key);
+  const type = typeOf(key) || 'unknown';
+  const verdict = judge(held.known, key);
+
+  if (verdict === 'revoked') {
+    // Revocation is somebody's decision already taken; there is nothing to ask.
+    logger.error(
+      new Error(`the host key for ${host} is marked revoked in known_hosts`),
+      'host key'
+    );
+    vscode.window.showErrorMessage(
+      `${host} offered a host key that is marked revoked in known_hosts. ` +
+        'Not connecting.'
+    );
+    return false;
+  }
+
+  const trusted =
+    verdict === 'changed'
+      ? await askAboutChange(host, port, key, print, type, held.known)
+      : await askAboutNew(host, port, key, print, type);
+
+  if (trusted) {
+    // Whatever was loaded is now out of date by exactly this key.
+    loaded.delete(at);
+    await prepareAgain(host, port, held.option);
+  }
+
+  return trusted;
+}
+
+async function prepareAgain(
+  host: string,
+  port: number,
+  option?: HostKeyOption
+): Promise<void> {
+  loaded.set(`${host}:${port}`, {
+    known: await onRecord(host, port, option && option.knownHostsPath),
+    option,
+  });
 }
 
 function enabled(): boolean {
@@ -150,50 +278,6 @@ async function remember(host: string, port: number, key: Buffer): Promise<void> 
 
   await fse.ensureDir(path.dirname(storeFile));
   await fse.writeFile(storeFile, JSON.stringify(all, null, 2));
-}
-
-async function decide(
-  host: string,
-  port: number,
-  key: Buffer,
-  option?: HostKeyOption
-): Promise<boolean> {
-  const print = fingerprintOf(key);
-  const type = typeOf(key) || 'unknown';
-  const known = await onRecord(host, port, option && option.knownHostsPath);
-  const verdict = judge(known, key);
-
-  if (verdict === 'trusted') {
-    logger.debug(`host key for ${host} is the one on record (${print})`);
-    return true;
-  }
-
-  if (verdict === 'revoked') {
-    // Revocation is somebody's decision already taken; there is nothing to ask.
-    logger.error(
-      new Error(`the host key for ${host} is marked revoked in known_hosts`),
-      'host key'
-    );
-    vscode.window.showErrorMessage(
-      `${host} offered a host key that is marked revoked in known_hosts. ` +
-        'Not connecting.'
-    );
-    return false;
-  }
-
-  if (verdict === 'changed') {
-    return askAboutChange(host, port, key, print, type, known);
-  }
-
-  // `StrictHostKeyChecking accept-new` means exactly this: a host nobody has
-  // seen before is taken on trust, a host whose key changed still is not.
-  if (option && option.acceptNew) {
-    await remember(host, port, key);
-    logger.info(`[host key] ${host} accepted as new (${print}); accept-new is set.`);
-    return true;
-  }
-
-  return askAboutNew(host, port, key, print, type);
 }
 
 async function askAboutNew(
