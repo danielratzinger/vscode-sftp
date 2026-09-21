@@ -121,6 +121,12 @@ export function createFileService(config: any, workspace: string) {
       // A caller that is going to say something itself marks the error, and
       // then this only writes it down. Autosync retries a failed upload every
       // few seconds; a dialog per attempt per file would bury the editor.
+      if ((error as any).silent === true) {
+        // Not a failure: the file stopped existing while it was being sent.
+        logger.debug(`${transferType} ${localFsPath}: the file is gone`);
+        return;
+      }
+
       if ((error as any).reported === true) {
         logger.error(`${transferType} ${localFsPath} failed: ${error.message}`);
       } else {

@@ -496,7 +496,8 @@ async function flush(service: FileService, id: string): Promise<void> {
 
       // Held back because the server's copy could not be kept, which is a
       // reason to try again rather than a reason to give up.
-      const blocked = new Set<string>();
+      /** Deleted between being noticed and being sent - a test's scratch file. */
+      const vanished = new Set<string>();
 
       // The connection's own uploader, one scheduler for the batch: the same
       // concurrency, verification and temp-file handling every other upload
@@ -512,31 +513,50 @@ async function flush(service: FileService, id: string): Promise<void> {
           // anybody about; the transfer log still records every attempt.
           announce: false,
           allow: async one => {
-            const cleared = await clearToOverwrite(service, one.remote);
-            if (!cleared) {
-              blocked.add(one.local);
+            // Asked here rather than only before the batch, because the gap
+            // between the two is where a test's temporary files live. Gone is
+            // not a failure and must not read as one: an upload that reports
+            // `ENOENT` goes back in the queue, and a file that no longer
+            // exists never stops reporting it.
+            if (!(await fse.pathExists(one.local))) {
+              vanished.add(one.local);
+              return false;
             }
-            return cleared;
+
+            // A file whose copy could not be kept is simply not sent; the
+            // loop below puts it back in the queue with everything else that
+            // did not arrive.
+            return clearToOverwrite(service, one.remote);
           },
         }
       );
 
       const sent = new Set(result.uploaded);
       const now2 = Date.now();
+      let waiting = 0;
 
-      uploads.forEach(one => {
+      for (const one of uploads) {
         if (sent.has(one.file)) {
           running.queue.done(one.file);
-          return;
+          continue;
+        }
+
+        // Whether it is worth trying again is a question about the file, not
+        // about the error: one that has been deleted since will fail the same
+        // way for ever.
+        if (vanished.has(one.file) || !(await fse.pathExists(one.file))) {
+          running.queue.drop(one.file);
+          logger.debug(`[autosync] ${one.file} is gone; not sending it.`);
+          continue;
         }
 
         running.queue.failed(one.file, now2, one);
-      });
+        waiting += 1;
+      }
 
-      const held = result.failed.length + blocked.size;
-      if (held > 0) {
+      if (waiting > 0) {
         logger.info(
-          `[autosync] ${held} file${held === 1 ? '' : 's'} did not go up; ` +
+          `[autosync] ${waiting} file${waiting === 1 ? '' : 's'} did not go up; ` +
             'waiting to try again.'
         );
       }

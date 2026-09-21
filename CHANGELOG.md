@@ -6,6 +6,20 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.2.1 - 2026-09-21
+
+### Fixed
+
+- A file deleted while autosync was sending it was treated as a failure, so it
+  went back in the queue and failed the same way for ever - a red line a
+  minute for each one. An integration test that writes fixtures and deletes
+  them again produced a steady stream of them. Whether something is worth
+  trying again is a question about the file rather than about the error: one
+  that no longer exists is dropped, and the transfer that found it gone says
+  so quietly instead of reporting a failure. The gap between deciding to send
+  a file and reading it cannot be closed - the scheduler runs the transfer
+  later, by design - only understood.
+
 ## 2.2.0 - 2026-09-21
 
 Where credentials live, and a set of fixes found by running the previous

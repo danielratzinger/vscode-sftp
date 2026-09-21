@@ -17,6 +17,11 @@ import { transfer, TransferDirection } from './transfer/transfer';
  * connection that is already open, not a thousand connections.
  */
 
+/** The file was not there when it came to be read. */
+function isGone(error: any): boolean {
+  return Boolean(error) && (error.code === 'ENOENT' || error.errno === -2);
+}
+
 export interface Upload {
   /** Where the file is on this machine. */
   local: string;
@@ -121,6 +126,15 @@ export async function uploadMany(
               // The convention the transfer listener reads: written down, not
               // raised.
               (error as any).reported = true;
+            }
+
+            // A file that stopped existing while it was being sent is not a
+            // failure to report. A test writes its fixtures and deletes them
+            // again; the window between deciding to send one and reading it
+            // cannot be closed, only understood. The caller still hears about
+            // it and drops it rather than trying again.
+            if (isGone(error)) {
+              (error as any).silent = true;
             }
 
             throw error;
