@@ -202,6 +202,51 @@ A shell command whose output is used as the password. Takes precedence over [pas
 | --- | --- |
 | *passwordCommand* | *string* |
 
+### passwordWriteCommand
+A shell command that **saves** the password, reading it on standard input. The other half of [passwordCommand](#passwordcommand): without it a manager reached by command is read-only, so a password typed at a prompt is used once and lost.
+
+```json
+{
+  "passwordCommand": "pass show servers/univers",
+  "passwordWriteCommand": "pass insert -m servers/univers"
+}
+```
+
+The secret arrives on **standard input**, never as an argument — an argument is visible to anything that can run `ps` for as long as the process lives. Write the command accordingly: `pass insert -m`, `gopass insert -f`, `secret-tool store …` all read from stdin. `op item edit … password=…` does not, and would put the secret in the process list.
+
+Naming a write command means this credential lives there: nothing is written to the Keychain or to VS Code's storage as well, because two copies is two things to disagree later.
+
+After writing, the secret is read back with `passwordCommand` and compared. `pass insert` and its kind report success on writing to the wrong path as readily as the right one, so a save that cannot be confirmed is written down as not having happened rather than assumed. With no `passwordCommand` to read back with, the log says it was not checked.
+
+Output is discarded and never logged — several managers print the secret back on success.
+
+| ⚠️ Warning |
+| :--- |
+| *The command comes from a file in your workspace, so running it runs workspace code, and this one is handed every password it saves. It only runs in a [trusted workspace](https://code.visualstudio.com/docs/editor/workspace-trust).* |
+
+| Key | Value |
+| --- | --- |
+| *passwordWriteCommand* | *string* |
+| *passphraseWriteCommand* | *string* |
+
+### hostVerification
+Whether to check the server's SSH host key before sending anything. On by default; see [Host keys](./commands.md#host-keys) for what the three answers mean.
+
+Set it to `false` for one connection that cannot be checked — a host behind a load balancer presenting different keys, say. `sftp.hostVerification` turns it off everywhere. `StrictHostKeyChecking no` in your ssh config does the same for that host, and `accept-new` takes a host nobody has seen before without asking while still refusing one whose key changed.
+
+| Key | Value | Default |
+| --- | --- | --- |
+| *hostVerification* | *boolean* | *true* |
+
+### knownHostsPath
+Where this connection's `known_hosts` is, when it is not `~/.ssh/known_hosts`. Read in addition to this extension's own store, so trust you already have carries over.
+
+Usually there is no reason to set it: `UserKnownHostsFile` in your ssh config is honoured and means the same thing.
+
+| Key | Value |
+| --- | --- |
+| *knownHostsPath* | *string* |
+
 ### remotePath
 The absolute path on the remote host.
 

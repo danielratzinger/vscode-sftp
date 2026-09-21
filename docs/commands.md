@@ -96,7 +96,11 @@ On a connection in the Remote Explorer, on a folder in the file explorer, or fro
 
 `Switch Autosync Worktree` takes its place while that connection is syncing, beside `Stop` — the same picker under the name that fits once something is running. Two commands rather than one whose title changes, because a menu entry shows its command's title and a title is fixed.
 
-In the Remote Explorer this is decided **per connection**, not per window: the tree item carries whether that connection is syncing, so a workspace with twenty-eight connections does not label all of them by what one of them is doing. `Stop` and the reveal commands are now precise the same way. The file explorer has no such per-item handle, so there it still follows whether anything in the window is syncing.
+In the Remote Explorer this is decided **per connection**, not per window: the tree item carries whether that connection is syncing, so a workspace with twenty-eight connections does not label all of them by what one of them is doing. `Stop` and the reveal commands are precise the same way.
+
+The file explorer has no per-item handle — it is the editor's own tree, and all a `when` clause can read there is window-wide. So it carries exactly one entry, `Autosync Worktree`, offered **always**: it is the only one that is right whatever is happening, because it opens the picker for whichever connection you clicked, and that picker already contains `Stop syncing` when that connection is the one running.
+
+`Stop`, `Switch` and the reveal commands are not there at all. Each is about one connection, while the only thing a clause can read says whether *something* in the window is syncing — so they appeared on every project, including ones that were not syncing, where all they could do was say so. They live in the Remote Explorer, where the tree item says which connection it is.
 
 Where the project is a git repository the folders on offer are its worktrees, which is the case this was built for: an agent working on a branch gets its own checkout, usually nowhere near the workspace. Where it is not a repository — which is most connections — there is one candidate, the project folder itself, and choosing it is how you say "keep this on the server" without writing a `watcher` block into `sftp.json`.
 
@@ -150,6 +154,38 @@ On a connection in the Remote Explorer or a folder in the file explorer, directl
 That case is the one worth a command: the file explorer shows this window's project and the Remote Explorer shows the server, so nothing on screen leads to the checkout actually being deployed — the branch name in the picker is the only trace of it, and a branch name is not a path. Finder, File Explorer or the system's file manager by platform; the terminal is the machine's own, not the built-in one, honouring `terminal.external.*Exec`.
 
 A worktree removed by hand leaves the rest of git in place, so the folder may simply be gone; both say so rather than opening nothing.
+
+### Move All Passwords…
+From the palette, always — it is a question about where passwords should live, not a one-way migration that stops being offered once it has run.
+
+It asks first **which configs to look at** — the ones this window has open, or every `sftp.json` under a folder you pick, three levels deep. A window usually has one project open and the passwords are spread across all of them, so “this window” alone would not be the question anybody is asking.
+
+Then it finds every password and key passphrase in those, wherever each one is now: written in plain text, or marked `true` and held in a store. It says what it found and where, and asks where they should all be instead: It says what it found and where, and asks where they should all be instead:
+
+| Destination | What happens |
+| --- | --- |
+| **macOS Keychain** | Written to your login keychain (not synced to iCloud) and taken out of wherever they were |
+| **VS Code secret storage** | The editor's own store, on any platform |
+| **The config files** | Written back into `sftp.json` as plain text, and deleted from the store that held them |
+
+So it moves file → store, store → store, and store → file. That last one is the direction nobody builds and everybody eventually wants, usually at the moment they are trying to leave.
+
+`sftp.passwordManager` is set to match, and any `passwordManager` written into an individual connection is removed — otherwise that one connection alone would still look in the old place, and nothing on screen would say why.
+
+**The order never changes, whichever way it is going.** Every secret is written to its new home and *read back* before it is taken out of the old one. A store that refuses, a keychain that is locked, a value that comes back different — that secret stays where it was. A delete that runs before the write is confirmed is how a password stops existing.
+
+Profiles are handled: a profile that names only a password still belongs to its parent's host and user, which is what the store entry is keyed on.
+
+**What it will not move.** A credential is keyed by `protocol://user@host:port/<project>` — one record per connection. Two connections of the *same name* on one account would still share a key. Where they share a password too that is fine — one entry serves them all. Where two of them hold *different* passwords, neither is moved: the store cannot hold both, and moving one would silently give its password to the others. Those are named so you can look at why they differ. A password held in something only readable, such as 1Password, is read from but never deleted.
+
+### Change a Server’s Password…
+From the palette. Lists the servers your connections use — `dr@univers.metanet.ch:2121`, with the projects that reach it — asks for the new password once, and writes it to every connection on that server, wherever each copy lives.
+
+This is the other half of keeping **a record per project**. That shape is right: it is how these are thought about, it lets two connections on one account hold different passwords, and it makes each entry findable by the project's name. What it costs is that six sites on one hosting account hold six copies of one password — and a rotation that updates one of them leaves five connections that start failing at a time nobody is watching.
+
+A copy written in a config file is rewritten there; a stored one is written to its store and read back. Nothing is deleted and nothing moves — only the value changes — so a connection keeps whatever arrangement it had.
+
+It is **not** tried against the server first. If the new password is wrong, the first connection says so and asks, and a rejected stored password is forgotten rather than kept, so the mistake costs a prompt rather than a repair.
 
 ### Remove Files Deleted from the Project
 On a connection in the Remote Explorer, or from the palette. Asks git what the project has deleted over its history, keeps the paths that really are gone from the checkout, and offers to take those off the server — with the list and the count before anything moves, and a copy of each kept first, so `Restore Server to an Earlier Point` still works afterwards.

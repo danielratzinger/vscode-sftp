@@ -6,6 +6,83 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.2.0 - 2026-09-21
+
+Where credentials live, and a set of fixes found by running the previous
+release rather than by reading it.
+
+### Added
+
+- `SFTP: Move All Passwords…` answers one question - where should passwords
+  live - and moves them there from wherever they are now. Into the macOS
+  Keychain, into VS Code's secret storage, or back into the config files,
+  which is the direction nobody builds and everybody eventually wants. It asks
+  which configs to look at: the connections this window has open, or every
+  `sftp.json` under a folder you pick, since a window usually holds one
+  project while the passwords are spread across all of them. Each secret is
+  written to its new home and *read back* before it leaves the old one; a
+  locked keychain or a value that returns different leaves that secret exactly
+  where it was.
+- `SFTP: Change a Server's Password…` writes one new password to every
+  connection on that server at once. The cost of keeping a record per project
+  is that six sites on one hosting account hold six copies; a rotation that
+  updates one of them leaves five that start failing at a time nobody is
+  watching.
+- `passwordWriteCommand`, the other half of `passwordCommand`: a shell command
+  that *saves* a password, reading it on standard input. Without it a manager
+  reached by command was read-only, so a password typed at a prompt was used
+  once and lost. Written to, then read back and compared - `pass insert`
+  reports success on writing to the wrong path as readily as the right one.
+- Credentials are now kept **per project** rather than per account. The key
+  carries the connection's name, so six sites on one hosting account have six
+  records, each labelled `dr@univers.metanet.ch (sportswise.com)` and findable
+  by the project name. Two connections on one account can hold different
+  passwords, which before was not representable at all.
+
+### Fixed
+
+- **Every SFTP connection failed with `Bad packet length`.** Host key checking,
+  added in 2.1.0, answered asynchronously - and ssh2 advertises `ext-info-c`,
+  so an OpenSSH server sends `EXT_INFO` in the same breath as `NEWKEYS`,
+  encrypted under the new keys. A verifier that has not answered by then
+  leaves ssh2 holding the old decipher. The decision is now made synchronously
+  against what was read before the socket opened; a host that needs asking is
+  refused, asked about, and reconnected. The e2e suite could not catch it
+  because ssh2's own server does not send `EXT_INFO`, so the invariant is now
+  checked directly: the verifier must return a boolean, never a promise.
+- **Autosync queued directories.** A watcher reports a folder whenever
+  anything inside it changes, and `transfer()` sends a directory to
+  `transferFolder` - so a change anywhere would have re-uploaded the whole
+  checkout. Only the backup probe failing on a directory prevented it, which
+  is also why two paths retried in a loop for ever. Only regular files are
+  sent now, and a remote directory is no longer mistaken for a server that
+  cannot be reached.
+- **Palette commands failed silently.** `doCommandRun` called its handler
+  without returning the promise, so the `try/catch` in `Command.run` could
+  never catch anything: no dialog, no log line, nothing to distinguish "it
+  went wrong" from "it did nothing".
+- **`sftp.printDebugLog` needed a window reload to take effect**, because the
+  flag was read once at import - which is exactly backwards for a switch
+  nobody touches until something is already wrong. It is read per line now.
+  `sftp.debug` is the name to use; `printDebugLog` is marked deprecated, which
+  it has been since upstream added the shorter name without saying so.
+- Autosync did not mark anything after a window reload. The decorations are
+  registered during activation and the connections are built after it, so
+  everything showing what was syncing asked before there was an answer and had
+  no reason to ask again.
+- The file explorer's autosync menu asked whether *something* in the window
+  was syncing, which put `Stop` on every project or on none. It asks about the
+  folder itself now, through `resourcePath in sftp.autosyncPaths`.
+
+### Changed
+
+- A connection being autosynced is marked in one colour - the blue of a
+  notification's information icon - whether the folder it deploys is this
+  window's own or a checkout somewhere else; the badge says which. The colour
+  answers one question, which is whether `Stop Autosync` would do anything.
+- Keychain items read `dr@univers.metanet.ch (sportswise.com)` in the Name
+  column, rather than the Account column repeated behind a prefix.
+
 ## 2.1.0 - 2026-09-21
 
 Continuous deploy, built out until it does what a shell script I had been
