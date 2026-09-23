@@ -1,6 +1,5 @@
 import { COMMAND_REMOTEEXPLORER_EDITINLOCAL } from '../constants';
-import { downloadFile } from '../fileHandlers';
-import { showTextDocument } from '../host';
+import { editInLocal } from '../fileHandlers';
 import { uriFromExplorerContextOrEditorContext } from './shared';
 import { checkFileCommand } from './abstract/createCommand';
 
@@ -9,7 +8,6 @@ export default checkFileCommand({
   getFileTarget: uriFromExplorerContextOrEditorContext,
 
   async handleFile(ctx) {
-    await downloadFile(ctx, { ignore: null });
-    await showTextDocument(ctx.target.localUri, { preview: true });
+    await editInLocal(ctx, { ignore: null });
   },
 });

@@ -118,6 +118,8 @@ The list is ordered by which folder was written in most recently, and says so: `
 
 **One writer.** A connection has one remote path, so it syncs from exactly one folder at a time. While it does, `uploadOnSave` for that connection stands down — two mechanisms uploading the same save is one upload too many, and the watcher sees everything a save does and more. The cost is that a save goes up when it has settled rather than the instant it is written. The log says so once rather than leaving you to wonder. `Stop Autosync Worktree`, or `Stop syncing` in the picker, hands it back.
 
+When the folder being synced is **another one** — a worktree this window does not have open — nothing would ever send a save made here, so with `uploadOnSave` on, each save asks whether to upload it instead. The question is a notification rather than a dialog, so auto-save does not take the keyboard, and saving again while it is showing does not stack another; `Upload` sends whatever is on disk when you answer. The status bar still shows the synced folder's own transfers — those are real, just not yours.
+
 **What is uploaded is what git would keep.** A watcher is not upload-on-save: it sees every write by every process, so `npm install` in a watched checkout is forty thousand files heading for the server unless something stops them — and most `sftp.json` files have no `ignore` list at all. So git is asked, with `git check-ignore`, which consults the index and therefore never reports a tracked file as ignored. It is asked once per batch rather than once per file, and once per directory rather than once per file under it: everything below `node_modules` is settled by one answer about `node_modules`. The connection's own `ignore` rules still apply on top, and `.git` is never uploaded. One edge is given up deliberately — a file force-added inside an ignored directory is treated as ignored, because git says the directory is.
 
 **It survives quitting the editor.** Which folder a connection deploys from is remembered, and the watcher is set up again when the window comes back — after the connections exist, which is later than the extension starts and again every time `sftp.json` is saved. What was still queued is picked up and you are told it is being resumed.
@@ -245,7 +247,7 @@ The question offers four ways on besides cancelling:
 | `Overwrite` | Download, replacing the local file. |
 | `Compare` | Show the two side by side. |
 | `Open Local` | Open the file on disk. |
-| `Open Remote` | Download the server's copy into a folder of its own under the system's temp directory and open it there. It can be edited and saved like any file; the local one is not touched and nothing is uploaded. |
+| `Open Remote` | Download the server's copy into a folder of its own under the system's temp directory and open it there. It can be edited like any file, and the local one is not touched. Each save of it asks whether to upload it back to where it came from. |
 
 While the connection is [autosynced from another folder](#autosync-worktree), the question comes up for **any difference in content**, whichever copy is newer. The server then holds that folder's work rather than an older version of yours, and the timestamps of two folders say nothing about which is right — so the bytes are compared instead, and identical files download without asking.
 

@@ -6,6 +6,22 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.3.1 - 2026-09-23
+
+### Changed
+
+- While a connection is autosynced from another folder, a save in this window
+  with `uploadOnSave` on asks whether to upload it instead of quietly not
+  sending it. The question is a notification, one per file at a time, so
+  auto-save does not stack them.
+- A copy opened with `Open Remote` asks on each save whether to upload it back
+  to where it came from; before, its saves stayed in the temp folder.
+
+### Fixed
+
+- `Open Remote` from the remote explorer was followed by the local file being
+  opened on top of it, hiding the copy that was asked for.
+
 ## 2.3.0 - 2026-09-23
 
 ### Added

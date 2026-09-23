@@ -6,6 +6,7 @@ import { refreshRemoteExplorer } from '../shared';
 import { getUserSetting, showModalWarning, showTextDocument } from '../../host';
 import { fileOperations } from '../../core';
 import { autosyncState, AutosyncState } from '../../modules/worktreeSync';
+import { trackRemoteCopy } from '../../modules/remoteEdits';
 import logger from '../../logger';
 import {
   compareLocalWithRemote,
@@ -237,6 +238,12 @@ const OPEN_LOCAL = 'Open Local';
 const OPEN_REMOTE = 'Open Remote';
 
 /**
+ * What came of asking: go ahead, leave it, or something was opened in its
+ * place - which a caller about to open the local file must not bury.
+ */
+type Decision = 'download' | 'declined' | 'shown';
+
+/**
  * Whether to go ahead with a download that would write over a local file
  * holding something the server's copy does not.
  *
@@ -246,7 +253,7 @@ const OPEN_REMOTE = 'Open Remote';
  * about: the server then holds that folder's work, not an older version of
  * this one, and which side was written last says nothing about which is right.
  */
-async function confirmOverwrite(ctx: FileHandlerContext): Promise<boolean> {
+async function confirmOverwrite(ctx: FileHandlerContext): Promise<Decision> {
   const behaviour = getUserSetting('sftp').get<OnLocalNewer>(
     'downloadWhenLocalIsNewer',
     'ask'
@@ -254,17 +261,17 @@ async function confirmOverwrite(ctx: FileHandlerContext): Promise<boolean> {
   const elsewhere = syncedFrom(ctx);
 
   if (behaviour === 'download' && !elsewhere) {
-    return true;
+    return 'download';
   }
 
   const comparison = await compareLocalWithRemote(ctx);
   if (!worthAsking(comparison.state, Boolean(elsewhere))) {
-    return true;
+    return 'download';
   }
 
   // The timestamps of two folders say nothing about whether they differ.
   if (elsewhere && (await sameContent(ctx, comparison).catch(() => false))) {
-    return true;
+    return 'download';
   }
 
   const name = path.basename(ctx.target.localFsPath);
@@ -274,7 +281,7 @@ async function confirmOverwrite(ctx: FileHandlerContext): Promise<boolean> {
     logger.warn(
       `Not downloading ${name}: the local copy is newer than the one on the server.`
     );
-    return false;
+    return 'declined';
   }
 
   const age = describeAge(comparison);
@@ -295,18 +302,20 @@ async function confirmOverwrite(ctx: FileHandlerContext): Promise<boolean> {
   );
 
   switch (answer) {
+    case OVERWRITE:
+      return 'download';
     case COMPARE:
       await diff(ctx);
-      break;
+      return 'shown';
     case OPEN_LOCAL:
       await showTextDocument(Uri.file(ctx.target.localFsPath));
-      break;
+      return 'shown';
     case OPEN_REMOTE:
       await openRemoteCopy(ctx);
-      break;
+      return 'shown';
+    default:
+      return 'declined';
   }
-
-  return answer === OVERWRITE;
 }
 
 /** The folder this connection is autosynced from, when it is not this one. */
@@ -320,8 +329,9 @@ function syncedFrom(ctx: FileHandlerContext): AutosyncState | undefined {
  *
  * Downloaded to a folder of its own under the system's temp directory, not
  * next to the local file, so it can be edited and saved like any other file
- * without writing over the local one - that is what Overwrite is for - and
- * without being uploaded, since nothing configures a connection there. Named
+ * without writing over the local one - that is what Overwrite is for. No
+ * connection covers the temp directory, so where it came from is written down
+ * and a save offers to send it back there. Named
  * as it is on the server, inside a folder named after the connection, so the
  * tab and breadcrumbs say which copy it is. A fresh folder each time, so
  * opening it again never writes over edits made to the last one.
@@ -341,28 +351,59 @@ async function openRemoteCopy(ctx: FileHandlerContext): Promise<void> {
 
   await fse.ensureDir(folder);
   await fileOperations.transferFile(ctx.target.remoteFsPath, copy, remoteFs, localFs);
+  trackRemoteCopy(copy, {
+    service: ctx.fileService,
+    remotePath: ctx.target.remoteFsPath,
+  });
   await showTextDocument(Uri.file(copy));
+}
+
+function downloadFileOption(this: FileHandlerContext) {
+  const config = this.config;
+  return {
+    verify: config.verifyTransfer !== false,
+    perserveTargetMode: false,
+    // remoteTimeOffsetInHours: config.remoteTimeOffsetInHours,
+    ignore: config.ignore,
+    keepReplaced: keepReplacedOption(this),
+  };
 }
 
 export const downloadFile = createFileHandler<TransferOption>({
   name: 'download file',
   async handle(option) {
-    if (!(await confirmOverwrite(this))) {
+    if ((await confirmOverwrite(this)) !== 'download') {
       return;
     }
 
     await downloadHandle.call(this, option);
   },
-  transformOption() {
-    const config = this.config;
-    return {
-      verify: config.verifyTransfer !== false,
-      perserveTargetMode: false,
-      // remoteTimeOffsetInHours: config.remoteTimeOffsetInHours,
-      ignore: config.ignore,
-      keepReplaced: keepReplacedOption(this),
-    };
+  transformOption: downloadFileOption,
+});
+
+/**
+ * A file opened from the remote explorer: brought down, then opened.
+ *
+ * Opened only when the question did not already open something in its place -
+ * `Open Remote` followed by the local file would put the one asked for behind
+ * the one that was not. A download that was declined still opens the local
+ * file, as it always did.
+ */
+export const editInLocal = createFileHandler<TransferOption>({
+  name: 'edit in local',
+  async handle(option) {
+    const decision = await confirmOverwrite(this);
+    if (decision === 'shown') {
+      return;
+    }
+
+    if (decision === 'download') {
+      await downloadHandle.call(this, option);
+    }
+
+    await showTextDocument(this.target.localUri, { preview: true });
   },
+  transformOption: downloadFileOption,
 });
 
 export const downloadFolder = createFileHandler<TransferOption>({
