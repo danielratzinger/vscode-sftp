@@ -6,7 +6,7 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
-## Unreleased
+## 2.3.0 - 2026-09-23
 
 ### Added
 

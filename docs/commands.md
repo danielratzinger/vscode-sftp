@@ -236,7 +236,18 @@ The folder you asked about goes with its contents — that is what clearing it m
 ### Before a download replaces your file
 Downloading a single file — with `Download File`, from the Remote Explorer, or through `downloadOnOpen` — first compares what is on disk against what is on the server.
 
-If the local copy is **newer**, you are asked before it is replaced, with the two timestamps and the option to `Compare` them side by side first. If it is older, or missing, or identical, the download proceeds as it always did; the question only comes up when downloading would throw away work that exists nowhere else.
+If the local copy is **newer**, you are asked before it is replaced, with the two timestamps. If it is older, or missing, or identical, the download proceeds as it always did; the question only comes up when downloading would throw away work that exists nowhere else.
+
+The question offers four ways on besides cancelling:
+
+| | |
+| --- | --- |
+| `Overwrite` | Download, replacing the local file. |
+| `Compare` | Show the two side by side. |
+| `Open Local` | Open the file on disk. |
+| `Open Remote` | Download the server's copy into a folder of its own under the system's temp directory and open it there. It can be edited and saved like any file; the local one is not touched and nothing is uploaded. |
+
+While the connection is [autosynced from another folder](#autosync-worktree), the question comes up for **any difference in content**, whichever copy is newer. The server then holds that folder's work rather than an older version of yours, and the timestamps of two folders say nothing about which is right — so the bytes are compared instead, and identical files download without asking.
 
 Timestamps are compared to the second, matching the sync algorithm, and a transfer copies the source's timestamp onto the target — so a file you downloaded and did not touch reads as identical, not as a conflict. A file changed within the same second is still treated as a conflict when its size differs.
 
@@ -245,7 +256,7 @@ Timestamps are compared to the second, matching the sync algorithm, and a transf
 | Value | |
 | --- | --- |
 | *ask* | Ask first. The default. |
-| *download* | Download without checking, how it behaved before. |
+| *download* | Download without checking, how it behaved before. Still asks while another folder is autosynced. |
 | *skip* | Keep the local file and note it in the SFTP output channel. |
 
 `Download` in the [Alt menu](#alt-commands) always downloads, whatever this is set to.
