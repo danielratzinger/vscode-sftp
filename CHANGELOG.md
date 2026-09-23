@@ -6,6 +6,20 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## Unreleased
+
+### Fixed
+
+- On macOS and Windows, removing a deleted file from the server failed before
+  it started: working out where the file lived asked the file system for its
+  real path, and a deleted file has none. Autosync retried it every few
+  minutes for ever, a stack trace each time, and remembered it across
+  restarts. The casing now comes from the nearest folder that still exists.
+- A removal whose file was already gone from the server failed for ever too;
+  that is now what was wanted, and done. One that cannot be placed on the
+  server is said once and dropped. Any other failure is still retried, but
+  only the first one is logged in full.
+
 ## 2.2.1 - 2026-09-21
 
 ### Fixed

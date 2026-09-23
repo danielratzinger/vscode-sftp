@@ -17,13 +17,28 @@ function getFileSystemPath(uri: URI | string): string {
 		result = result[0].toUpperCase() + result.substr(1);
 	}
 	if (process.platform === 'win32' || process.platform === 'darwin') {
-		const realpath = fs.realpathSync.native(result);
+		const realpath = realCasing(result);
 		// Only use the real path if only the casing has changed.
 		if (realpath.toLowerCase() === result.toLowerCase()) {
 			result = realpath;
 		}
 	}
 	return result;
+}
+
+// A file that has been deleted has no real path, and a deleted file is exactly
+// what a delete asks where to send. Its folder usually still has one, so take
+// the casing from the nearest part of the path that is still there.
+function realCasing(pathname: string): string {
+	try {
+		return fs.realpathSync.native(pathname);
+	} catch (error) {
+		const parent = path.dirname(pathname);
+		if (error.code !== 'ENOENT' || parent === pathname) {
+			return pathname;
+		}
+		return path.join(realCasing(parent), path.basename(pathname));
+	}
 }
 
 export function simplifyPath(absolutePath: string) {

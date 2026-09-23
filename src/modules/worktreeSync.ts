@@ -22,6 +22,7 @@ import {
   release,
 } from '../core/autosyncLock';
 import SyncQueue, { QueuedOp, resumed } from '../core/syncQueue';
+import isNotFound from '../core/notFound';
 import {
   clearToOverwrite,
   endSession,
@@ -562,14 +563,26 @@ async function flush(service: FileService, id: string): Promise<void> {
       }
 
       for (const one of removals) {
+        // Where it goes is worked out on this machine, from nothing that
+        // changes between attempts, so a failure here is the same failure
+        // every time. Said once and let go, not retried for ever.
+        let remotePath: string;
+        try {
+          remotePath = remotePathOf(service, root, one.file);
+        } catch (error) {
+          running.queue.drop(one.file);
+          logger.error(
+            error,
+            `[autosync] cannot tell where ${one.file} is on the server; not removing it`
+          );
+          continue;
+        }
+
         try {
           // A delete destroys the server's copy as surely as an overwrite
           // does, and unlike an overwrite there is nothing left to compare
           // against afterwards. Same rule: no copy kept, nothing removed.
-          const cleared = await clearToOverwrite(
-            service,
-            remotePathOf(service, root, one.file)
-          );
+          const cleared = await clearToOverwrite(service, remotePath);
 
           if (!cleared) {
             running.queue.failed(one.file, Date.now(), one);
@@ -579,8 +592,27 @@ async function flush(service: FileService, id: string): Promise<void> {
           await remove(service, root, one.file);
           running.queue.done(one.file);
         } catch (error) {
+          // Already gone from the server is what was wanted. Asking again
+          // would get the same answer for ever.
+          if (isNotFound(error)) {
+            running.queue.done(one.file);
+            logger.debug(`[autosync] ${one.file} was not on the server; nothing to remove.`);
+            continue;
+          }
+
           running.queue.failed(one.file, Date.now(), one);
-          logger.error(error, `autosync delete ${one.file}`);
+
+          // The whole error the first time. After that the queue keeps
+          // trying every few minutes, and a stack trace each time buries
+          // everything else in the log.
+          if (one.tries === 0) {
+            logger.error(error, `autosync delete ${one.file}`);
+          } else {
+            logger.warn(
+              `[autosync] still cannot remove ${path.relative(root, one.file)} ` +
+                `(attempt ${one.tries + 1}): ${(error && error.message) || error}`
+            );
+          }
         }
       }
     });

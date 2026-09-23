@@ -6,6 +6,7 @@ import { getUserSetting } from '../host';
 import { FileService } from '../core';
 import { FileType } from '../core/fs/fileSystem';
 import connectionLabel from '../core/connectionLabel';
+import isNotFound from '../core/notFound';
 import { connectionKeyFor } from './replacedFiles';
 import {
   Fetched,
@@ -153,15 +154,6 @@ async function fetchRemote(
   } catch (error) {
     return { kind: 'failed', error };
   }
-}
-
-function isNotFound(error: any): boolean {
-  const code = error && (error.code || error.errno);
-  return (
-    code === 2 ||
-    code === 'ENOENT' ||
-    /no such file|not found|does not exist/i.test((error && error.message) || '')
-  );
 }
 
 /**
