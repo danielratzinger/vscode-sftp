@@ -16,6 +16,8 @@ export interface Comparison {
   state: LocalCopy;
   localMtime?: number;
   remoteMtime?: number;
+  localSize?: number;
+  remoteSize?: number;
 }
 
 /**
@@ -59,6 +61,8 @@ export async function compareLocalWithRemote(
   const comparison = {
     localMtime: local.mtime,
     remoteMtime: remote.mtime,
+    localSize: local.size,
+    remoteSize: remote.size,
   };
 
   if (localSeconds === remoteSeconds) {
@@ -72,6 +76,51 @@ export async function compareLocalWithRemote(
     ...comparison,
     state: localSeconds > remoteSeconds ? LocalCopy.Newer : LocalCopy.Older,
   };
+}
+
+/**
+ * Whether a download is worth stopping to ask about, before the bytes are
+ * looked at.
+ *
+ * Ordinarily only when ours is newer: pulling down a file someone else changed
+ * is what a download is for. While the server is being fed from another folder
+ * the timestamps say nothing - this folder and that one were written at
+ * different moments whatever is in them - so any difference is worth asking
+ * about, whichever side is newer.
+ */
+export function worthAsking(state: LocalCopy, syncedElsewhere: boolean): boolean {
+  if (state === LocalCopy.Missing || state === LocalCopy.Same) {
+    return false;
+  }
+
+  return syncedElsewhere || state === LocalCopy.Newer;
+}
+
+/**
+ * Whether the two copies hold the same bytes.
+ *
+ * Asked only where timestamps cannot answer it. Different sizes settle it
+ * without reading anything.
+ */
+export async function sameContent(
+  ctx: FileHandlerContext,
+  comparison: Comparison
+): Promise<boolean> {
+  if (comparison.localSize !== comparison.remoteSize) {
+    return false;
+  }
+
+  const remoteFs = await ctx.fileService.getRemoteFileSystem(ctx.config);
+  const [local, remote] = await Promise.all([
+    localFs.readFile(ctx.target.localFsPath),
+    remoteFs.readFile(ctx.target.remoteFsPath),
+  ]);
+
+  return toBuffer(local).equals(toBuffer(remote));
+}
+
+function toBuffer(content: string | Buffer): Buffer {
+  return Buffer.isBuffer(content) ? content : Buffer.from(content);
 }
 
 export function describeAge(comparison: Comparison): string {

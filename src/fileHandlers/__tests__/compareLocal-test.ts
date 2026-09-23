@@ -2,7 +2,13 @@ jest.mock('fs');
 
 import { vol } from 'memfs';
 import * as path from 'path';
-import { compareLocalWithRemote, describeAge, LocalCopy } from '../compareLocal';
+import {
+  compareLocalWithRemote,
+  describeAge,
+  LocalCopy,
+  sameContent,
+  worthAsking,
+} from '../compareLocal';
 import RemoteFs from '../../../test/helper/localRemoteFs';
 
 const remoteFs = new RemoteFs(path, { client: {} as any });
@@ -104,5 +110,51 @@ describe('describeAge', () => {
 
   it('says nothing when there is nothing to compare', () => {
     expect(describeAge({ state: LocalCopy.Missing })).toBe('');
+  });
+});
+
+describe('worthAsking', () => {
+  it('asks only about a newer local copy, ordinarily', () => {
+    expect(worthAsking(LocalCopy.Newer, false)).toBe(true);
+    expect(worthAsking(LocalCopy.Older, false)).toBe(false);
+    expect(worthAsking(LocalCopy.Same, false)).toBe(false);
+    expect(worthAsking(LocalCopy.Missing, false)).toBe(false);
+  });
+
+  // The server holds another folder's work, so an older timestamp here does
+  // not mean the server's copy is the one to keep.
+  it('asks about any difference while another folder is synced', () => {
+    expect(worthAsking(LocalCopy.Newer, true)).toBe(true);
+    expect(worthAsking(LocalCopy.Older, true)).toBe(true);
+    expect(worthAsking(LocalCopy.Same, true)).toBe(false);
+    expect(worthAsking(LocalCopy.Missing, true)).toBe(false);
+  });
+});
+
+describe('sameContent', () => {
+  it('sees through timestamps to the bytes', async () => {
+    place({ [LOCAL]: ['code', 1000000], [REMOTE]: ['code', 2000000] });
+    const comparison = await compareLocalWithRemote(createCtx());
+
+    expect(comparison.state).toBe(LocalCopy.Older);
+    expect(await sameContent(createCtx(), comparison)).toBe(true);
+  });
+
+  it('tells apart two copies of the same size', async () => {
+    place({ [LOCAL]: ['mine', 1000000], [REMOTE]: ['code', 2000000] });
+    const comparison = await compareLocalWithRemote(createCtx());
+
+    expect(await sameContent(createCtx(), comparison)).toBe(false);
+  });
+
+  it('settles different sizes without reading', async () => {
+    place({ [LOCAL]: ['code and more', 1000000], [REMOTE]: ['code', 2000000] });
+    const comparison = await compareLocalWithRemote(createCtx());
+    const ctx = createCtx();
+    ctx.fileService.getRemoteFileSystem = () => {
+      throw new Error('should not be read');
+    };
+
+    expect(await sameContent(ctx, comparison)).toBe(false);
   });
 });

@@ -119,7 +119,7 @@
             "Leave the local file alone and note it in the SFTP output channel."
           ],
           "default": "ask",
-          "markdownDescription": "What to do when downloading a single file would replace a local copy whose timestamp is newer than the server’s. `Download` in the Alt menu always downloads, whatever this says."
+          "markdownDescription": "What to do when downloading a single file would replace a local copy whose timestamp is newer than the server’s. `Download` in the Alt menu always downloads, whatever this says. While the connection is autosynced from another folder, a download that would change the local file always asks, whichever copy is newer."
         },
         "sftp.upgradePlainFtp": {
           "type": "boolean",

@@ -8,6 +8,17 @@ earlier is theirs.
 
 ## Unreleased
 
+### Added
+
+- The warning before a download writes over a newer local file now offers
+  `Open Local` and `Open Remote` beside `Overwrite` and `Compare`. `Open
+  Remote` downloads the server's copy into a folder of its own under the
+  system's temp directory, where it can be edited and saved like any file
+  without touching the local one. While the connection is autosynced from
+  another folder, the same question comes up for any difference in content,
+  whichever copy is newer: the server then holds that folder's work, and the
+  timestamps of two folders say nothing about which is right.
+
 ### Fixed
 
 - On macOS and Windows, removing a deleted file from the server failed before

@@ -1,11 +1,18 @@
+import * as os from 'os';
 import * as path from 'path';
+import * as fse from 'fs-extra';
+import { Uri } from 'vscode';
 import { refreshRemoteExplorer } from '../shared';
-import { getUserSetting, showModalWarning } from '../../host';
+import { getUserSetting, showModalWarning, showTextDocument } from '../../host';
+import { fileOperations } from '../../core';
+import { autosyncState, AutosyncState } from '../../modules/worktreeSync';
 import logger from '../../logger';
 import {
   compareLocalWithRemote,
   describeAge,
   LocalCopy,
+  sameContent,
+  worthAsking,
 } from '../compareLocal';
 import { diff } from '../diff';
 import {
@@ -224,51 +231,117 @@ export const download = createFileHandler<TransferOption>({
 
 type OnLocalNewer = 'ask' | 'download' | 'skip';
 
+const OVERWRITE = 'Overwrite';
+const COMPARE = 'Compare';
+const OPEN_LOCAL = 'Open Local';
+const OPEN_REMOTE = 'Open Remote';
+
 /**
  * Whether to go ahead with a download that would write over a local file
- * holding newer work than the server's copy.
+ * holding something the server's copy does not.
  *
- * Only reached when the local file is actually newer, so it never interrupts
- * the ordinary case of pulling down a file someone else changed.
+ * Ordinarily only reached when the local file is newer, so it never interrupts
+ * the ordinary case of pulling down a file someone else changed. While the
+ * connection is being autosynced from another folder, any difference is asked
+ * about: the server then holds that folder's work, not an older version of
+ * this one, and which side was written last says nothing about which is right.
  */
 async function confirmOverwrite(ctx: FileHandlerContext): Promise<boolean> {
   const behaviour = getUserSetting('sftp').get<OnLocalNewer>(
     'downloadWhenLocalIsNewer',
     'ask'
   );
+  const elsewhere = syncedFrom(ctx);
 
-  if (behaviour === 'download') {
+  if (behaviour === 'download' && !elsewhere) {
     return true;
   }
 
   const comparison = await compareLocalWithRemote(ctx);
-  if (comparison.state !== LocalCopy.Newer) {
+  if (!worthAsking(comparison.state, Boolean(elsewhere))) {
+    return true;
+  }
+
+  // The timestamps of two folders say nothing about whether they differ.
+  if (elsewhere && (await sameContent(ctx, comparison).catch(() => false))) {
     return true;
   }
 
   const name = path.basename(ctx.target.localFsPath);
+  const newer = comparison.state === LocalCopy.Newer;
 
-  if (behaviour === 'skip') {
+  if (behaviour === 'skip' && newer) {
     logger.warn(
       `Not downloading ${name}: the local copy is newer than the one on the server.`
     );
     return false;
   }
 
+  const age = describeAge(comparison);
   const answer = await showModalWarning(
-    `Your local ${name} is newer than the copy on the server.`,
-    `Downloading replaces it, and the changes that are only on disk are lost.\n\n${describeAge(
-      comparison
-    )}`,
-    'Overwrite',
-    'Compare'
+    newer
+      ? `Your local ${name} is newer than the copy on the server.`
+      : `Your local ${name} differs from the copy on the server.`,
+    (elsewhere
+      ? `The server is being autosynced from ${elsewhere.label} (${elsewhere.root}), ` +
+        'so its copy is that folder\'s work, not this one\'s. '
+      : '') +
+      `Downloading replaces your local copy, and the changes that are only on disk are lost.` +
+      (age ? `\n\n${age}` : ''),
+    OVERWRITE,
+    COMPARE,
+    OPEN_LOCAL,
+    OPEN_REMOTE
   );
 
-  if (answer === 'Compare') {
-    await diff(ctx);
+  switch (answer) {
+    case COMPARE:
+      await diff(ctx);
+      break;
+    case OPEN_LOCAL:
+      await showTextDocument(Uri.file(ctx.target.localFsPath));
+      break;
+    case OPEN_REMOTE:
+      await openRemoteCopy(ctx);
+      break;
   }
 
-  return answer === 'Overwrite';
+  return answer === OVERWRITE;
+}
+
+/** The folder this connection is autosynced from, when it is not this one. */
+function syncedFrom(ctx: FileHandlerContext): AutosyncState | undefined {
+  const state = autosyncState(ctx.fileService);
+  return state && state.external ? state : undefined;
+}
+
+/**
+ * The server's copy, opened as a file of its own.
+ *
+ * Downloaded to a folder of its own under the system's temp directory, not
+ * next to the local file, so it can be edited and saved like any other file
+ * without writing over the local one - that is what Overwrite is for - and
+ * without being uploaded, since nothing configures a connection there. Named
+ * as it is on the server, inside a folder named after the connection, so the
+ * tab and breadcrumbs say which copy it is. A fresh folder each time, so
+ * opening it again never writes over edits made to the last one.
+ */
+async function openRemoteCopy(ctx: FileHandlerContext): Promise<void> {
+  const remoteFs = await ctx.fileService.getRemoteFileSystem(ctx.config);
+  const localFs = ctx.fileService.getLocalFileSystem();
+  const connection = (ctx.fileService.name || ctx.config.host || 'remote').replace(
+    /[\\/:*?"<>|]/g,
+    '_'
+  );
+  const folder = path.join(
+    await fse.mkdtemp(path.join(os.tmpdir(), 'sftp-remote-')),
+    connection
+  );
+  const copy = path.join(folder, path.basename(ctx.target.remoteFsPath));
+
+  await fse.ensureDir(folder);
+  await fileOperations.transferFile(ctx.target.remoteFsPath, copy, remoteFs, localFs);
+  await showTextDocument(Uri.file(copy));
 }
 
 export const downloadFile = createFileHandler<TransferOption>({
