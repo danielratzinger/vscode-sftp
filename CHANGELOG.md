@@ -6,6 +6,29 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.3.4 - 2026-09-24
+
+### Fixed
+
+- **Every connection on one login opened a socket of its own, and none of them
+  were ever closed.** Two entries in `sftp.json` that reach the same server over
+  the same credentials are one connection and share one socket - which is why
+  the name and the `remotePath` are stripped before a connection is looked up.
+  The connection's name got past that, because it rides on the same object: a
+  credential is keyed per project, so the resolver has to know which project
+  this is. It is not part of reaching the server, and treating it as part of the
+  identity meant six sites on one hosting account held six sockets, each sending
+  its own keepalive every thirty seconds. The disposal path computed the identity
+  *without* the name, so its key never matched and nothing was found to be
+  ended: saving `sftp.json` left the old connection running, heartbeat and all,
+  and opened another beside it.
+
+  Worth saying about the debug log, since this is where it shows: a ping
+  answered with `REQUEST_FAILURE` is a healthy heartbeat. OpenSSH does not
+  implement `keepalive@openssh.com` as a real request and refuses it on purpose;
+  any answer at all is the proof of life, and only three unanswered pings in a
+  row end the connection.
+
 ## 2.3.3 - 2026-09-24
 
 ### Fixed

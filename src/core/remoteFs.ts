@@ -23,12 +23,7 @@ import { watched } from './fs/watched';
 import SFTPFileSystem from './fs/sftpFileSystem';
 import FTPFileSystem from './fs/ftpFileSystem';
 import localFs from './localFs';
-
-function hashOption(opiton) {
-  return Object.keys(opiton)
-    .map(key => opiton[key])
-    .join('');
-}
+import { identityOf } from './connectionIdentity';
 
 class KeepAliveRemoteFs {
   private isValid: boolean = false;
@@ -343,7 +338,7 @@ export function createRemoteIfNoneExist(
     return getLocalFs();
   }
 
-  const identity = hashOption(option);
+  const identity = identityOf(option);
   const fs = fsTable[identity];
   if (fs !== undefined) {
     return fs.getFs(option, name);
@@ -355,7 +350,7 @@ export function createRemoteIfNoneExist(
 }
 
 export function removeRemoteFs(option) {
-  const identity = hashOption(option);
+  const identity = identityOf(option);
   const fs = fsTable[identity];
   if (fs !== undefined) {
     fs.end();
