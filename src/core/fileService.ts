@@ -72,6 +72,11 @@ interface ServiceOption {
   remoteTimeOffsetInHours?: number;
   limitOpenFilesOnRemote: number | true;
   verifyTransfer: boolean;
+  /**
+   * Whether a transfer of many files may go as one archive over an SSH exec
+   * channel. On by default; off falls everything back to file by file.
+   */
+  useArchiveTransfer: boolean;
 }
 
 interface WatcherConfig {
@@ -188,6 +193,9 @@ function getHostInfo(config) {
     'concurrency',
     'syncOption',
     'sshConfigPath',
+    // How a transfer is carried is not part of reaching the server, and a
+    // connection that differs only here is the same connection.
+    'useArchiveTransfer',
   ];
 
   return Object.keys(config).reduce((obj, key) => {

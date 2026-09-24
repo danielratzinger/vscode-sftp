@@ -47,6 +47,7 @@ const configScheme = {
   connectionLimit: Joi.number().min(1),
   operationTimeout: Joi.number().min(0),
   verifyTransfer: Joi.boolean(),
+  useArchiveTransfer: Joi.boolean(),
 
   remotePath: Joi.string().required(),
   uploadOnSave: Joi.boolean(),
@@ -104,6 +105,7 @@ const defaultConfig = {
   // },
   concurrency: 4,
   verifyTransfer: true,
+  useArchiveTransfer: true,
   // limitOpenFilesOnRemote: false
 
   protocol: 'sftp',

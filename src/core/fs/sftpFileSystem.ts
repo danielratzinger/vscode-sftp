@@ -12,7 +12,7 @@ import {
   OperationTimeoutError,
   watchForStall,
 } from './operationTimeout';
-import SSHClient from '../remote-client/sshClient';
+import SSHClient, { ExecChannel } from '../remote-client/sshClient';
 
 type FileHandle = Buffer;
 
@@ -74,6 +74,17 @@ export default class SFTPFileSystem extends RemoteFileSystem
     }
 
     return this._guarded.guarded;
+  }
+
+  /**
+   * Runs a command on the server over the connection already open.
+   *
+   * Deliberately not wrapped in the deadline above: a command here is a whole
+   * archive being read or written, which takes as long as the transfer takes,
+   * and there is no answer that arriving late would be wrong.
+   */
+  exec(command: string): Promise<ExecChannel> {
+    return (this.getClient() as SSHClient).exec(command);
   }
 
   setOperationTimeout(ms: number): void {

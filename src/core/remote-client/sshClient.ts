@@ -25,6 +25,23 @@ import { hostKeyChecker } from './hostKeys';
 
 let MAX_OPEN_FD_NUM = 222;
 
+/** How much of a command's complaining is kept to explain a failure. */
+const STDERR_KEPT = 4096;
+
+/** A command running on the server, and the ends of it a caller can reach. */
+export interface ExecChannel {
+  /** Writing here feeds the command's standard input. */
+  stdin: NodeJS.WritableStream;
+  /** The command's standard output. */
+  stdout: NodeJS.ReadableStream;
+  /** Whatever it said on standard error, as far as it was kept. */
+  stderr(): string;
+  /** The exit code, once it has finished. Anything but 0 is a failure. */
+  done: Promise<number>;
+  /** Gives up on it without waiting. */
+  cancel(): void;
+}
+
 export default class SSHClient extends RemoteClient {
   private sftp: any;
   private hoppingClients: SSHClient[];
@@ -504,5 +521,64 @@ export default class SSHClient extends RemoteClient {
 
   getFsClient() {
     return this.sftp;
+  }
+
+  /**
+   * Runs a command on the server over the connection that is already open.
+   *
+   * An exec channel multiplexes onto the same SSH connection, so this costs no
+   * login and no second socket. It is not always there to be had: a server can
+   * be set up for file transfer only, with `ForceCommand internal-sftp` or an
+   * `sftp-only` shell, and then asking for one fails. Every caller has to have
+   * a way to do without.
+   */
+  exec(command: string): Promise<ExecChannel> {
+    return new Promise((resolve, reject) => {
+      if (!this._client) {
+        reject(new Error('not connected'));
+        return;
+      }
+
+      this._client.exec(command, (error, stream) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        // Gathered rather than streamed: it is read to explain a failure, and
+        // a command that fails usually says why in a line or two. Capped so a
+        // command that will not stop complaining cannot fill memory.
+        let complaint = '';
+        stream.stderr.on('data', (chunk: Buffer) => {
+          if (complaint.length < STDERR_KEPT) {
+            complaint += chunk.toString();
+          }
+        });
+
+        const done = new Promise<number>(finish => {
+          let settled = false;
+          const settle = (code: number) => {
+            if (!settled) {
+              settled = true;
+              finish(code);
+            }
+          };
+
+          // A command killed by a signal has no exit code of its own. It did
+          // not succeed, which is the whole of what the caller needs.
+          stream.on('exit', (code: number | null) => settle(code === null ? -1 : code));
+          stream.on('close', (code: number | null) => settle(code === null ? -1 : code));
+          stream.on('error', () => settle(-1));
+        });
+
+        resolve({
+          stdin: stream,
+          stdout: stream,
+          stderr: () => complaint.trim(),
+          done,
+          cancel: () => stream.destroy(),
+        });
+      });
+    });
   }
 }
