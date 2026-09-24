@@ -6,6 +6,22 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.3.2 - 2026-09-24
+
+### Fixed
+
+- `Can't find config for remote resource remote://…` appeared from time to time
+  while autosync was running. Each root in the Remote Explorer carries the id
+  of the connection it was built from, and a refresh rebuilds them all - so a
+  folder the editor still had expanded could arrive holding an id from a
+  generation that was gone. Autosync fired that refresh twice for every batch
+  it sent, which turned a rare race into a regular interruption. The refresh
+  was there for a mark that changed colour while uploading, which is not what
+  the mark does any more, so the event now fires only when autosync starts,
+  stops or resumes. A node from a tree that has since been rebuilt is no longer
+  an error either: it has no children, which is worth saying quietly rather
+  than in a dialog.
+
 ## 2.3.1 - 2026-09-23
 
 ### Changed

@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import logger from '../../logger';
 import { showTextDocument } from '../../host';
 import { isSubpathOf, toLocalPath } from '../../helper';
 import {
@@ -287,7 +288,15 @@ export default class RemoteTreeData
 
     const root = this.findRoot(item.resource.uri);
     if (!root) {
-      throw new Error(`Can't find config for remote resource ${item.resource.uri}.`);
+      // The item belongs to a generation of the tree that is gone: the roots
+      // are rebuilt whenever the connections are, and each carries the service
+      // id of its own generation. An expanded node the editor still holds can
+      // arrive here afterwards, and it has no children now - which is not a
+      // condition worth putting a dialog on screen for.
+      logger.debug(
+        `no connection for ${item.resource.uri}; the tree has moved on.`
+      );
+      return [];
     }
     const config = root.explorerContext.config;
     const remotefs = await root.explorerContext.fileService.getRemoteFileSystem(config);
@@ -330,11 +339,14 @@ export default class RemoteTreeData
       .sort(dirFirstSort);
   }
 
-  async getParent(item: ExplorerChild): Promise<ExplorerItem> {
+  async getParent(item: ExplorerChild): Promise<ExplorerItem | undefined> {
     const resourceUri = item.resource.uri;
     const root = this.findRoot(resourceUri);
     if (!root) {
-      throw new Error(`Can't find config for remote resource ${resourceUri}.`);
+      // Same as above: an item from a tree that has since been rebuilt has no
+      // parent to return, and saying so is enough.
+      logger.debug(`no connection for ${resourceUri}; the tree has moved on.`);
+      return undefined;
     }
 
     if (item.resource.fsPath === root.resource.fsPath) {

@@ -194,16 +194,6 @@ export interface AutosyncState {
    * opening a menu to find out.
    */
   external: boolean;
-  /**
-   * Whether anything is going up right now, as opposed to being watched for.
-   *
-   * Two different things to know and they look the same from outside: a folder
-   * that is being monitored is quiet and correct, a folder that is mid-upload
-   * is busy and will be quiet again shortly. Worth telling apart, because
-   * "nothing has moved for ten minutes" means one thing in the first state and
-   * quite another in the second.
-   */
-  busy: boolean;
 }
 
 /** What a connection is autosyncing, if it is. */
@@ -213,13 +203,10 @@ export function autosyncState(service: FileService): AutosyncState | undefined {
     return undefined;
   }
 
-  const running = live.get(stableId(service as any));
-
   return {
     label: chosen.branch || path.basename(chosen.root),
     root: chosen.root,
     external: !samePath(chosen.root, service.baseDir),
-    busy: Boolean(running && (running.working || running.queue.size > 0)),
   };
 }
 
@@ -449,7 +436,6 @@ async function flush(service: FileService, id: string): Promise<void> {
   }
 
   running.working = true;
-  announcer().fire();
 
   const root = running.root;
   const label = connectionLabel(service.getConfig() as any);
@@ -618,7 +604,6 @@ async function flush(service: FileService, id: string): Promise<void> {
     });
   } finally {
     running.working = false;
-    announcer().fire();
     await writeDownOutstanding(id, running.queue);
     // Everything that had arrived when this batch started has now been dealt
     // with, so that is how far this folder is known about.
