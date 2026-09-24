@@ -66,6 +66,13 @@ export interface TransferOption {
   size?: number;
   /** Defaults to on; set false to skip the post-transfer size check. */
   verify?: boolean;
+  /**
+   * Whether many files may travel as one archive. Off falls everything back to
+   * one transfer per file, which is all the protocol itself can do.
+   */
+  useArchiveTransfer?: boolean;
+  /** The same predicate the walk consults, kept so the archive can consult it. */
+  ignore?: ((fsPath: string) => boolean) | null;
   mode?: number;
   filePerm?: number;
   dirPerm?: number;

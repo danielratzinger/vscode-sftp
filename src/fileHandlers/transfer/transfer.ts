@@ -11,6 +11,8 @@ import { FileHandleOption } from '../option';
 import { flatten } from '../../utils';
 import logger from '../../logger';
 import { getOpenTextDocuments } from '../../host';
+import ArchiveDownloadTask from '../../core/archive/archiveDownloadTask';
+import { canExec, serverTar } from '../../core/archive/serverTar';
 
 interface InternalTransferOption extends FileHandleOption, TransferTaskTransferOption {}
 
@@ -74,7 +76,7 @@ async function transferFolder(
   config: TransferHandleConfig<TransferOption>,
   collect: (t: TransferTask) => void
 ) {
-  const { srcFsPath, targetFsPath, srcFs, targetFs, transferOption } = config;
+  const { srcFsPath, targetFsPath, targetFs, transferOption } = config;
 
   if (transferOption.ignore && transferOption.ignore(srcFsPath)) {
     return;
@@ -89,7 +91,75 @@ async function transferFolder(
     targetFs.chmod(targetFsPath, parseInt(String(config.transferOption.dirPerm), 8))
   }
 
+  const asArchive = await archiveTaskFor(config, collect);
+  if (asArchive) {
+    collect(asArchive);
+    return;
+  }
+
+  await walkFolder(config, collect);
+}
+
+/**
+ * The whole folder in one stream, or null when that is not on offer.
+ *
+ * Reachable only for a folder that has to be copied whole: a plain folder
+ * transfer, or one a sync found on the source side alone. A folder that exists
+ * on both goes to `_sync` instead, so `update` and `ignoreExisting` keep the
+ * per-file comparison they are for - there is nothing here for them to compare
+ * against.
+ */
+async function archiveTaskFor(
+  config: TransferHandleConfig<TransferOption>,
+  collect: (t: TransferTask) => void
+): Promise<TransferTask | null> {
+  const { srcFs, srcFsPath, targetFs, targetFsPath, transferOption } = config;
+
+  if (transferOption.useArchiveTransfer === false) {
+    return null;
+  }
+
+  // Uploads have their own way round, which is not this one.
+  if (config.transferDirection !== TransferDirection.REMOTE_TO_LOCAL) {
+    return null;
+  }
+
+  if (!canExec(srcFs)) {
+    return null;
+  }
+
+  const probe = await serverTar(srcFs);
+  if (!probe) {
+    return null;
+  }
+
+  return new ArchiveDownloadTask(
+    { fsPath: srcFsPath, fileSystem: srcFs },
+    { fsPath: targetFsPath, fileSystem: targetFs },
+    {
+      transferOption,
+      flavour: probe.flavour,
+      // The archive's own way out. Off for the walk it hands over to, or every
+      // folder inside would ask the server for an archive of its own.
+      fallBackToFileByFile: () =>
+        walkFolder(
+          {
+            ...config,
+            transferOption: { ...transferOption, useArchiveTransfer: false },
+          },
+          collect
+        ),
+    }
+  );
+}
+
+async function walkFolder(
+  config: TransferHandleConfig<TransferOption>,
+  collect: (t: TransferTask) => void
+) {
+  const { srcFsPath, targetFsPath, srcFs, targetFs } = config;
   const fileEntries = await srcFs.list(srcFsPath);
+
   await Promise.all(
     fileEntries.map(file =>
       transferWithType(

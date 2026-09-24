@@ -158,6 +158,14 @@ async function probe(host: ExecHost): Promise<Probe | null> {
   return { flavour };
 }
 
+/**
+ * Whether this side can run a command at all. FTP cannot, and neither can a
+ * local file system, so the archive route is off the table for both.
+ */
+export function canExec(fs: any): fs is ExecHost {
+  return !!fs && typeof fs.exec === 'function';
+}
+
 /** Forgets what was asked, so the next call asks again. Tests use it. */
 export function forgetServerTar(host: ExecHost): void {
   asked.delete(host);

@@ -154,6 +154,9 @@ export const sync2Local = createFileHandler<SyncOption>({
       update: syncOption.update,
       // Only used when the sync is writing locally; an upload ignores it.
       keepReplaced: keepReplacedOption(this),
+      // Only folders the sync finds on the server alone can take it: one that
+      // exists on both sides is compared file by file, which is the point.
+      useArchiveTransfer: config.useArchiveTransfer !== false,
     };
   },
 });
@@ -226,6 +229,7 @@ export const download = createFileHandler<TransferOption>({
       // remoteTimeOffsetInHours: config.remoteTimeOffsetInHours,
       ignore: config.ignore,
       keepReplaced: keepReplacedOption(this),
+      useArchiveTransfer: config.useArchiveTransfer !== false,
     };
   },
 });
@@ -417,6 +421,7 @@ export const downloadFolder = createFileHandler<TransferOption>({
       // remoteTimeOffsetInHours: config.remoteTimeOffsetInHours,
       ignore: config.ignore,
       keepReplaced: keepReplacedOption(this),
+      useArchiveTransfer: config.useArchiveTransfer !== false,
     };
   },
 });
