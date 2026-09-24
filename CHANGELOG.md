@@ -6,6 +6,25 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.3.6 - 2026-09-25
+
+### Fixed
+
+- **A file the server rewrote while it was being read came back as a failed
+  transfer.** The size to expect is read when the transfer is planned, which for
+  a folder is one listing covering every file in it, so a file the server
+  rewrites in between arrives at a size nobody promised. The check called that
+  incomplete - even when *more* bytes had arrived than were expected, which is
+  not a shape a truncated transfer has - and the retry compared against the same
+  stale number on every attempt, so it could only fail the same way three times
+  over. The source is now asked what it holds before any of this is called a
+  failure: a size that moved on refreshes the expectation, timestamps included,
+  and the file is read again, because one that grew mid-read can arrive stitched
+  together. A file that never stops changing keeps the copy matching what the
+  last look found, rather than taking the whole folder's transfer down with it.
+  A real mismatch still fails, and now says which way it went - short, or longer
+  than its source.
+
 ## 2.3.5 - 2026-09-24
 
 ### Changed
