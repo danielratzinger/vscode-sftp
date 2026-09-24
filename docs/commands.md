@@ -189,8 +189,8 @@ A copy written in a config file is rewritten there; a stored one is written to i
 
 It is **not** tried against the server first. If the new password is wrong, the first connection says so and asks, and a rejected stored password is forgotten rather than kept, so the mistake costs a prompt rather than a repair.
 
-### Remove Files Deleted from the Project
-On a connection in the Remote Explorer, or from the palette. Asks git what the project has deleted over its history, keeps the paths that really are gone from the checkout, and offers to take those off the server — with the list and the count before anything moves, and a copy of each kept first, so `Restore Server to an Earlier Point` still works afterwards.
+### Remove Files Deleted from the Repository
+On a connection in the Remote Explorer, or from the palette — and only on one whose local folder is a working copy, since a folder with no history has nothing to ask. Asks git what the repository has deleted over its history, keeps the paths that really are gone from the checkout, and offers to take those off the server — with the list and the count before anything moves, and a copy of each kept first, so `Restore Server to an Earlier Point` still works afterwards.
 
 A server accumulates. Downloads write and never remove; a deploy uploads what exists rather than removing what stopped existing; autosync takes files off as they leave git's index, but only from the moment it starts watching. Everything dropped before that is still there.
 
@@ -198,7 +198,7 @@ A server accumulates. Downloads write and never remove; a deploy uploads what ex
 
 | | asks | removes | risk |
 | --- | --- | --- | --- |
-| `Remove Files Deleted from the Project` | git's history | only paths the repository once tracked | cannot name a file the project never owned |
+| `Remove Files Deleted from the Repository` | git's history | only paths the repository once tracked | cannot name a file the project never owned |
 | `Sync Local -> Remote` with `syncOption.delete` | the server's listing | anything not on this machine | includes runtime directories, uploads and caches the repository ignores |
 
 The second is the complete answer and the dangerous one. On a project whose `.gitignore` holds `/data/*` — runtime content that lives only on the server — and whose `sftp.json` has no `ignore` list, it would delete that content. The first cannot, by construction: a path git never tracked can never appear in the list.

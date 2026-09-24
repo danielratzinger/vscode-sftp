@@ -2,10 +2,12 @@ jest.mock('fs');
 
 import { vol } from 'memfs';
 import {
-  forgetRepositoryAnswers,
   hasLocalCopy,
-  localCopyIsInARepository,
 } from '../treeDataProvider';
+import {
+  forgetRepositoryAnswers,
+  localCopyIsInARepository,
+} from '../../../core/workingCopy';
 
 /**
  * The tree item's context value is what a menu matches on, and it is the only

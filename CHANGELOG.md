@@ -6,6 +6,22 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.3.5 - 2026-09-24
+
+### Changed
+
+- `Remove Files Deleted from the Project` is now `Remove Files Deleted from the
+  Repository`, which is what it actually asks. Its whole answer comes from
+  `git log`, so it can only ever name a path the repository once tracked - the
+  old name suggested it knew what the project contained, and it does not.
+- It is offered only where there is a repository to ask: on a connection whose
+  local folder is a working copy in the Remote Explorer, and in the palette only
+  when some connection in the window has one. Before, it appeared everywhere and
+  answered a folder with no history by saying so - which is a dialog where the
+  entry should not have been. The menu asks the item itself, through the `-repo`
+  it already carries; the palette cannot be on an item, so it asks the same
+  question of the window.
+
 ## 2.3.4 - 2026-09-24
 
 ### Fixed

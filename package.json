@@ -2,7 +2,7 @@
   "name": "sftp",
   "displayName": "SFTP",
   "description": "SFTP/FTP sync, with an MCP server that lets local AI clients read your servers",
-  "version": "2.3.4",
+  "version": "2.3.5",
   "publisher": "danielratzinger",
   "author": "Daniel Ratzinger (https://github.com/danielratzinger)",
   "engines": {
@@ -512,7 +512,7 @@
       },
       {
         "command": "sftp.removeDeleted",
-        "title": "Remove Files Deleted from the Project",
+        "title": "Remove Files Deleted from the Repository",
         "category": "SFTP"
       },
       {
@@ -601,7 +601,7 @@
         },
         {
           "command": "sftp.removeDeleted",
-          "when": "sftp.enabled"
+          "when": "sftp.enabled && sftp.anyRepository"
         },
         {
           "command": "sftp.restoreRemote",
@@ -1050,7 +1050,7 @@
         {
           "command": "sftp.removeDeleted",
           "group": "7_modification@0",
-          "when": "sftp.enabled && viewItem =~ /^root/"
+          "when": "sftp.enabled && viewItem =~ /^root/ && viewItem =~ /-repo/"
         },
         {
           "command": "sftp.restoreRemote",

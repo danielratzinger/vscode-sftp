@@ -16,6 +16,10 @@ import { gitIgnoreIn, IgnoreLookup } from '../core/gitIgnored';
 import { indexWrittenAt, trackedIn, vanished } from '../core/trackedFiles';
 import { everDeletedIn, stillGoneIn } from '../core/removedFromHistory';
 import {
+  forgetRepositoryAnswers,
+  localCopyIsInARepository,
+} from '../core/workingCopy';
+import {
   claim,
   keep,
   KEEP_EVERY,
@@ -962,6 +966,26 @@ async function sayWhetherAnythingIsSyncing(): Promise<void> {
     syncing
   );
 
+  // And whether anything here is a working copy at all, which is what decides
+  // if `Remove Files Deleted from the Repository` is offered: it has nothing to
+  // ask a folder with no history. One key for the window, because the palette
+  // is not on an item - the menu entry in the explorer asks the item itself,
+  // through the `-repo` it already carries, so the two agree on the same rule.
+  //
+  // Asked freshly: a folder can become a repository, or stop being one, and the
+  // walk's answers are kept. The tree clears them on its own refresh, which
+  // happens after this, so without clearing here the key would lag a save behind
+  // the menu it is supposed to agree with.
+  forgetRepositoryAnswers();
+
+  await vscode.commands.executeCommand(
+    'setContext',
+    'sftp.anyRepository',
+    getAllFileService().some(service =>
+      localCopyIsInARepository(service.baseDir, service.workspace)
+    )
+  );
+
   // The one list behind both the menu and the mark in the file explorer, so
   // when a project shows neither, what it should have matched is on record.
   logger.debug(
@@ -1496,7 +1520,7 @@ export async function removeWhatWasDeleted(service: FileService): Promise<void> 
       modal: true,
       detail:
         `${some}${mine.length > 8 ? `\n…and ${mine.length - 8} more` : ''}\n\n` +
-        'These were deleted from the project and may still be on the server. ' +
+        'These were deleted from the repository and may still be on the server. ' +
         'Only paths git once tracked are listed, so nothing the repository ' +
         'ignores - runtime data, uploads, caches - can appear here. Each one ' +
         'is copied off the server before it goes.',
