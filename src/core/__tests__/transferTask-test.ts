@@ -124,6 +124,28 @@ function createLocalFs() {
   return localFs;
 }
 
+function statOf(size: number, mtime = 0) {
+  return { type: FileType.File, mode: 0o644, size, mtime, atime: mtime };
+}
+
+function downloadTask(remoteFs: any, localFs: any, transferOption: any = {}) {
+  return new ImmediateRetryTask(
+    { fsPath: '/remote/a.txt', fileSystem: remoteFs },
+    { fsPath: '/local/a.txt', fileSystem: localFs },
+    {
+      fileType: FileType.File,
+      transferDirection: TransferDirection.REMOTE_TO_LOCAL,
+      transferOption: {
+        atime: 0,
+        mtime: 0,
+        size: CONTENT_SIZE,
+        perserveTargetMode: false,
+        ...transferOption,
+      },
+    }
+  );
+}
+
 /** Retries without the wait, so the suite doesn't spend a second sleeping. */
 class ImmediateRetryTask extends TransferTask {
   protected _retryDelay(): number {
@@ -280,5 +302,72 @@ describe('TransferTask', () => {
     await createTask(localFs, remoteFs, { verify: false }).run();
 
     expect(remoteFs.calls).not.toContain('size /remote/a.txt');
+  });
+
+  it('says the copy is longer than the source when it is', async () => {
+    const localFs = createLocalFs();
+    const remoteFs = createRemoteFs(true, { size: CONTENT_SIZE + 5 });
+
+    await expect(createTask(localFs, remoteFs).run()).rejects.toThrow(
+      /arrived longer than its source: expected 12 bytes, got 17/
+    );
+  });
+
+  it('reads the file again when the source moved on, and settles', async () => {
+    const localFs = createLocalFs();
+    const remoteFs = createRemoteFs(true);
+    remoteFs.lstat = () => {
+      remoteFs.calls.push('lstat /remote/a.txt');
+      return Promise.resolve(statOf(CONTENT_SIZE));
+    };
+
+    await downloadTask(remoteFs, localFs, { size: CONTENT_SIZE - 3 }).run();
+
+    // The first read was measured against a size the listing took before the
+    // server rewrote the file; the second against what it holds now.
+    expect(
+      remoteFs.calls.filter(c => c.startsWith('downloadToLocal'))
+    ).toHaveLength(2);
+  });
+
+  it('carries the source it found into the copy it keeps', async () => {
+    const localFs = createLocalFs();
+    const remoteFs = createRemoteFs(true);
+    remoteFs.lstat = () => Promise.resolve(statOf(CONTENT_SIZE, 5000));
+
+    const task = downloadTask(remoteFs, localFs, {
+      size: CONTENT_SIZE - 3,
+      mtime: 1000,
+    });
+    await task.run();
+
+    expect((task as any)._TransferOption.mtime).toBe(5000);
+  });
+
+  it('keeps the copy of a file that never stops changing', async () => {
+    const localFs = createLocalFs();
+    const remoteFs = createRemoteFs(true);
+
+    // Every look at the server finds the file a byte longer than the last.
+    let onDisk = CONTENT_SIZE;
+    localFs.size = () => Promise.resolve(onDisk);
+    remoteFs.lstat = () => Promise.resolve(statOf(onDisk++));
+
+    await downloadTask(remoteFs, localFs, { size: CONTENT_SIZE - 3 }).run();
+
+    expect(
+      remoteFs.calls.filter(c => c.startsWith('downloadToLocal'))
+    ).toHaveLength(3);
+  });
+
+  it('still fails a short download when the source has not moved', async () => {
+    const localFs = createLocalFs();
+    const remoteFs = createRemoteFs(true);
+    remoteFs.lstat = () => Promise.resolve(statOf(CONTENT_SIZE + 4));
+    localFs.size = () => Promise.resolve(CONTENT_SIZE);
+
+    await expect(
+      downloadTask(remoteFs, localFs, { size: CONTENT_SIZE + 4 }).run()
+    ).rejects.toThrow(/arrived incomplete: expected 16 bytes, got 12/);
   });
 });

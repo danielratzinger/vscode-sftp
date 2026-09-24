@@ -2,6 +2,7 @@ import { Readable } from 'stream';
 import * as fileOperations from './fileBaseOperations';
 import {
   DirectTransfer,
+  FileStats,
   FileSystem,
   FileType,
   LocalFileSystem,
@@ -174,7 +175,7 @@ export default class TransferTask implements Task {
 
     for (let attempt = 1; ; attempt += 1) {
       try {
-        await this._transferFile();
+        await this._transferFile(attempt >= MAX_TRANSFER_ATTEMPTS);
         return;
       } catch (error) {
         // A half-read source stream can be holding a connection open, and the
@@ -233,7 +234,7 @@ export default class TransferTask implements Task {
     return RETRY_DELAY * attempt;
   }
 
-  private async _transferFile() {
+  private async _transferFile(isLastAttempt: boolean) {
     const uploadTarget =
       this._targetFsPath + (this._TransferOption.useTempFile ? '.new' : '');
 
@@ -246,7 +247,7 @@ export default class TransferTask implements Task {
 
     // Before the temp file is promoted, so a short transfer can't replace a
     // good file with a broken one.
-    await this._verifyWritten(uploadTarget);
+    await this._verifyWritten(uploadTarget, isLastAttempt);
     await this._promoteTempFile(uploadTarget);
   }
 
@@ -339,7 +340,7 @@ export default class TransferTask implements Task {
     }
   }
 
-  private async _verifyWritten(uploadTarget: string) {
+  private async _verifyWritten(uploadTarget: string, isLastAttempt: boolean) {
     const expected = this._TransferOption.size;
     if (this._TransferOption.verify === false || expected === undefined) {
       return;
@@ -360,9 +361,90 @@ export default class TransferTask implements Task {
       return;
     }
 
+    return this._explainMismatch(actual, expected, isLastAttempt);
+  }
+
+  /**
+   * The size to expect was read when the transfer was planned - for a folder,
+   * one listing covering every file in it - so by the time a given file is
+   * read the source may have moved on. That is a stale expectation, not a
+   * broken transfer, and the difference is worth a single stat to establish.
+   */
+  private async _explainMismatch(
+    actual: number,
+    expected: number,
+    isLastAttempt: boolean
+  ): Promise<void> {
+    const source = await this._sourceStatNow();
+    const current = source && source.size;
+
+    if (current !== undefined && current !== expected) {
+      // Whatever happens next, a retry that compares against the old number
+      // can only fail the same way again.
+      this._refreshSourceExpectation(source!);
+
+      if (actual === current) {
+        // The source was rewritten around the read, and what landed is the
+        // size it now holds. Read it again while there are attempts left,
+        // since a file that grew mid-read can arrive stitched together, and
+        // settle for this copy rather than fail when there are not.
+        if (isLastAttempt) {
+          logger.warn(
+            `${this._srcFsPath} kept changing while it was read ` +
+              `(${expected} ➞ ${current} bytes); keeping the copy that ` +
+              `matches it as it now stands`
+          );
+          return;
+        }
+
+        throw new TransferIntegrityError(
+          `${this._srcFsPath} changed while it was read ` +
+            `(${expected} ➞ ${current} bytes), reading it again`
+        );
+      }
+    }
+
+    const reference = current === undefined ? expected : current;
+    if (actual < reference) {
+      throw new TransferIntegrityError(
+        `${this._targetFsPath} arrived incomplete: ` +
+          `expected ${reference} bytes, got ${actual}`
+      );
+    }
+
     throw new TransferIntegrityError(
-      `${this._targetFsPath} arrived incomplete: expected ${expected} bytes, got ${actual}`
+      `${this._targetFsPath} arrived longer than its source: ` +
+        `expected ${reference} bytes, got ${actual}`
     );
+  }
+
+  /**
+   * What the source holds now, or undefined when it won't say - a check that
+   * cannot be made says nothing either way.
+   */
+  private async _sourceStatNow(): Promise<FileStats | undefined> {
+    try {
+      return await this._srcFs.lstat(this._srcFsPath);
+    } catch (error) {
+      logger.debug(
+        `can't re-read ${this._srcFsPath}: ${error.message}`
+      );
+      return undefined;
+    }
+  }
+
+  /**
+   * Carries a moved-on source into the next attempt, timestamps included, so
+   * the copy it writes is stamped with the file it actually read.
+   */
+  private _refreshSourceExpectation(stat: FileStats) {
+    this._TransferOption.size = stat.size;
+    if (stat.mtime) {
+      this._TransferOption.mtime = stat.mtime;
+    }
+    if (stat.atime) {
+      this._TransferOption.atime = stat.atime;
+    }
   }
 
   private async _promoteTempFile(uploadTarget: string) {

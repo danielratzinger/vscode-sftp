@@ -1,5 +1,6 @@
 import FileSystem, {
   FileEntry,
+  FileStats,
   FileType,
   DirectTransfer,
   supportsDirectTransfer,
@@ -13,6 +14,7 @@ import SFTPFileSystem from './sftpFileSystem';
 export {
   FileSystem,
   FileEntry,
+  FileStats,
   FileType,
   DirectTransfer,
   supportsDirectTransfer,
