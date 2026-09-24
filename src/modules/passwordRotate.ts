@@ -10,6 +10,7 @@ import {
   storeFor,
   whichFiles,
 } from './passwordSweep';
+import { noteCredentialKey } from './credentials';
 
 /**
  * Changing one server's password everywhere it is written down.
@@ -127,6 +128,10 @@ async function write(entries: Movable[], value: string): Promise<void> {
       if ((await store.get(one.key)) !== value) {
         throw new Error('what came back was not what went in');
       }
+      // Noted, and thereby moved to the front of the list: this is now the
+      // most recent word on that login, which is what a store with no dates of
+      // its own goes by.
+      await noteCredentialKey(one.key);
       changed += 1;
     } catch (error) {
       refused += 1;

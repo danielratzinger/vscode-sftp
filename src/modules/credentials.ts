@@ -1,6 +1,16 @@
 import * as vscode from 'vscode';
 import { exec, execFile } from 'child_process';
-import { configureCredentials, SecretStore } from '../core/credentialResolver';
+import {
+  configureCredentials,
+  passwordKeyFor,
+  SecretStore,
+} from '../core/credentialResolver';
+import {
+  KeyRegistry,
+  withKey,
+  withoutKey,
+} from '../core/credentialKeys';
+import { getAllFileService } from './serviceManager';
 import { createKeychainStore } from './keychainStore';
 import { promptForPassword } from '../host';
 import logger from '../logger';
@@ -279,8 +289,67 @@ export function secretStoreFor(manager: string): SecretStore | undefined {
   return storeByName ? storeByName(manager) : undefined;
 }
 
+const WRITTEN_KEYS = 'sftp.credentialKeys';
+
+let registry: KeyRegistry | undefined;
+
+/**
+ * Say that a secret was just written under this key.
+ *
+ * For the resolver this is bookkeeping; for VS Code's secret storage it is the
+ * only record there is. That storage cannot be listed, so a password moved into
+ * it by `Move All Passwords…` would be invisible - and a connection that was
+ * renamed would find nothing and ask, with the password sitting right there.
+ * So every write says so, wherever it happens.
+ *
+ * The order matters as much as the membership: the list is newest first, which
+ * is how the choice between several records for one login is made in a store
+ * that has no dates to offer.
+ */
+export function noteCredentialKey(key: string): Promise<void> {
+  return registry
+    ? registry.write(withKey(registry.read(), key)).catch(() => undefined)
+    : Promise.resolve();
+}
+
+/** And that one is gone, so nothing is offered a key with nothing behind it. */
+export function forgetCredentialKey(key: string): Promise<void> {
+  return registry
+    ? registry.write(withoutKey(registry.read(), key)).catch(() => undefined)
+    : Promise.resolve();
+}
+
+/**
+ * Whether some configured connection still looks under this key.
+ *
+ * What tells a renamed connection's abandoned record apart from one that
+ * simply belongs to another connection.
+ */
+function stillInUse(key: string): boolean {
+  return getAllFileService().some(service => {
+    const config = service.getConfig() as any;
+
+    return (
+      passwordKeyFor({
+        protocol: config.protocol,
+        host: config.host,
+        port: config.port,
+        username: config.username,
+        name: config.name,
+      } as any) === key
+    );
+  });
+}
+
 export default function initCredentials(context: vscode.ExtensionContext) {
   const builtIn = chooseStore(context);
+
+  registry = {
+    read: () => context.globalState.get<string[]>(WRITTEN_KEYS, []) || [],
+    write: keys => Promise.resolve(context.globalState.update(WRITTEN_KEYS, keys)),
+    inUse: stillInUse,
+  };
+
   storeByName = manager => storeFor(context, builtIn, manager);
 
   configureCredentials({
@@ -288,6 +357,7 @@ export default function initCredentials(context: vscode.ExtensionContext) {
     prompt: promptForPassword,
     runCommand: runCredentialCommand,
     runWriteCommand: runCredentialWriteCommand,
+    keys: registry,
     runProgram: runCredentialProgram,
     storeFor: manager => storeFor(context, builtIn, manager),
     defaultManager,

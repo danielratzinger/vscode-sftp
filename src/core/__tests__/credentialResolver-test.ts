@@ -658,3 +658,149 @@ describe('saving through a command the user wrote', () => {
     await resolver.commit();
   });
 });
+
+/**
+ * Renaming a connection changes its key, so the password is nowhere. The
+ * account half cannot change, so the one orphan on that account is the one
+ * that was renamed.
+ */
+describe('a password another record on the same login can answer for', () => {
+  const SOURCE_A = {
+    protocol: 'sftp',
+    host: 'example.com',
+    port: 22,
+    username: 'dr',
+  };
+
+  function withKeys(name: string, known: string[], inUse: (k: string) => boolean) {
+    const store = createStore();
+    const written: string[][] = [];
+
+    const resolver = new CredentialResolver({ ...SOURCE_A, name } as any, {
+      store,
+      prompt: async () => undefined,
+      runCommand: async () => '',
+      runWriteCommand: async () => undefined,
+      runProgram: async () => '',
+      storeFor: () => store,
+      defaultManager: () => true,
+      keys: {
+        read: () => (written.length ? written[written.length - 1] : known),
+        write: async keys => {
+          written.push(keys);
+        },
+        inUse,
+      },
+    } as any);
+
+    return { resolver, store, written };
+  }
+
+  const OLD = 'password:sftp://dr@example.com:22/old-name';
+  const NEW = 'password:sftp://dr@example.com:22/new-name';
+
+  it('takes the one stored under another name', async () => {
+    const { resolver, store } = withKeys('new-name', [OLD], () => false);
+    await store.set(OLD, 'the password');
+
+    expect(await resolver.resolve()).toEqual({ password: 'the password' });
+  });
+
+  it('writes a record of its own once the server has accepted it', async () => {
+    const { resolver, store, written } = withKeys('new-name', [OLD], () => false);
+    await store.set(OLD, 'the password');
+
+    await resolver.resolve();
+
+    // Borrowed, not moved: resolving changes nothing, because at that point
+    // nothing has been proved about the password.
+    expect(await store.get(NEW)).toBeUndefined();
+
+    await resolver.commit();
+
+    expect(await store.get(NEW)).toBe('the password');
+    // And the record it came from stays. It may well be another connection's,
+    // and a working one at that.
+    expect(await store.get(OLD)).toBe('the password');
+    // Noted, and at the front: the list is newest first, because for a store
+    // that cannot be enumerated it is the only record of which secret was
+    // written last. Nothing is taken off it either - the record it borrowed
+    // from is still there to be found.
+    expect(written[written.length - 1]).toEqual([NEW, OLD]);
+  });
+
+  it('takes the one stored last where several could answer', async () => {
+    // A server has one password per login, so any of these is very likely it.
+    // Where they disagree, the most recently written one is the likeliest to
+    // still be true - the keychain lists them in that order, and this follows
+    // the order it is given.
+    const other = 'password:sftp://dr@example.com:22/another';
+    const { resolver, store } = withKeys('new-name', [other, OLD], () => false);
+    await store.set(OLD, 'the old one');
+    await store.set(other, 'the current one');
+
+    expect(await resolver.resolve()).toEqual({ password: 'the current one' });
+  });
+
+  it('borrows from a record another connection still uses', async () => {
+    // Nothing is taken away from it, so there is no reason not to.
+    const { resolver, store } = withKeys('new-name', [OLD], () => true);
+    await store.set(OLD, 'shared login');
+
+    expect(await resolver.resolve()).toEqual({ password: 'shared login' });
+    expect(await store.get(OLD)).toBe('shared login');
+  });
+
+  it('asks the next time when the server turned the borrowed one down', async () => {
+    const { resolver, store } = withKeys('new-name', [OLD], () => false);
+    await store.set(OLD, 'out of date');
+
+    expect(await resolver.resolve()).toEqual({ password: 'out of date' });
+    await resolver.discard(
+      new Error('All configured authentication methods failed')
+    );
+
+    // Nothing was written, and the record it came from is untouched - it is
+    // simply not an answer for this connection any more.
+    expect(await store.get(NEW)).toBeUndefined();
+    expect(await store.get(OLD)).toBe('out of date');
+
+    const again = withKeys('new-name', [OLD], () => false);
+    await again.store.set(OLD, 'out of date');
+    expect(await again.resolver.resolve()).toEqual({});
+  });
+
+  it('does not reach onto another account', async () => {
+    const elsewhere = 'password:sftp://dr@other.example.com:22/old-name';
+    const { resolver, store } = withKeys('new-name', [elsewhere], () => false);
+    await store.set(elsewhere, 'somebody else');
+
+    expect(await resolver.resolve()).toEqual({});
+    expect(await store.get(elsewhere)).toBe('somebody else');
+  });
+
+  it('prefers what the store itself lists to the keys we kept', async () => {
+    // The list we keep only knows what it has seen; the keychain knows
+    // everything ever written to it, including by the password sweep.
+    const unlisted = 'password:sftp://dr@example.com:22/never-noted';
+    const store = createStore();
+    await store.set(unlisted, 'from the keychain');
+    (store as any).list = async () => [unlisted];
+
+    const resolver = new CredentialResolver(
+      { ...SOURCE_A, name: 'new-name' } as any,
+      {
+        store,
+        prompt: async () => undefined,
+        runCommand: async () => '',
+        runWriteCommand: async () => undefined,
+        runProgram: async () => '',
+        storeFor: () => store,
+        defaultManager: () => true,
+        keys: { read: () => [], write: async () => undefined, inUse: () => false },
+      } as any
+    );
+
+    expect(await resolver.resolve()).toEqual({ password: 'from the keychain' });
+  });
+});

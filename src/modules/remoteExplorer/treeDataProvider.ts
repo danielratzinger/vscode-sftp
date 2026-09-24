@@ -403,16 +403,39 @@ export default class RemoteTreeData
     showTextDocument(makePreivewUrl(item.resource.uri));
   }
 
+  /**
+   * The connection rows, built once and cached until something changes.
+   *
+   * Built into locals and only then published. It used to assign `this._roots`
+   * an empty array and fill it in place - so anything that threw while reading
+   * one connection's config left a *partial* list behind, and because a
+   * partial list is not null, every later call returned it. One bad entry made
+   * every connection after it disappear, and stay disappeared.
+   *
+   * And a connection that cannot be read no longer takes the others with it:
+   * it is skipped, with a line saying which and why.
+   */
   private _getRoots(): ExplorerRoot[] {
     if (this._roots) {
       return this._roots;
     }
 
-    this._roots = [];
-    this._rootsMap = new Map();
-    this._map = new Map();
+    const roots: ExplorerRoot[] = [];
+    const rootsMap = new Map<Id, ExplorerRoot>();
+    const map = new Map<string, ExplorerItem>();
+
     getAllFileService().forEach(fileService => {
-      const config = fileService.getConfig();
+      let config;
+      try {
+        config = fileService.getConfig();
+      } catch (error) {
+        logger.error(
+          error,
+          `reading the config of the connection at ${fileService.baseDir}`
+        );
+        return;
+      }
+
       const id = fileService.id;
       const item = {
         resource: UResource.makeResource({
@@ -430,11 +453,27 @@ export default class RemoteTreeData
           id,
         },
       };
-      this._roots!.push(item);
-      this._rootsMap!.set(id, item);
-      this._map.set(item.resource.uri.query, item);
+      roots.push(item);
+      rootsMap.set(id, item);
+      map.set(item.resource.uri.query, item);
     });
-    this._roots.sort((a,b) => a.explorerContext.config.remoteExplorer.order - b.explorerContext.config.remoteExplorer.order || a.explorerContext.fileService.name.localeCompare(b.explorerContext.fileService.name));
+
+    // Defensively: a connection with no `remoteExplorer` block or no name is
+    // valid configuration, and sorting must not be the thing that throws.
+    roots.sort((a, b) => {
+      const order = (one: ExplorerRoot) =>
+        (one.explorerContext.config.remoteExplorer &&
+          one.explorerContext.config.remoteExplorer.order) ||
+        0;
+      const named = (one: ExplorerRoot) => one.explorerContext.fileService.name || '';
+
+      return order(a) - order(b) || named(a).localeCompare(named(b));
+    });
+
+    this._roots = roots;
+    this._rootsMap = rootsMap;
+    this._map = map;
+
     return this._roots;
   }
 }

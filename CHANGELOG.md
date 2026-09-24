@@ -6,6 +6,45 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.3.3 - 2026-09-24
+
+### Fixed
+
+- **Renaming a connection lost its password.** A credential is keyed by the
+  account *and* the connection's name, which is what gives six sites on one
+  hosting account six records - and it means a rename looks under a key nothing
+  was ever stored under. The exact key still comes first and always; when
+  nothing is there, the records for the same `user@host` are what is left to go
+  on, and a server has one password per login, so one of them is it. Where
+  several could answer, the most recently written one is taken: the Keychain
+  keeps modification dates as plain attributes, so they can be read without
+  unlocking anything, and VS Code's secret storage - which cannot be enumerated
+  at all - is stood in for by a list of written keys held newest first. Nothing
+  is moved and nothing is deleted: the password is borrowed, a record under this
+  connection's own name appears once the server has accepted it, and if the
+  server turns it down the borrowed record is left alone and you are asked.
+  The same applies to a connection added *beside* another on one login, and to
+  records still keyed by account alone from before 2.3.0.
+- `Move All Passwords…` and `Change a Server's Password…` now say what they
+  wrote. They write straight into a store, and for VS Code's secret storage that
+  list is the only record that anything is in there at all - so a password moved
+  in by the sweep was invisible to the above, and a renamed connection asked
+  again with its password sitting right where it had been put.
+- **Renaming a connection and giving a new one its old name stopped the Remote
+  Explorer rendering anything from that point down.** The roots were built into
+  the live cache one at a time, so a connection that could not be read left a
+  half-filled cache that was then returned for ever. They are now built aside
+  and published in one go, an unreadable connection is skipped with a line in
+  the output panel rather than abandoning the rest, and a node from a tree that
+  has since been rebuilt returns no children instead of throwing.
+- **Changing `remotePath` while connected left that connection's folder
+  spinning and answering nothing.** Saving `sftp.json` ends every file system
+  for the workspace, and ending one left it still claiming to be valid, with a
+  pending connect that would never settle - handed to every later caller. It now
+  clears both, and a connect that lands after its connection was ended no longer
+  reports success on a dead socket: each life of a connection is numbered, so a
+  late answer can tell it belongs to a previous one.
+
 ## 2.3.2 - 2026-09-24
 
 ### Fixed

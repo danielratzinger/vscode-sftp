@@ -127,8 +127,10 @@ Name only the manager and it looks for the item this extension would have create
 
 | Derived name | For |
 | --- | --- |
-| `vscode-sftp/sftp/deploy@example.com:22` | the password |
-| `vscode-sftp-passphrase/home/me/.ssh/id_ed25519` | a key passphrase |
+| service `vscode-sftp`, account `sftp://deploy@example.com:22/example.com` | the password |
+| service `vscode-sftp-passphrase`, account `/home/me/.ssh/id_ed25519` | a key passphrase |
+
+The account ends in the connection's `name`, so six sites on one hosting account have six records rather than sharing one — and two connections on one login can hold different passwords, which otherwise was not representable at all. In Keychain Access the record is labelled `deploy@example.com (example.com)`.
 
 For `true`, `keychain`, `vscode` and `secret-tool` that is the service and account the extension already uses, so an entry it saved is found with no further setup. For the others, create the item under that name, or add a colon and point at one you already have:
 
@@ -137,6 +139,15 @@ For `true`, `keychain`, `vscode` and `secret-tool` that is the service and accou
   "passwordManager": "1password:op://Private/My Server/password"
 }
 ```
+
+#### Renaming a connection
+The name is part of where the password is filed, so renaming a connection means looking under a key nothing was ever stored under. Rather than prevent that, it is followed: the exact record comes first and always, and when there isn't one, the records for the same `user@host` are what is left to go on. A server has one password per login, so one of them is this connection's — and where several could answer, the one written most recently is taken.
+
+Nothing is moved and nothing is deleted. The password is borrowed for that connection attempt; a record under the new name appears once the server has accepted it, and the record it came from stays exactly as it was, since it may well belong to another connection that is still working. If the server turns the borrowed password down, you are asked for this one and that record is not offered again in this window.
+
+| 💡 Note |
+| :--- |
+| *The same applies to a connection added beside another on one login, and to records from before 2.3.0, which were filed by account alone. For the Keychain, "most recently written" comes from the record's own modification date, read without unlocking anything. VS Code's secret storage cannot be listed at all, so what stands in for it is a list of the keys written on this machine, held newest first — which is why `SFTP: Move All Passwords…` and `SFTP: Change a Server's Password…` add to it too.* | 
 
 #### Moving a password out of this file
 Set a manager next to a plain-text password and the password is moved there after the next successful connection:

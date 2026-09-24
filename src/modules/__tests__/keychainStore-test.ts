@@ -3,6 +3,7 @@ import {
   parsePassword,
   SecurityResult,
   SecurityRunner,
+  parseAccounts,
 } from '../keychainStore';
 
 const ITEM_NOT_FOUND = 44;
@@ -105,7 +106,8 @@ describe('keychain store', () => {
     const write = security.calls.find(c => c.args[0] === '-i')!;
     expect(write.stdin).toContain('"vscode-sftp"');
     expect(write.stdin).toContain('"sftp://deploy@example.com:22"');
-    expect(write.stdin).toContain('"SFTP: sftp://deploy@example.com:22"');
+    // The Name column reads as an account, not as the Account column repeated.
+    expect(write.stdin).toContain('"deploy@example.com"');
     // The secret goes over stdin, never in the arguments, where `ps` sees it.
     expect(write.args).toEqual(['-i']);
     expect(security.calls.every(c => !c.args.includes('hunter2'))).toBe(true);
@@ -258,5 +260,119 @@ describe('parsePassword', () => {
 
   it('says nothing rather than guessing when there is no password line', () => {
     expect(parsePassword('class: "genp"')).toBeUndefined();
+  });
+});
+
+/**
+ * The keychain can say which keys it holds, and that matters: the alternative
+ * was a list kept by the extension, and such a list starts empty - every
+ * password stored before it existed would be invisible, which is exactly why
+ * following a rename did nothing on a machine that already had its passwords.
+ */
+describe('reading which accounts the keychain holds', () => {
+  const dump = [
+    'keychain: "/Users/x/Library/Keychains/login.keychain-db"',
+    'version: 512',
+    'class: "genp"',
+    'attributes:',
+    '    0x00000007 <blob>="dr@example.com (one.com)"',
+    '    "acct"<blob>="sftp://dr@example.com:22/one.com"',
+    '    "desc"<blob>=<NULL>',
+    '    "svce"<blob>="vscode-sftp"',
+    'keychain: "/Users/x/Library/Keychains/login.keychain-db"',
+    'attributes:',
+    '    "acct"<blob>="sftp://dr@example.com:22/two.com"',
+    '    "svce"<blob>="vscode-sftp"',
+    'keychain: "/Users/x/Library/Keychains/login.keychain-db"',
+    'attributes:',
+    '    "acct"<blob>="somebody@else"',
+    '    "svce"<blob>="Chrome Safe Storage"',
+  ].join('\n');
+
+  it('finds the accounts filed under one service', () => {
+    expect(parseAccounts(dump, 'vscode-sftp')).toEqual([
+      'sftp://dr@example.com:22/one.com',
+      'sftp://dr@example.com:22/two.com',
+    ]);
+  });
+
+  it('leaves other services alone', () => {
+    expect(parseAccounts(dump, 'vscode-sftp')).not.toContain('somebody@else');
+    expect(parseAccounts(dump, 'Chrome Safe Storage')).toEqual(['somebody@else']);
+  });
+
+  it('does not carry an account across a block boundary', () => {
+    // A block whose service is not ours must not lend its account to the next.
+    const odd = [
+      'keychain: "x"',
+      '    "acct"<blob>="sftp://dr@example.com:22/orphan"',
+      'keychain: "x"',
+      '    "svce"<blob>="vscode-sftp"',
+    ].join('\n');
+
+    expect(parseAccounts(odd, 'vscode-sftp')).toEqual([]);
+  });
+
+  it('says nothing about an empty dump', () => {
+    expect(parseAccounts('', 'vscode-sftp')).toEqual([]);
+  });
+
+  function dated(account: string, mdat: string, cdat = mdat) {
+    return [
+      'keychain: "x"',
+      'attributes:',
+      `    "acct"<blob>="${account}"`,
+      `    "cdat"<timedate>=0x00  "${cdat}Z\\000"`,
+      `    "mdat"<timedate>=0x00  "${mdat}Z\\000"`,
+      '    "svce"<blob>="vscode-sftp"',
+    ].join('\n');
+  }
+
+  it('puts the most recently changed one first', () => {
+    // Which is what settles it when several records could answer for one
+    // login: the newest is the likeliest to still be the password.
+    const dump = [
+      dated('older', '20260101120000'),
+      dated('newest', '20260921003036'),
+      dated('middling', '20260615080000'),
+    ].join('\n');
+
+    expect(parseAccounts(dump, 'vscode-sftp')).toEqual([
+      'newest',
+      'middling',
+      'older',
+    ]);
+  });
+
+  it('goes by when a record was changed, not when it was written', () => {
+    // A password that was corrected last week is the current one, whatever
+    // date the record was first created on.
+    const dump = [
+      dated('written-later', '20260101120000', '20260901120000'),
+      dated('corrected', '20260801120000', '20260101120000'),
+    ].join('\n');
+
+    expect(parseAccounts(dump, 'vscode-sftp')[0]).toBe('corrected');
+  });
+
+  it('keeps the order the keychain gave where the dates are the same', () => {
+    const dump = [
+      dated('first', '20260101120000'),
+      dated('second', '20260101120000'),
+    ].join('\n');
+
+    expect(parseAccounts(dump, 'vscode-sftp')).toEqual(['first', 'second']);
+  });
+
+  it('puts a record with no date it can read last', () => {
+    // Nothing to go on is not a reason to prefer it.
+    const dump = [
+      'keychain: "x"',
+      '    "acct"<blob>="undated"',
+      '    "svce"<blob>="vscode-sftp"',
+      dated('dated', '20260101120000'),
+    ].join('\n');
+
+    expect(parseAccounts(dump, 'vscode-sftp')).toEqual(['dated', 'undated']);
   });
 });

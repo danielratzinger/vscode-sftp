@@ -43,6 +43,22 @@ class KeepAliveRemoteFs {
 
   private pendingPromise: Promise<RemoteFileSystem> | null;
 
+  /**
+   * Which life of this connection we are in.
+   *
+   * Ending one and opening one are not ordered: `end` can land while a connect
+   * is still in flight, and that connect then resolves and sets `isValid` on an
+   * instance whose socket is gone. Everything afterwards is handed a connection
+   * that says it is fine and answers nothing. Clearing `pendingPromise` in
+   * `end` was half of the fix and made that outcome more likely, not less -
+   * before it, a second caller at least waited on the same doomed promise.
+   *
+   * A counter rather than a flag, because an instance is reused: `getFs`
+   * reconnects after an end, and the number tells a late answer which life it
+   * belongs to.
+   */
+  private _generation = 0;
+
   private fs: RemoteFileSystem;
 
   async getFs(
@@ -138,12 +154,22 @@ class KeepAliveRemoteFs {
     });
 
     app.sftpBarItem.showMsg('connecting...', connectOption.connectTimeout);
+    // Which life this attempt belongs to, so an answer that arrives after the
+    // connection was ended cannot report success on a dead socket.
+    const generation = this._generation;
     // Assigned in the same tick, so a second caller waits on this attempt
     // instead of starting its own.
     this.pendingPromise = withConnection(this._name, () =>
       this._connect(credentials, connectOption)
     ).then(
       () => {
+        if (generation !== this._generation) {
+          this.fs.end();
+          throw new Error(
+            'the connection was closed while it was being opened; try again'
+          );
+        }
+
         app.sftpBarItem.reset();
         this.isValid = true;
         return this._watching();
@@ -248,6 +274,7 @@ class KeepAliveRemoteFs {
   }
 
   invalid(reason: string) {
+    this._generation += 1;
     this._watched = null;
     this.pendingPromise = null;
     this.fs.end();
@@ -274,7 +301,23 @@ class KeepAliveRemoteFs {
     return true;
   }
 
+  /**
+   * Ends the connection and stops claiming to be usable.
+   *
+   * `invalid` has always cleared these; this did not, and the difference
+   * mattered the moment anything still held the instance. Saving `sftp.json`
+   * ends every filesystem for that workspace, and one left saying `isValid`
+   * with a dead socket - or holding a `pendingPromise` for a connect that will
+   * now never settle - hands that promise to every later caller. A folder in
+   * the Remote Explorer then spins for ever and the connection stops
+   * answering, which is exactly what changing `remotePath` while connected
+   * did.
+   */
   end() {
+    this._generation += 1;
+    this._watched = null;
+    this.pendingPromise = null;
+    this.isValid = false;
     this.fs.end();
   }
 }

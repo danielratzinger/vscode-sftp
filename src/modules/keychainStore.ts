@@ -1,5 +1,11 @@
 import { execFile } from 'child_process';
-import { KeychainItem, SecretStore, toKeychainItem } from '../core/credentialResolver';
+import {
+  KEYCHAIN_SERVICE_PASSPHRASE,
+  KEYCHAIN_SERVICE_PASSWORD,
+  KeychainItem,
+  SecretStore,
+  toKeychainItem,
+} from '../core/credentialResolver';
 import logger from '../logger';
 
 const SECURITY = '/usr/bin/security';
@@ -64,6 +70,74 @@ export function parsePassword(output: string): string | undefined {
   return value.slice(first + 1, last);
 }
 
+/**
+ * The keys this keychain holds for us, from `dump-keychain`.
+ *
+ * Attributes only - no `-d`, so no secret is read and nothing prompts. Blocks
+ * start at `keychain:` and print `acct` before `svce`, so the account of the
+ * block being described is the last one seen when the service matches.
+ *
+ * Worth having because the alternative was a list we kept ourselves, and such
+ * a list starts empty: every password stored before it existed, or written by
+ * the sweep straight into the store, would be invisible to it. The keychain
+ * already knows.
+ *
+ * Newest change first, because the dates are here too: `cdat` and `mdat` are
+ * plain attributes, so where several records could answer for one login, the
+ * most recently written one can be preferred without reading any of them.
+ */
+export function parseAccounts(output: string, service: string): string[] {
+  const found: Array<{ account: string; changed: string }> = [];
+  let account: string | undefined;
+  let changed = '';
+
+  output.split('\n').forEach(line => {
+    if (line.indexOf('keychain:') === 0) {
+      account = undefined;
+      changed = '';
+      return;
+    }
+
+    const acct = line.match(/^\s*"acct"<blob>="(.*)"$/);
+    if (acct) {
+      account = acct[1];
+      return;
+    }
+
+    // `"mdat"<timedate>=0x...  "20260921003036Z\000"`, and `cdat` in the same
+    // shape for an item never changed since it was written. The quoted half is
+    // the readable one and sorts as a string, being fixed-width UTC.
+    const date = line.match(/^\s*"(mdat|cdat)"<timedate>=.*"(\d{14})Z/);
+    if (date) {
+      // `mdat` wins: both are present, and the question is when this record
+      // last said something, not when it first did.
+      if (date[1] === 'mdat' || !changed) {
+        changed = date[2];
+      }
+      return;
+    }
+
+    const svce = line.match(/^\s*"svce"<blob>="(.*)"$/);
+    if (svce && svce[1] === service && account !== undefined) {
+      found.push({ account, changed });
+      account = undefined;
+      changed = '';
+    }
+  });
+
+  // Newest first, which is what decides between several records for one login:
+  // the one most recently written is the one most likely to still be the
+  // password. Equal dates keep the order the keychain gave them.
+  return found
+    .map((one, at) => ({ ...one, at }))
+    .sort((a, b) =>
+      a.changed === b.changed
+        ? a.at - b.at
+        : (b.changed || '').localeCompare(a.changed || '')
+    )
+    .map(one => one.account);
+}
+
 function runSecurity(args: string[], stdin?: string): Promise<SecurityResult> {
   return new Promise(resolve => {
     const child = execFile(
@@ -121,6 +195,31 @@ export function createKeychainStore(
     }
 
     return password;
+  }
+
+  /**
+   * The last dump, so a window full of connections costs one.
+   *
+   * Reading the whole keychain takes a quarter of a second, and it is read when
+   * a connection finds nothing under its own key - which, the first time a
+   * config is opened, can be every connection in it. Held until something is
+   * written or removed, because that is the only thing here that can make it
+   * wrong.
+   */
+  let dumped: Promise<string> | undefined;
+
+  function dump(): Promise<string> {
+    if (!dumped) {
+      dumped = run(['dump-keychain']).then(result =>
+        result.code === 0 ? result.stdout : ''
+      );
+    }
+
+    return dumped;
+  }
+
+  function forgetTheDump(): void {
+    dumped = undefined;
   }
 
   async function remove(item: KeychainItem): Promise<void> {
@@ -188,11 +287,25 @@ export function createKeychainStore(
         );
       }
 
+      forgetTheDump();
       logger.info(`Saved "${item.label}" to the Keychain.`);
     },
 
-    delete(key) {
-      return remove(toKeychainItem(key));
+    async delete(key) {
+      await remove(toKeychainItem(key));
+      forgetTheDump();
+    },
+
+    async list() {
+      // One dump, parsed twice: the two services are in the same output, and
+      // asking for it twice would pay for reading the keychain twice.
+      const output = await dump();
+      const passwords = parseAccounts(output, KEYCHAIN_SERVICE_PASSWORD);
+      const passphrases = parseAccounts(output, KEYCHAIN_SERVICE_PASSPHRASE);
+
+      return passwords
+        .map(one => `password:${one}`)
+        .concat(passphrases.map(one => `passphrase:${one}`));
     },
   };
 }

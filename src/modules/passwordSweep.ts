@@ -15,7 +15,11 @@ import {
 } from '../core/credentialSweep';
 import { detectIndent } from '../core/credentialMigration';
 import { SecretStore } from '../core/credentialResolver';
-import { secretStoreFor } from './credentials';
+import {
+  forgetCredentialKey,
+  noteCredentialKey,
+  secretStoreFor,
+} from './credentials';
 
 /**
  * Deciding where every password lives, and moving them all there.
@@ -530,6 +534,10 @@ async function move(moving: Movable[], destination: Where): Promise<void> {
             if (back !== value) {
               throw new Error('what came back was not what went in');
             }
+            // So a connection renamed later can still find it. VS Code's
+            // storage cannot be listed, which makes this the only trace that
+            // the password is in there at all.
+            await noteCredentialKey(one.key);
           } else {
             const forFile = intoFile.get(one.file) || {};
             forFile[one.key] = value;
@@ -633,6 +641,13 @@ async function forgetOldStores(
 
     try {
       await store.delete(one.key);
+
+      // Only when the destination is the files: the list of written keys says
+      // nothing about *which* store holds a key, so forgetting one that has
+      // just been written into another store would hide it again.
+      if (destination.manager === false) {
+        await forgetCredentialKey(one.key);
+      }
     } catch (error) {
       logger.warn(`[passwords] could not clear ${one.label} from ${one.from}.`);
     }

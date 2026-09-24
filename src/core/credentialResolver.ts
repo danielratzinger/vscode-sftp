@@ -1,4 +1,5 @@
 import logger from '../logger';
+import { KeyRegistry, siblingsOf, withKey } from './credentialKeys';
 import { buildProviderInvocation } from './credentialProviders';
 
 export type CredentialKind = 'password' | 'passphrase' | 'interactive';
@@ -13,6 +14,14 @@ export interface SecretStore {
   get(key: string): Promise<string | undefined>;
   set(key: string, value: string): Promise<void>;
   delete(key: string): Promise<void>;
+  /**
+   * Every key this store holds, where it can say.
+   *
+   * The Keychain can, from its own records. VS Code's secret storage cannot at
+   * all, which is why anything relying on this has to cope with not getting an
+   * answer.
+   */
+  list?(): Promise<string[]>;
 }
 
 export interface CredentialSource {
@@ -57,6 +66,13 @@ export interface CredentialSource {
 
 export interface CredentialDeps {
   store: SecretStore;
+  /**
+   * The keys this machine has written, newest first. It is what stands in for
+   * a store that cannot be enumerated - VS Code's secret storage - so that a
+   * renamed connection there finds its password too. Optional so anything
+   * building a resolver for key derivation alone need not provide it.
+   */
+  keys?: KeyRegistry;
   prompt(message: string): Promise<string | undefined>;
   /** Runs a shell command line the user wrote themselves. */
   runCommand(command: string): Promise<string>;
@@ -232,6 +248,16 @@ export function passphraseKeyFor(source: CredentialSource): string {
 }
 
 /**
+ * Borrowed passwords the server has already turned down, per key.
+ *
+ * Without this, a record on the same account holding an out-of-date password
+ * would be borrowed again on every attempt, and the user would never be asked -
+ * the failure would just repeat. Held for the life of the window, so correcting
+ * the other record is enough to make it a candidate again.
+ */
+const turnedDown = new Map<string, Set<string>>();
+
+/**
  * Works out where a connection's password and passphrase come from, and
  * remembers the ones the user typed once the server has accepted them.
  *
@@ -243,6 +269,8 @@ export class CredentialResolver {
   private _deps: CredentialDeps;
   private _pending: { password?: string; passphrase?: string } = {};
   private _usedStored: { password?: boolean; passphrase?: boolean } = {};
+  /** The other record this connection's password was borrowed from. */
+  private _borrowedFrom?: string;
 
   constructor(source: CredentialSource, dependencies: CredentialDeps) {
     this._source = source;
@@ -346,6 +374,20 @@ export class CredentialResolver {
     if (this._usedStored.password) {
       await this._forget(this.passwordKey, 'the server rejected it');
     }
+
+    // A borrowed record belongs to another connection that may well still be
+    // working, so it is not touched - only remembered as no answer for this
+    // one, so the next attempt asks instead of failing the same way.
+    if (this._borrowedFrom) {
+      const refused = turnedDown.get(this.passwordKey) || new Set<string>();
+      refused.add(this._borrowedFrom);
+      turnedDown.set(this.passwordKey, refused);
+      this._borrowedFrom = undefined;
+      logger.info(
+        `The password stored under another name for ${this._source.host} was ` +
+          'not accepted, so you will be asked for this one.'
+      );
+    }
     if (this._usedStored.passphrase) {
       await this._forget(this.passphraseKey, 'the server rejected it');
     }
@@ -413,19 +455,105 @@ export class CredentialResolver {
       return undefined;
     }
 
-    let stored: string | undefined;
     try {
-      stored = await store.get(key);
+      const stored = await store.get(key);
+
+      if (stored !== undefined) {
+        // Ours, under our own key: if the server rejects it, it is ours to
+        // drop. A borrowed one is not, which is why the two are kept apart.
+        this._usedStored[kind] = true;
+        return stored;
+      }
+
+      return await this._borrowFromTheAccount(store, key, kind);
     } catch (error) {
       logger.warn(`Can't read the stored ${kind}: ${error.message}`);
       return undefined;
     }
+  }
 
-    if (stored !== undefined) {
-      this._usedStored[kind] = true;
+  /**
+   * The password another record on the same server can answer with.
+   *
+   * The exact record comes first and always: service, account and the
+   * connection's own name is what a connection stores under, and while it is
+   * there nothing else is consulted. This is for when it is not - a renamed
+   * connection, or one added beside another, whose name has never been stored
+   * under.
+   *
+   * What is left is the account, and the account is the part that cannot
+   * change: a server has one password per login, so a record for this
+   * `user@host` is this connection's password whatever name it is filed under.
+   * Several of them and the most recently written one is taken, which is what
+   * the keychain's own dates are read for - where records disagree, the newest
+   * is the likeliest to still be true, and the alternative was asking a
+   * question nobody wants asked about six sites on one hosting account.
+   *
+   * Borrowed, not moved: nothing is written here and nothing is deleted. The
+   * value goes where a typed one goes, so a record under this connection's own
+   * name appears once the server has accepted it - and if the server turns it
+   * down, there is nothing to undo and the next attempt asks.
+   */
+  private async _borrowFromTheAccount(
+    store: SecretStore,
+    key: string,
+    kind: 'password' | 'passphrase'
+  ): Promise<string | undefined> {
+    // A passphrase is keyed by the file it unlocks, and that name does not
+    // change when a connection is renamed. There is nothing to follow.
+    if (kind !== 'password') {
+      return undefined;
     }
 
-    return stored;
+    const refused = turnedDown.get(key);
+
+    for (const one of siblingsOf(key, await this._knownKeys(store))) {
+      if (refused && refused.has(one)) {
+        continue;
+      }
+
+      const value = await store.get(one).catch(() => undefined);
+      if (value === undefined) {
+        continue;
+      }
+
+      this._borrowedFrom = one;
+      // Where a typed password goes: written under this connection's own key
+      // by `commit`, once the server has accepted it.
+      this._pending[kind] = value;
+
+      logger.info(
+        `Trying the password stored for ${this._source.host} under another ` +
+          'name on the same login.'
+      );
+
+      return value;
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Which keys the store holds, as well as it can be known.
+   *
+   * The store's own answer where it has one - the keychain's, which includes
+   * everything ever written to it, by us or by the sweep. The list we keep is
+   * the fallback for a store that cannot be enumerated, and is only as complete
+   * as its own history.
+   */
+  private async _knownKeys(store: SecretStore): Promise<string[]> {
+    if (store.list) {
+      try {
+        const known = await store.list();
+        if (known.length > 0) {
+          return known;
+        }
+      } catch (error) {
+        logger.debug(`could not list the stored credentials: ${error.message}`);
+      }
+    }
+
+    return this._deps.keys ? this._deps.keys.read() : [];
   }
 
   /**
@@ -490,6 +618,7 @@ export class CredentialResolver {
 
     try {
       await store.set(key, value);
+      await this._noteKey(key);
       logger.info(`Saved the ${kind} for ${this._source.host}.`);
     } catch (error) {
       logger.warn(`Can't save the ${kind}: ${error.message}`);
@@ -548,6 +677,16 @@ export class CredentialResolver {
     }
 
     logger.info(`Saved the ${kind} for ${this._source.host} and read it back.`);
+  }
+
+  /** So a later rename has something to look through. */
+  private async _noteKey(key: string): Promise<void> {
+    const keys = this._deps.keys;
+    if (!keys) {
+      return;
+    }
+
+    await keys.write(withKey(keys.read(), key)).catch(() => undefined);
   }
 
   private async _forget(key: string, reason: string): Promise<void> {
