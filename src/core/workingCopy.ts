@@ -46,10 +46,12 @@ export function forgetRepositoryAnswers(): void {
  * Whether the local copy of this remote folder is in a repository - its own,
  * or one it sits inside.
  *
- * Only `Clear Local Folder` asks. Clearing a folder is for a download that has
- * to start from nothing, and nothing in a working copy is that: the files are
- * tracked, the history is beside them, and what the command would delete is
- * not what a download would put back.
+ * Both callers read the answer the same way round, and mean opposite things by
+ * it: `Clear Local Folder` stands down on a working copy, because clearing is
+ * for a download that starts from nothing and what it would delete here is
+ * tracked, with the history beside it. `Remove Files Deleted from the
+ * Repository` appears only on one, because that history is the whole of what
+ * it has to go on.
  *
  * The walk stops at the workspace folder. A repository above the folder the
  * editor has open is not this extension's business, and an unbounded walk

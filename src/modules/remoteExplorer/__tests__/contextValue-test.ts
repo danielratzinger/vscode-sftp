@@ -170,6 +170,17 @@ describe('the menu patterns against the values the tree produces', () => {
     expect(menuShows('sftp.clear.localFolder', 'root')).toBe(false);
   });
 
+  it('offers Remove Files Deleted from the Repository only on a working copy', () => {
+    expect(menuShows('sftp.removeDeleted', 'root-repo-local')).toBe(true);
+    expect(menuShows('sftp.removeDeleted', 'root-autosync-repo-local')).toBe(true);
+    expect(menuShows('sftp.removeDeleted', 'root-autosyncaway-repo-local')).toBe(true);
+    expect(menuShows('sftp.removeDeleted', 'root-local')).toBe(false);
+    expect(menuShows('sftp.removeDeleted', 'root')).toBe(false);
+    // The command asks a whole connection, so it belongs on its root and not
+    // on a folder inside it, working copy or not.
+    expect(menuShows('sftp.removeDeleted', 'folder-repo-local')).toBe(false);
+  });
+
   it('offers Reveal in Terminal wherever there is a local copy', () => {
     expect(menuShows('sftp.revealInTerminal', 'root-local')).toBe(true);
     expect(menuShows('sftp.revealInTerminal', 'root-repo-local')).toBe(true);
