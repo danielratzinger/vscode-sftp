@@ -100,6 +100,12 @@ async function transferFolder(
             mtime: file.mtime,
             atime: file.atime,
             size: file.size,
+            // The file's own mode, not the one inherited from the folder this
+            // walk started at. It is what a new file on the other side is
+            // created with, so a folder's 0755 arriving on a PHP file was the
+            // walk handing down the wrong thing. `_sync` has always set it per
+            // file; this is the plain transfer catching up.
+            fallbackMode: file.mode,
           },
           srcFsPath: file.fspath,
           targetFsPath: targetFs.pathResolver.join(targetFsPath, file.name),
