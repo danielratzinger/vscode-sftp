@@ -81,6 +81,10 @@ Every folder is walked by default. To leave some out, name them in `sftp.downloa
 
 Both settings ignore case. The connection's own `ignore` rules still apply on top.
 
+| 💡 Note |
+| :--- |
+| *Where the server can pack a folder, this arrives as one archive (see [useArchiveTransfer](./common_configuration.md#usearchivetransfer)), which saves the round trips but not the bytes: the excluded files travel and are thrown away here. Telling `tar` to leave them out would mean `--exclude=*.png`, which `tar` also applies to a folder called that and skips everything inside it — and a script lost that way is lost without a word.* |
+
 ### Reveal in Finder
 Sits above `Reveal in Explorer` in the Remote Explorer's menu, on anything that has been downloaded — and only then, because there is nothing to show otherwise. `Reveal in Explorer` shows the file in the editor's own sidebar; this opens the system's file manager, which is where you go for what the editor does not do: a Quick Look, a drag into another application, a look at what else is in the folder.
 

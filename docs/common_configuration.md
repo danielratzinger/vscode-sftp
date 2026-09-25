@@ -588,6 +588,8 @@ Set it to `0` to wait forever, which is what happened before this setting existe
 After each file is written, compare its size on the destination against the source and fail the file if they differ. <br>
 On a transfer that uses a temp file the check runs before the temp file replaces the target, so a short transfer can never overwrite a good file.
 
+On the archive route the same check is made against the length the archive said the file would be, asked of the file system after writing rather than counted on the way through — so a write that stopped short without saying so is caught too. Over the whole archive there is also gzip's own checksum, which is what says the archive itself arrived intact.
+
 | 💡 Note |
 | :--- |
 | *Costs one round trip per file. The check is skipped, not failed, when the server won't report a size — an FTP server without the `SIZE` command, for instance.* | 
@@ -603,20 +605,38 @@ On a transfer that uses a temp file the check runs before the temp file replaces
 ```
 
 ### useArchiveTransfer
-Send a whole folder as one compressed archive over an SSH connection, instead of one file at a time. <br>
-SFTP only, and only where the server can run a command: `tar` and `gzip` have to be there. Anything missing, and the transfer goes file by file as it always did.
+Send a whole folder as one compressed archive over the SSH connection, instead of one file at a time. <br>
+SFTP only, and only where the server can run a command: `tar` and `gzip` have to be there.
 
-A folder of small files is slow because of the round trips, not the bytes. Downloading asks the server to `tar` the folder and reads one stream, so the recursive listing goes away with it. Uploading streams an archive in, unpacks it into a staging folder inside the target, and moves each file into place — a rename within one file system, so nothing is ever half-written at the path a web server is reading.
+A folder of small files is slow because of the round trips, not the bytes — SFTP opens, reads and closes each one. Downloading asks the server to `tar` the folder and reads a single stream, so the recursive listing goes away with it: the recursion is the server's to do. Uploading streams an archive in, unpacks it into a staging folder inside the target, and moves each file into place. That move is a rename within one file system, so a file is the old one or the new one and never half of either — which is what `useTempFile` has always been for, and what unpacking straight into the target could not give.
 
-The result is meant to be indistinguishable from the slow way: the same `ignore` and `Download Scripts` filters are applied, both timestamps are kept, a file already there keeps its own permissions and a new one gets the ones it came with, `filePerm` and `dirPerm` still decide when they are set, symlinks stay symlinks, and nothing outside the folder is touched or removed.
+It is meant to be indistinguishable from the slow way, and that is where most of the work went:
+
+- The connection's `ignore` rules and the `Download Scripts` filters are applied as the archive is read, in the same places the file-by-file walk applies them — folders are not asked what a file-level filter thinks.
+- Both timestamps come from the archive's extended headers.
+- A downloaded file is written in place, so the inode survives and a hard link holds.
+- A file already on the server keeps its own permissions, a new one gets the ones it came with, and `filePerm` and `dirPerm` still decide when they are set.
+- Symlinks stay symlinks. Empty folders arrive.
+- Nothing outside the folder is touched, and nothing is ever deleted: a path only on your side stays, a path only on the server's arrives, and a path on both is overwritten — exactly as before.
+- `verifyTransfer` still checks each file against the length the archive said it would be.
 
 | 💡 Note |
 | :--- |
-| *An upload only takes this route past 50 files, since walking the local folder to count them costs nothing. A folder download has no listing to count — that the server does the recursion is the saving — so it always asks, and a small folder pays a few hundred milliseconds of setup for it.* |
+| *An upload only takes this route past 50 files, because walking the local folder to count them costs nothing. A folder download has no listing to count — that the server does the recursion is the saving — so it always asks, and a small folder pays a few hundred milliseconds of setup for it.* |
+
+| ℹ️ It says where it has got to |
+| :--- |
+| *An archive is one operation lasting as long as the whole transfer, so the output panel gets a line every few seconds without debug logging on: `1204 files, 48.2 MB of about 480 MB` on the way down, `210 of 340 files packed` on the way up.* |
 
 | ℹ️ What happens when it cannot |
 | :--- |
-| *Every way this can fail ends in the ordinary file-by-file transfer, with the reason in the output panel: a server set up for file transfer only, no `tar`, a `tar` nobody recognises, a command that exits badly, a stream that breaks. An upload leaves nothing behind either — the staging folder goes when the script ends, at once on a dropped connection, and a day later by the next upload's sweep if this editor dies between the two commands.* |
+| *Every way this can fail ends in the ordinary file-by-file transfer, with the reason in the output panel: a server set up for file transfer only, no `tar`, a `tar` nobody recognises, a command that exits badly, a stream that breaks or goes quiet for longer than `operationTimeout`. A folder that half arrived is simply written again.* |
+| *Two things are not fallbacks but stops, because going round again one file at a time would end the same way: a download that will not fit, and a disk that fills up, runs out of quota, turns read-only or starts failing. So does a run where twenty entries fail one after another, which says the trouble is with where they are going rather than with any one of them.* |
+
+| ℹ️ Before it starts, and after it stops |
+| :--- |
+| *A folder download asks the server how much is coming — one `du -sk`, the walk `tar` was about to do anyway coming back as a number — and refuses before a byte moves if it will not fit, keeping a tenth of the disk back so a finished transfer does not leave a machine with no room to save a file. Not knowing is a yes: refusing a transfer over a question that could not be answered would be worse than the thing it guards against.* |
+| *An upload leaves nothing behind. The staging folder goes when the script ends however it ends, at once on a dropped connection, and a day later by the next upload's sweep if this editor dies between the two commands.* |
 
 | Key | Value | Default |
 | --- | --- | --- |

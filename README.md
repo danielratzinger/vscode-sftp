@@ -34,6 +34,21 @@ bounded by the connection's own root, credentials are removed before anything
 is returned, and connections are exposed only if you say so. See
 [docs/commands.md](./docs/commands.md#mcp-for-ai-clients).
 
+**A folder as one archive, not one file at a time.** A folder of small files is
+slow because of the round trips, not the bytes: SFTP opens, reads and closes
+each one, so five thousand files over a link with 30ms of latency is minutes
+spent asking permission to send the next thing. Where the server can run a
+command, a download asks it to `tar` the folder and reads one stream — the
+recursive listing goes away with it, since the recursion is the server's to do —
+and an upload streams one in, unpacks it into a staging folder inside the target
+and moves each file into place, which is a rename and so never leaves a
+half-written file at a path a web server is reading. It is meant to be indistinguishable from the slow way:
+the same ignore rules, both timestamps, permissions left as one transfer at a
+time leaves them, symlinks still symlinks, nothing outside the folder touched
+and nothing ever deleted. Anything the server cannot do ends in the ordinary
+transfer with the reason in the output panel. See
+[docs/configuration.md](./docs/configuration.md#usearchivetransfer).
+
 **Continuous deploy from a folder you choose.** `SFTP: Autosync Worktree`
 keeps a folder on the server as it changes — saved in this window or written
 by anything else. Usually that folder is not the one the editor has open: an
@@ -49,8 +64,9 @@ per connection, across windows as well as within one. See
 [docs/commands.md](./docs/commands.md#autosync-worktree).
 
 **Cleaning up what a server accumulated.** `SFTP: Remove Files Deleted from
-the Project` asks git what the project has dropped over its history and offers
-to take those files off the server — downloads write and never remove, and a
+the Repository` asks git what the project has dropped over its history and
+offers to take those files off the server — downloads write and never remove,
+and a
 deploy uploads what exists rather than removing what stopped existing. Only
 paths git once tracked are ever named, so a runtime directory, upload folder
 or cache the repository ignores cannot appear in the list. That is the
