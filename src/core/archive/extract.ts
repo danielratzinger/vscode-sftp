@@ -39,6 +39,8 @@ export interface ExtractOption {
    * good, and the only sign is a progress bar that never moves.
    */
   stallAfter?: number;
+  /** Told how far it has got, as each file lands. */
+  onProgress?(sofar: ExtractResult): void;
 }
 
 /**
@@ -273,6 +275,10 @@ export function extractInto(
 
         result.files += 1;
         result.bytes += size;
+
+        if (option.onProgress) {
+          option.onProgress(result);
+        }
       });
     });
 

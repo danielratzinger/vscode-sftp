@@ -1,4 +1,5 @@
 import * as tar from 'tar';
+import { Transform } from 'stream';
 import { FileSystem, FileType } from '../fs';
 import TransferTask, {
   TransferDirection,
@@ -8,6 +9,8 @@ import { ExecChannel } from '../remote-client/sshClient';
 import { LocalTree } from './localTree';
 import { ExecHost, TarFlavour } from './serverTar';
 import { promoteScript, unpackCommand } from './remoteScript';
+import { occasionally } from './progress';
+import { describeSize } from '../../helper';
 import logger from '../../logger';
 
 interface ArchiveHandle {
@@ -126,6 +129,14 @@ export default class ArchiveUploadTask extends TransferTask {
     const channel = await this._host.exec(unpackCommand(this._remoteDir, id));
     this._channel = channel;
 
+    // How many files it has reached, which is progress through the list rather
+    // than a guess: tar takes them in the order they are given.
+    const total = this._tree.files.length;
+    const remoteDir = this._remoteDir;
+    let reached = 0;
+    let sent = 0;
+    const sayWhereItIs = occasionally();
+
     const archive = tar.create(
       {
         gzip: { level: 1 },
@@ -134,15 +145,36 @@ export default class ArchiveUploadTask extends TransferTask {
         follow: false,
         portable: false,
         noDirRecurse: true,
+        filter: () => {
+          reached += 1;
+          return true;
+        },
       } as any,
       this._tree.files.map(file => file.path)
     );
 
+    // Counted in a transform rather than by listening for data: the archive is
+    // a minipass stream, where adding a data handler starts it flowing there and
+    // then, and anything it had already buffered would go out before the pipe
+    // below was attached to catch it - which is a hole in the middle of a file.
+    const counted = new Transform({
+      transform(chunk, _encoding, done) {
+        sent += chunk.length;
+        sayWhereItIs(
+          () =>
+            `[archive] ${remoteDir}: ${Math.min(reached, total)} of ` +
+            `${total} files packed, ${describeSize(sent)} sent`
+        );
+        done(undefined, chunk);
+      },
+    });
+
     await new Promise<void>((resolve, reject) => {
       archive.on('error', reject);
+      counted.on('error', reject);
       channel.stdin.on('error', reject);
       channel.stdin.on('finish', () => resolve());
-      (archive as any).pipe(channel.stdin);
+      (archive as any).pipe(counted).pipe(channel.stdin);
     });
 
     const code = await channel.done;

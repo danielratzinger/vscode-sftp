@@ -4,6 +4,7 @@ import { COMMAND_RESTORE_REPLACED } from '../constants';
 import { showInformationMessage, showWarningMessage, diffFiles } from '../host';
 import { getActiveTextEditor, getWorkspaceFolders } from '../host';
 import { Backup } from '../core/overwriteBackup';
+import { describeSize } from '../helper';
 import {
   isEnabled,
   restore,
@@ -15,10 +16,6 @@ import { checkCommand } from './abstract/createCommand';
 interface VersionPick extends vscode.QuickPickItem {
   backup: Backup;
   connectionId: string;
-}
-
-function describeSize(bytes: number): string {
-  return bytes >= 1024 ? `${Math.round(bytes / 1024)} KB` : `${bytes} bytes`;
 }
 
 /**

@@ -6,6 +6,8 @@ import TransferTask, {
 import { ExecChannel } from '../remote-client/sshClient';
 import { extractInto } from './extract';
 import { ExecHost, TarFlavour, packFolderCommand } from './serverTar';
+import { occasionally } from './progress';
+import { describeSize } from '../../helper';
 import logger from '../../logger';
 
 interface ArchiveHandle {
@@ -93,6 +95,11 @@ export default class ArchiveDownloadTask extends TransferTask {
     this._channel = channel;
     logger.info(`[archive] reading ${this._remoteDir} as one archive`);
 
+    // There is no total to count towards: nobody listed the folder, which is
+    // the saving. So it says what has arrived, which is enough to tell a slow
+    // transfer from a stopped one.
+    const sayWhereItIs = occasionally();
+
     try {
       const result = await extractInto(channel.stdout, {
         localBase: this._localDir,
@@ -100,6 +107,13 @@ export default class ArchiveDownloadTask extends TransferTask {
         fileFilter: this._option.fileFilter,
         keepReplaced: this._option.keepReplaced,
         stallAfter: this._host.operationTimeout,
+        onProgress: sofar =>
+          sayWhereItIs(
+            () =>
+              `[archive] ${this._remoteDir}: ${sofar.files} file${
+                sofar.files === 1 ? '' : 's'
+              }, ${describeSize(sofar.bytes)} so far`
+          ),
       });
 
       const code = await channel.done;
@@ -112,7 +126,7 @@ export default class ArchiveDownloadTask extends TransferTask {
       logger.info(
         `[archive] ${this._remoteDir}: ${result.files} file${
           result.files === 1 ? '' : 's'
-        }, ${result.bytes} bytes` +
+        }, ${describeSize(result.bytes)}` +
           (result.skipped ? `, ${result.skipped} skipped` : '') +
           (result.refused ? `, ${result.refused} this machine would not write` : '')
       );

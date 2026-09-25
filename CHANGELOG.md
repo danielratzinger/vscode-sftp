@@ -6,6 +6,23 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.4.2 - 2026-09-25
+
+### Changed
+
+- An archive transfer now says where it has got to every few seconds, in the
+  output panel and not only with debug logging on. It is one operation that
+  lasts as long as the whole transfer, so the log used to hold a line saying it
+  started and then nothing until it was over - which is no way to tell a slow
+  folder from a stuck one, and that is exactly the question somebody asks
+  without having turned debug on. A download says how many files and how much
+  has arrived; an upload, having walked the folder, can say how many of how many
+  it has packed and sent.
+- Sizes are written the same way everywhere now - `50 MB`, `48.2 MB`, `49 KB` -
+  from one place rather than three near-copies. The list of kept copies in
+  `Restore Replaced File` gains megabytes from it: a 5 MB backup was described
+  as `5120 KB`.
+
 ## 2.4.1 - 2026-09-25
 
 ### Fixed

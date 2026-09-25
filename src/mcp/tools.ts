@@ -2,6 +2,7 @@ import * as crypto from 'crypto';
 import * as path from 'path';
 import upath from '../core/upath';
 import { FileEntry, FileType } from '../core/fs';
+import { describeSize } from '../helper';
 import * as fse from 'fs-extra';
 import { ToolDefinition, ToolResult } from './protocol';
 import {
@@ -220,13 +221,6 @@ export function localPathFor(service: ServiceLike, remotePath: string): string {
  */
 function looksBinary(text: string): boolean {
   return text.slice(0, 8000).indexOf('\u0000') !== -1;
-}
-
-function describeSize(bytes: number): string {
-  if (bytes >= 1024 * 1024) {
-    return `${Math.round((bytes / (1024 * 1024)) * 10) / 10} MB`;
-  }
-  return bytes >= 1024 ? `${Math.round(bytes / 1024)} KB` : `${bytes} bytes`;
 }
 
 function describeEntry(entry: FileEntry): string {

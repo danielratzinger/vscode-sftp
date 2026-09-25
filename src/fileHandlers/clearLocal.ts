@@ -8,7 +8,7 @@ import {
   planClearance,
 } from '../core/clearLocal';
 import { showConfirmMessage } from '../host';
-import { simplifyPath } from '../helper';
+import { describeSize, simplifyPath } from '../helper';
 import logger from '../logger';
 
 /**
@@ -24,17 +24,6 @@ import logger from '../logger';
  * to the system's trash where that is possible, because "download it again" is
  * a poor answer to a folder that turns out to have held something else.
  */
-
-function describeSize(bytes: number): string {
-  if (bytes < 1024) {
-    return `${bytes} bytes`;
-  }
-  if (bytes < 1024 * 1024) {
-    return `${Math.round(bytes / 1024)} KB`;
-  }
-
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 function describePlan(
   local: string,

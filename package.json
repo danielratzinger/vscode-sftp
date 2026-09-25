@@ -2,7 +2,7 @@
   "name": "sftp",
   "displayName": "SFTP",
   "description": "SFTP/FTP sync, with an MCP server that lets local AI clients read your servers",
-  "version": "2.4.1",
+  "version": "2.4.2",
   "publisher": "danielratzinger",
   "author": "Daniel Ratzinger (https://github.com/danielratzinger)",
   "engines": {
