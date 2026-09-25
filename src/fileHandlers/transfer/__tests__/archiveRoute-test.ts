@@ -2,6 +2,8 @@ import { Readable } from 'stream';
 import { FileType } from '../../../core/fs';
 import TransferTask, { TransferDirection } from '../../../core/transferTask';
 import ArchiveDownloadTask from '../../../core/archive/archiveDownloadTask';
+import ArchiveUploadTask from '../../../core/archive/archiveUploadTask';
+import { ARCHIVE_FILE_THRESHOLD } from '../../../core/archive';
 import { PROBE_COMMAND } from '../../../core/archive/serverTar';
 import { transfer } from '../transfer';
 
@@ -197,5 +199,103 @@ describe('which way a folder download goes', () => {
     // Probe, then the pack that failed. The folder inside asks for neither.
     expect(remoteFs.commands).toHaveLength(2);
     expect(remoteFs.calls).toEqual(['list /remote/site', 'list /remote/site/app']);
+  });
+});
+
+/** A local folder holding as many files as the test asks for. */
+function createLocalSource(count: number) {
+  const calls: string[] = [];
+  const files = Array.from({ length: count }, (_, i) =>
+    entry(`file${i}.php`)
+  );
+
+  return {
+    calls,
+    pathResolver: {
+      join: (...parts: string[]) => parts.join('/'),
+      dirname: (p: string) => p.slice(0, p.lastIndexOf('/')),
+    },
+    lstat: () => Promise.resolve(FOLDER),
+    list: (dir: string) => {
+      calls.push(`list ${dir}`);
+      return Promise.resolve(dir === '/remote/site' ? files : []);
+    },
+  } as any;
+}
+
+async function uploadFolder(localFs: any, remoteFs: any, option: any = {}) {
+  const collected: TransferTask[] = [];
+
+  await transfer(
+    {
+      srcFsPath: '/remote/site',
+      srcFs: localFs,
+      targetFsPath: '/var/www/site',
+      targetFs: remoteFs,
+      transferOption: {
+        perserveTargetMode: true,
+        useTempFile: true,
+        useArchiveTransfer: true,
+        ...option,
+      } as any,
+      transferDirection: TransferDirection.LOCAL_TO_REMOTE,
+    } as any,
+    t => collected.push(t)
+  );
+
+  return collected;
+}
+
+describe('which way a folder upload goes', () => {
+  function createTarget() {
+    const fs = createRemoteFs();
+    fs.ensureDir = () => Promise.resolve();
+    fs.chmod = () => Promise.resolve();
+    return fs;
+  }
+
+  it('sends one archive once there are more files than it is worth for', async () => {
+    const localFs = createLocalSource(ARCHIVE_FILE_THRESHOLD + 1);
+    const remoteFs = createTarget();
+
+    const collected = await uploadFolder(localFs, remoteFs);
+
+    expect(collected).toHaveLength(1);
+    expect(collected[0]).toBeInstanceOf(ArchiveUploadTask);
+  });
+
+  it('goes file by file for a folder of a few, and asks the server nothing', async () => {
+    const localFs = createLocalSource(ARCHIVE_FILE_THRESHOLD);
+    const remoteFs = createTarget();
+
+    const collected = await uploadFolder(localFs, remoteFs);
+
+    expect(collected.some(t => t instanceof ArchiveUploadTask)).toBe(false);
+    expect(collected).toHaveLength(ARCHIVE_FILE_THRESHOLD);
+    // The walk that counted them is on this machine; nothing was asked of the
+    // server to find out that an archive was not worth it.
+    expect(remoteFs.commands).toEqual([]);
+  });
+
+  it('goes file by file when the server cannot run a command', async () => {
+    const localFs = createLocalSource(ARCHIVE_FILE_THRESHOLD + 1);
+    const remoteFs = createTarget();
+    delete remoteFs.exec;
+
+    const collected = await uploadFolder(localFs, remoteFs);
+
+    expect(collected.some(t => t instanceof ArchiveUploadTask)).toBe(false);
+  });
+
+  it('goes file by file when it is switched off for the connection', async () => {
+    const localFs = createLocalSource(ARCHIVE_FILE_THRESHOLD + 1);
+    const remoteFs = createTarget();
+
+    const collected = await uploadFolder(localFs, remoteFs, {
+      useArchiveTransfer: false,
+    });
+
+    expect(collected.some(t => t instanceof ArchiveUploadTask)).toBe(false);
+    expect(remoteFs.commands).toEqual([]);
   });
 });

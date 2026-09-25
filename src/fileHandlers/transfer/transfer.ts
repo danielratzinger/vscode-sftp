@@ -11,8 +11,14 @@ import { FileHandleOption } from '../option';
 import { flatten } from '../../utils';
 import logger from '../../logger';
 import { getOpenTextDocuments } from '../../host';
-import ArchiveDownloadTask from '../../core/archive/archiveDownloadTask';
-import { canExec, serverTar } from '../../core/archive/serverTar';
+import {
+  ARCHIVE_FILE_THRESHOLD,
+  ArchiveDownloadTask,
+  ArchiveUploadTask,
+  canExec,
+  serverTar,
+  walkLocal,
+} from '../../core/archive';
 
 interface InternalTransferOption extends FileHandleOption, TransferTaskTransferOption {}
 
@@ -119,37 +125,59 @@ async function archiveTaskFor(
     return null;
   }
 
-  // Uploads have their own way round, which is not this one.
-  if (config.transferDirection !== TransferDirection.REMOTE_TO_LOCAL) {
+  // The archive's own way out. Off for the walk it hands over to, or every
+  // folder inside would ask the server for an archive of its own.
+  const fallBackToFileByFile = () =>
+    walkFolder(
+      {
+        ...config,
+        transferOption: { ...transferOption, useArchiveTransfer: false },
+      },
+      collect
+    );
+
+  if (config.transferDirection === TransferDirection.REMOTE_TO_LOCAL) {
+    if (!canExec(srcFs)) {
+      return null;
+    }
+
+    const probe = await serverTar(srcFs);
+    if (!probe) {
+      return null;
+    }
+
+    return new ArchiveDownloadTask(
+      { fsPath: srcFsPath, fileSystem: srcFs },
+      { fsPath: targetFsPath, fileSystem: targetFs },
+      { transferOption, flavour: probe.flavour, fallBackToFileByFile }
+    );
+  }
+
+  if (!canExec(targetFs)) {
     return null;
   }
 
-  if (!canExec(srcFs)) {
+  // The walk first, because it is on this machine and costs nothing, and the
+  // count it gives decides whether to spend a round trip asking the server
+  // anything at all.
+  const tree = await walkLocal(srcFs, srcFsPath, {
+    ignore: transferOption.ignore,
+    fileFilter: transferOption.fileFilter,
+  });
+
+  if (tree.files.length <= ARCHIVE_FILE_THRESHOLD) {
     return null;
   }
 
-  const probe = await serverTar(srcFs);
+  const probe = await serverTar(targetFs);
   if (!probe) {
     return null;
   }
 
-  return new ArchiveDownloadTask(
+  return new ArchiveUploadTask(
     { fsPath: srcFsPath, fileSystem: srcFs },
     { fsPath: targetFsPath, fileSystem: targetFs },
-    {
-      transferOption,
-      flavour: probe.flavour,
-      // The archive's own way out. Off for the walk it hands over to, or every
-      // folder inside would ask the server for an archive of its own.
-      fallBackToFileByFile: () =>
-        walkFolder(
-          {
-            ...config,
-            transferOption: { ...transferOption, useArchiveTransfer: false },
-          },
-          collect
-        ),
-    }
+    { transferOption, flavour: probe.flavour, tree, fallBackToFileByFile }
   );
 }
 

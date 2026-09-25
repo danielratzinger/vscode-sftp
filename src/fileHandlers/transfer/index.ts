@@ -173,6 +173,7 @@ export const upload = createFileHandler<TransferOption>({
       openSsh: config.openSsh,
       // remoteTimeOffsetInHours: config.remoteTimeOffsetInHours,
       ignore: config.ignore,
+      useArchiveTransfer: config.useArchiveTransfer !== false,
     };
   },
   afterHandle() {
@@ -211,6 +212,7 @@ export const uploadFolder = createFileHandler<TransferOption>({
       openSsh: config.openSsh,
       // remoteTimeOffsetInHours: config.remoteTimeOffsetInHours,
       ignore: config.ignore,
+      useArchiveTransfer: config.useArchiveTransfer !== false,
     };
   },
   afterHandle() {
