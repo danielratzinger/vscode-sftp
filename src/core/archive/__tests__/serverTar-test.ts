@@ -2,8 +2,10 @@ import { Readable } from 'stream';
 import {
   PROBE_COMMAND,
   forgetServerTar,
+  folderSizeCommand,
   packFolderCommand,
   packListCommand,
+  readFolderSize,
   quote,
   readFlavour,
   serverTar,
@@ -93,6 +95,24 @@ describe('the command that packs', () => {
 
   it('reads a list of names separated by nothing a name may contain', () => {
     expect(packListCommand('gnu', '/srv')).toContain('--null -T -');
+  });
+});
+
+describe('asking how much a folder comes to', () => {
+  it('leaves the shell nothing to read in the folder name', () => {
+    expect(folderSizeCommand("/srv/it's; rm -rf /")).toContain(
+      `'/srv/it'\\''s; rm -rf /'`
+    );
+  });
+
+  it('reads the kilobytes du printed, as bytes', () => {
+    expect(readFolderSize('482516\n')).toBe(482516 * 1024);
+    expect(readFolderSize('482516\t/srv/site\n')).toBe(482516 * 1024);
+  });
+
+  it('says nothing when du said nothing it can use', () => {
+    expect(readFolderSize('')).toBeUndefined();
+    expect(readFolderSize('du: cannot read directory')).toBeUndefined();
   });
 });
 

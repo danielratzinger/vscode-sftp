@@ -5,8 +5,16 @@ import TransferTask, {
 } from '../transferTask';
 import { ExecChannel } from '../remote-client/sshClient';
 import { extractInto } from './extract';
-import { ExecHost, TarFlavour, packFolderCommand } from './serverTar';
+import {
+  ExecHost,
+  TarFlavour,
+  ask,
+  folderSizeCommand,
+  packFolderCommand,
+  readFolderSize,
+} from './serverTar';
 import { occasionally } from './progress';
+import { roomFor } from './space';
 import { describeSize } from '../../helper';
 import logger from '../../logger';
 
@@ -83,6 +91,20 @@ export default class ArchiveDownloadTask extends TransferTask {
   }
 
   async run() {
+    const coming = await this._howMuchIsComing();
+    const room = await roomFor(coming, this._localDir);
+
+    if (!room.fits) {
+      // Refused here rather than found out in the middle of it. Going file by
+      // file would fill the disk just as surely, so this is not a reason to fall
+      // back - it is a reason to stop.
+      const full: any = new Error(
+        `${this._remoteDir} will not fit: ${room.because}`
+      );
+      full.noPointRetrying = true;
+      throw full;
+    }
+
     const command = packFolderCommand(this._flavour, this._remoteDir);
 
     let channel: ExecChannel;
@@ -112,7 +134,8 @@ export default class ArchiveDownloadTask extends TransferTask {
             () =>
               `[archive] ${this._remoteDir}: ${sofar.files} file${
                 sofar.files === 1 ? '' : 's'
-              }, ${describeSize(sofar.bytes)} so far`
+              }, ${describeSize(sofar.bytes)}` +
+              (coming === undefined ? ' so far' : ` of about ${describeSize(coming)}`)
           ),
       });
 
@@ -137,8 +160,10 @@ export default class ArchiveDownloadTask extends TransferTask {
       channel.cancel();
 
       // Asked to stop is not gone wrong, and starting the long way round after
-      // being told to stop would be the opposite of what was asked.
-      if (this.isCancelled()) {
+      // being told to stop would be the opposite of what was asked. Neither is
+      // a full disk: file by file would fill it the same way, one dialog at a
+      // time.
+      if (this.isCancelled() || error.noPointRetrying) {
         throw error;
       }
 
@@ -146,6 +171,22 @@ export default class ArchiveDownloadTask extends TransferTask {
     } finally {
       this._channel = null;
     }
+  }
+
+  /**
+   * What the folder comes to on the server, as far as it will say.
+   *
+   * One round trip and a walk the server was about to do anyway. Unknown is a
+   * perfectly good answer - the transfer then goes ahead as it did before, and
+   * a disk that fills up is caught as it happens instead of beforehand.
+   */
+  private async _howMuchIsComing(): Promise<number | undefined> {
+    const answer = await ask(this._host, folderSizeCommand(this._remoteDir));
+    if (!answer || answer.code !== 0) {
+      return undefined;
+    }
+
+    return readFolderSize(answer.output);
   }
 
   private async _giveUp(why: string): Promise<void> {

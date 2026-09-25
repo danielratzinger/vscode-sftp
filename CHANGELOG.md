@@ -6,6 +6,34 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.4.3 - 2026-09-25
+
+### Fixed
+
+- **A disk that filled up during an archive download carried on regardless.** An
+  entry that cannot be written was treated as that one file's failure, which is
+  right for a name Windows cannot spell and wrong for `ENOSPC`: every entry after
+  it fails the same way, so one condition became a warning per file, a folder of
+  half-written ones, and a transfer that would have picked up again had space
+  appeared. No space, over quota, a read-only file system, an I/O error or no
+  file descriptors left now stop the transfer at once - and do not send it round
+  again file by file, which would fill the disk just as surely.
+- Entries failing one after another stop it too, after twenty. Without any of
+  those codes it still says the trouble is with where they are going rather than
+  with each of them. The log says the first twenty and counts the rest, instead
+  of holding a line per file.
+
+### Added
+
+- **A folder download asks how much is coming and refuses if it will not fit.**
+  One `du -sk` before anything moves - the same walk tar was about to do, coming
+  back as a number rather than a listing - against what this machine has free,
+  keeping a tenth of it back so a finished transfer does not leave a disk with no
+  room to save a file. Not knowing is a yes: a transfer refused over a question
+  that could not be answered would be worse than the thing it guards against.
+- Which also gives the download something to count towards, so its progress now
+  reads `1204 files, 48.2 MB of about 480 MB`.
+
 ## 2.4.2 - 2026-09-25
 
 ### Changed

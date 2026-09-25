@@ -73,6 +73,29 @@ function packFlags(flavour: TarFlavour): string {
 }
 
 /**
+ * Asks how much a folder comes to, in kilobytes.
+ *
+ * `du` walks the tree, which is not free - but it is the same walk tar is about
+ * to do, and it comes back as one number rather than a listing. What it buys is
+ * the chance to refuse before a single byte moves, instead of finding out in the
+ * middle that there is no room left.
+ */
+export function folderSizeCommand(dir: string): string {
+  return `du -sk ${quote(dir)} 2>/dev/null | cut -f1`;
+}
+
+/** The kilobytes out of what `du` printed, or undefined when it makes no sense. */
+export function readFolderSize(output: string): number | undefined {
+  const first = /(\d+)/.exec(output);
+  if (!first) {
+    return undefined;
+  }
+
+  const kilobytes = Number(first[1]);
+  return isFinite(kilobytes) ? kilobytes * 1024 : undefined;
+}
+
+/**
  * Streams a folder and everything under it to standard output.
  *
  * Nothing is excluded here, on purpose. The walk's filters are consulted as
@@ -118,20 +141,33 @@ export function serverTar(host: ExecHost): Promise<Probe | null> {
   return asking;
 }
 
-async function probe(host: ExecHost): Promise<Probe | null> {
+/** What a short command said, and how it ended. */
+export interface Answer {
+  code: number;
+  output: string;
+}
+
+/**
+ * Runs a command that answers in a line or two and waits for all of it.
+ *
+ * Both the output and the exit code, not just the code: the code can land
+ * before the last of the output has been handed over, and a version line read
+ * too early says nothing at all. Gathering also stops when the command is over,
+ * so a stream that never ends cannot leave this waiting for it.
+ */
+export async function ask(
+  host: ExecHost,
+  command: string
+): Promise<Answer | null> {
   let channel: ExecChannel;
   try {
-    channel = await host.exec(PROBE_COMMAND);
+    channel = await host.exec(command);
   } catch (error) {
     // A server set up for file transfer only refuses to run anything at all.
     logger.info(`[archive] no exec channel on this server: ${error.message}`);
     return null;
   }
 
-  // Both, not just the exit code: the code can land before the last of the
-  // output has been handed over, and a version line read too early says
-  // nothing at all. Gathering also stops when the command is over, so a stream
-  // that never ends cannot leave this waiting for it.
   const gathered = new Promise<string>(resolve => {
     let said = '';
     const finish = () => resolve(said);
@@ -145,11 +181,20 @@ async function probe(host: ExecHost): Promise<Probe | null> {
     channel.done.then(() => setImmediate(finish), () => setImmediate(finish));
   });
 
-  const [code, said] = await Promise.all([channel.done, gathered]);
+  const [code, output] = await Promise.all([channel.done, gathered]);
+  return { code, output };
+}
+
+async function probe(host: ExecHost): Promise<Probe | null> {
+  const answer = await ask(host, PROBE_COMMAND);
+  if (!answer) {
+    return null;
+  }
+
+  const { code, output: said } = answer;
   if (code !== 0) {
     logger.info(
-      `[archive] this server has no tar and gzip to use (exit ${code})` +
-        (channel.stderr() ? `: ${channel.stderr()}` : '')
+      `[archive] this server has no tar and gzip to use (exit ${code})`
     );
     return null;
   }

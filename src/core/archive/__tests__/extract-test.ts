@@ -267,6 +267,46 @@ describe('reading an archive into a folder', () => {
     expect(result.files).toBe(1);
   });
 
+  it('stops at once when the trouble is the disk and not the file', async () => {
+    const source = archiveOf({ 'one.txt': 'first', 'two.txt': 'second' });
+    const seen: string[] = [];
+
+    // Every entry after this one would fail the same way. Carrying on turns one
+    // condition into a warning per file and a folder of half-written ones.
+    const full: any = new Error('ENOSPC: no space left on device');
+    full.code = 'ENOSPC';
+
+    const failed = await extractInto(source, {
+      localBase: '/local',
+      keepReplaced: async localPath => {
+        seen.push(localPath);
+        throw full;
+      },
+    }).catch(error => error);
+
+    expect(failed.code).toBe('ENOSPC');
+    expect(failed.noPointRetrying).toBe(true);
+    // And it did not go on to the next one.
+    expect(seen).toHaveLength(1);
+  });
+
+  it('stops when so many entries fail that it is about the place, not the files', async () => {
+    const many: { [path: string]: string } = {};
+    for (let i = 0; i < 40; i += 1) {
+      many[`file${i}.txt`] = 'x';
+    }
+    const source = archiveOf(many);
+
+    const refused: any = new Error('something the disk did not like');
+    const failed = await extractInto(source, {
+      localBase: '/local',
+      keepReplaced: () => Promise.reject(refused),
+    }).catch(error => error);
+
+    expect(failed.message).toMatch(/entries could not be written/);
+    expect(failed.noPointRetrying).toBe(true);
+  });
+
   it('fails when the stream is not an archive at all', async () => {
     const { Readable } = require('stream');
     const rubbish = new Readable();

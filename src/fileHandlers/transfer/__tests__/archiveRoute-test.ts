@@ -196,8 +196,10 @@ describe('which way a folder download goes', () => {
     const collected = await downloadFolder(remoteFs);
     await collected[0].run();
 
-    // Probe, then the pack that failed. The folder inside asks for neither.
-    expect(remoteFs.commands).toHaveLength(2);
+    // The probe, the size, and the pack that failed. The folder inside asks for
+    // none of them again.
+    expect(remoteFs.commands).toHaveLength(3);
+    expect(remoteFs.commands.filter((c: string) => /^tar /.test(c))).toHaveLength(1);
     expect(remoteFs.calls).toEqual(['list /remote/site', 'list /remote/site/app']);
   });
 });

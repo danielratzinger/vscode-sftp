@@ -102,7 +102,7 @@ export default class ArchiveUploadTask extends TransferTask {
         this._channel = null;
       }
 
-      if (this.isCancelled()) {
+      if (this.isCancelled() || error.noPointRetrying) {
         throw error;
       }
 
