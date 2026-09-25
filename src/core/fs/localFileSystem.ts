@@ -2,6 +2,32 @@ import * as fs from 'fs';
 import * as fse from 'fs-extra';
 import FileSystem, { FileEntry, FileStats, FileOption } from './fileSystem';
 
+/**
+ * Windows has no mode to report, so Node makes one up: 0666 for a file anyone
+ * may write, 0444 for a read-only one, and the same for folders. Carried to a
+ * server as if it meant something, 0666 is a world-writable file - which some
+ * hosting refuses to run at all, PHP under suexec among them - and 0444 is one
+ * nobody can write.
+ *
+ * So on Windows a local mode is not evidence of anything and is not treated as
+ * such: a file is 0644 and a folder 0755, the modes a file put there by hand
+ * would have. `filePerm` and `dirPerm` still override both, as always.
+ */
+const MODE_FOR_FILE = 0o644;
+const MODE_FOR_DIRECTORY = 0o755;
+
+export function localMode(
+  stat: { mode: number; isDirectory(): boolean },
+  platform: string = process.platform
+): number {
+  if (platform === 'win32') {
+    return stat.isDirectory() ? MODE_FOR_DIRECTORY : MODE_FOR_FILE;
+  }
+
+  // tslint:disable-next-line:no-bitwise
+  return stat.mode & 0o777;
+}
+
 export default class LocalFileSystem extends FileSystem {
   constructor(pathResolver: any) {
     super(pathResolver);
@@ -11,7 +37,7 @@ export default class LocalFileSystem extends FileSystem {
     return {
       type: FileSystem.getFileTypecharacter(stat),
       size: stat.size,
-      mode: stat.mode & parseInt('777', 8), // tslint:disable-line:no-bitwise
+      mode: localMode(stat),
       mtime: stat.mtime.getTime(),
       atime: stat.atime.getTime(),
     };
