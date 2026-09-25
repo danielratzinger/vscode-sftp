@@ -107,6 +107,10 @@ describe('the commands, as text', () => {
     expect(unpackCommand('/srv', ID)).toContain('--no-same-owner');
   });
 
+  it('keeps Apple metadata out of the unpacking too', () => {
+    expect(unpackCommand('/srv', ID)).toContain('COPYFILE_DISABLE=1 tar');
+  });
+
   it('asks GNU and the other one for the target mode in their own words', () => {
     const forGnu = promoteScript({
       target: '/srv',

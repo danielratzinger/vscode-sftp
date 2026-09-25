@@ -6,6 +6,38 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.4.4 - 2026-09-25
+
+### Added
+
+- **Each file from an archive is now checked against the length the archive said
+  it would be**, which is what `verifyTransfer` does for one file at a time and
+  the archive route did not. Asked of the file system after writing rather than
+  counted on the way through, so it also catches a write that stopped short
+  without saying so. `verifyTransfer: false` turns it off here too.
+- A harness that takes an awkward folder out and back on a real disk, through a
+  real `sh` and a real `tar` - the same program with the same flags that runs on
+  the server - and compares every file by its SHA-256 rather than its length.
+  Names with spaces, quotes and accents, a name that begins with a dash, a
+  dotfile, an empty file, an empty folder, a symlink, a file too big to arrive in
+  one read, and enough files to take the archive route. It checks that a folder
+  arrives byte for byte both ways, that timestamps survive, that a file already
+  on the server keeps its own permissions while a new one takes the ones it came
+  with, and that nothing is left behind.
+
+### Fixed
+
+- **A server whose files carry extended attributes sent a hidden second file
+  beside every one of them.** Apple's `tar` stores them as `._name` in
+  AppleDouble form and does so by default, so they arrived as real files in the
+  folder - which a transfer one file at a time never produces. Every `tar` is now
+  run with `COPYFILE_DISABLE=1`, on the way out and on the way in. As a variable
+  rather than `--no-mac-metadata`, which does the same thing but stops GNU tar
+  from starting at all.
+  Found by the harness above on its first run, which is rather the point of it:
+  every other test checks a piece against a fake, and no fake was going to
+  invent that.
+
 ## 2.4.3 - 2026-09-25
 
 ### Fixed

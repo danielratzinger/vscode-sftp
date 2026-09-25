@@ -129,6 +129,7 @@ export default class ArchiveDownloadTask extends TransferTask {
         fileFilter: this._option.fileFilter,
         keepReplaced: this._option.keepReplaced,
         stallAfter: this._host.operationTimeout,
+        verify: this._option.verify,
         onProgress: sofar =>
           sayWhereItIs(
             () =>

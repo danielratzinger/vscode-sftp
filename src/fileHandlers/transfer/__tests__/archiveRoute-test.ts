@@ -199,7 +199,9 @@ describe('which way a folder download goes', () => {
     // The probe, the size, and the pack that failed. The folder inside asks for
     // none of them again.
     expect(remoteFs.commands).toHaveLength(3);
-    expect(remoteFs.commands.filter((c: string) => /^tar /.test(c))).toHaveLength(1);
+    expect(
+      remoteFs.commands.filter((c: string) => /tar --format=pax/.test(c))
+    ).toHaveLength(1);
     expect(remoteFs.calls).toEqual(['list /remote/site', 'list /remote/site/app']);
   });
 });

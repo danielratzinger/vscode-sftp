@@ -93,6 +93,17 @@ describe('the command that packs', () => {
     expect(packFolderCommand('bsd', '/srv')).not.toContain('--ignore-failed-read');
   });
 
+  it('tells Apple\u2019s tar not to carry a hidden file beside every file', () => {
+    // It stores extended attributes as `._name` in AppleDouble form, by
+    // default, and they would land in the folder as real files - which one
+    // transfer at a time never does. As a variable rather than
+    // `--no-mac-metadata`, which GNU tar refuses to start when given.
+    expect(packFolderCommand('bsd', '/srv')).toContain('COPYFILE_DISABLE=1');
+    expect(packFolderCommand('gnu', '/srv')).toContain('COPYFILE_DISABLE=1');
+    expect(packListCommand('bsd', '/srv')).toContain('COPYFILE_DISABLE=1');
+    expect(packFolderCommand('gnu', '/srv')).not.toContain('--no-mac-metadata');
+  });
+
   it('reads a list of names separated by nothing a name may contain', () => {
     expect(packListCommand('gnu', '/srv')).toContain('--null -T -');
   });

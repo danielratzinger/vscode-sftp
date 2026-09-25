@@ -50,7 +50,7 @@ export function unpackCommand(target: string, id: string): string {
   return (
     `S=${staging}; trap 'rm -rf -- "$S"' INT TERM HUP; ` +
     `${sweep} ` +
-    `mkdir -p -- "$S" && tar --no-same-owner -xzf - -C "$S"`
+    `mkdir -p -- "$S" && COPYFILE_DISABLE=1 tar --no-same-owner -xzf - -C "$S"`
   );
 }
 

@@ -3,7 +3,12 @@ jest.mock('fs');
 import { Readable } from 'stream';
 import { vol } from 'memfs';
 import * as tar from 'tar';
-import { entryTarget, extractInto, isArchiveRoot } from '../extract';
+import {
+  entryTarget,
+  extractInto,
+  isArchiveRoot,
+  sizeComplaint,
+} from '../extract';
 
 function archiveOf(files: { [path: string]: string }) {
   vol.reset();
@@ -50,6 +55,22 @@ describe('where an entry is allowed to land', () => {
     expect(isArchiveRoot('./')).toBe(true);
     expect(isArchiveRoot('.')).toBe(true);
     expect(isArchiveRoot('../outside')).toBe(false);
+  });
+});
+
+describe('a file that is not the length the archive said', () => {
+  it('says nothing when it is', () => {
+    expect(sizeComplaint(0, 0)).toBeNull();
+    expect(sizeComplaint(4096, 4096)).toBeNull();
+  });
+
+  it('says which way it went, as one at a time does', () => {
+    expect(sizeComplaint(7049, 3000)).toMatch(
+      /arrived incomplete: expected 7049 bytes, got 3000/
+    );
+    expect(sizeComplaint(7049, 7198)).toMatch(
+      /longer than the archive said: expected 7049 bytes, got 7198/
+    );
   });
 });
 
@@ -305,6 +326,18 @@ describe('reading an archive into a folder', () => {
 
     expect(failed.message).toMatch(/entries could not be written/);
     expect(failed.noPointRetrying).toBe(true);
+  });
+
+  it('honours verify: false, as the file-by-file transfer does', async () => {
+    const source = archiveOf({ 'one.txt': 'first' });
+
+    const result = await extractInto(source, {
+      localBase: '/local',
+      verify: false,
+    });
+
+    expect(result.files).toBe(1);
+    expect(read('/local/one.txt')).toBe('first');
   });
 
   it('fails when the stream is not an archive at all', async () => {

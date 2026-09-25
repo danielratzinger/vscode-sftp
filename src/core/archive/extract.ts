@@ -41,6 +41,11 @@ export interface ExtractOption {
   stallAfter?: number;
   /** Told how far it has got, as each file lands. */
   onProgress?(sofar: ExtractResult): void;
+  /**
+   * Defaults to on; false skips the check that each file is the length the
+   * archive said it would be, the way `verifyTransfer` does for one at a time.
+   */
+  verify?: boolean;
 }
 
 /**
@@ -126,6 +131,25 @@ function trimName(name: string): string {
 export function isArchiveRoot(name: string): boolean {
   const cleaned = trimName(name);
   return cleaned === '' || cleaned === '.';
+}
+
+/**
+ * What to say when a file is not the length the archive said it would be, or
+ * nothing when it is.
+ */
+export function sizeComplaint(
+  expected: number,
+  landed: number
+): string | null {
+  if (landed === expected) {
+    return null;
+  }
+
+  return (
+    `arrived ${
+      landed < expected ? 'incomplete' : 'longer than the archive said'
+    }: expected ${expected} bytes, got ${landed}`
+  );
 }
 
 function writeEntry(
@@ -319,6 +343,18 @@ export function extractInto(
         }
 
         await writeEntry(held, target);
+
+        if (option.verify !== false) {
+          // What landed, not what was counted on the way: the gzip trailer says
+          // the archive arrived whole, and this says each file did. Asked of the
+          // file system, so it also catches a write that stopped short without
+          // saying so.
+          const landed = await fse.stat(target);
+          const complaint = sizeComplaint(size, landed.size);
+          if (complaint) {
+            throw new Error(complaint);
+          }
+        }
 
         if (mtime) {
           try {

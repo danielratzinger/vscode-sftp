@@ -67,6 +67,21 @@ export function quote(word: string): string {
  * rest of the transfer stands. What the other tar does instead is fail, which
  * falls back to the file-by-file transfer and gets there the long way round.
  */
+/**
+ * Set for every tar, on the way out and on the way in.
+ *
+ * Apple's tar carries a file's extended attributes as a second, hidden file
+ * beside it - `._name`, in AppleDouble form - and it does that by default, for
+ * anything that has any. A server whose files carry xattrs would therefore send
+ * a `._` companion for every one of them, and they would land in the folder as
+ * real files, which is not something one transfer at a time would ever do.
+ *
+ * As an environment assignment rather than a flag: `--no-mac-metadata` does the
+ * same thing, but GNU tar refuses to start when given it, and every shell
+ * understands a variable that the tars which do not care simply ignore.
+ */
+const NO_APPLE_METADATA = 'COPYFILE_DISABLE=1';
+
 function packFlags(flavour: TarFlavour): string {
   const common = '--format=pax --numeric-owner';
   return flavour === 'gnu' ? `${common} --ignore-failed-read` : common;
@@ -104,7 +119,9 @@ export function readFolderSize(output: string): number | undefined {
  * it, and a script lost that way is lost without a word.
  */
 export function packFolderCommand(flavour: TarFlavour, dir: string): string {
-  return `tar ${packFlags(flavour)} -czf - -C ${quote(dir)} .`;
+  return `${NO_APPLE_METADATA} tar ${packFlags(flavour)} -czf - -C ${quote(
+    dir
+  )} .`;
 }
 
 /**
@@ -116,7 +133,9 @@ export function packFolderCommand(flavour: TarFlavour, dir: string): string {
  * such name into two that do not exist.
  */
 export function packListCommand(flavour: TarFlavour, dir: string): string {
-  return `tar ${packFlags(flavour)} -czf - -C ${quote(dir)} --null -T -`;
+  return `${NO_APPLE_METADATA} tar ${packFlags(flavour)} -czf - -C ${quote(
+    dir
+  )} --null -T -`;
 }
 
 interface Probe {
