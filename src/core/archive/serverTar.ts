@@ -15,6 +15,8 @@ export type TarFlavour = 'gnu' | 'bsd';
 /** Anything that can run a command on the server. */
 export interface ExecHost {
   exec(command: string): Promise<ExecChannel>;
+  /** How long the connection allows an operation to say nothing. */
+  operationTimeout?: number;
 }
 
 /**

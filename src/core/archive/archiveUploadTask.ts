@@ -91,6 +91,14 @@ export default class ArchiveUploadTask extends TransferTask {
       await this._unpack(id);
       await this._promote(id);
     } catch (error) {
+      // Whichever command it was, it is still on the other end. Ending the
+      // channel ends it, and the staging folder goes with it: the trap catches
+      // the hangup.
+      if (this._channel) {
+        this._channel.cancel();
+        this._channel = null;
+      }
+
       if (this.isCancelled()) {
         throw error;
       }

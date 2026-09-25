@@ -6,6 +6,32 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.4.1 - 2026-09-25
+
+### Fixed
+
+- **A folder download as one archive could stop dead and never finish.** The
+  reader paused the stream the archive was arriving on while it wrote each file
+  out - but the bytes that file was waiting for could only arrive through the
+  stream that had been paused. Whether it deadlocked came down to whether the
+  pipe happened to resume the stream on its own, which is not something to
+  depend on. What it looked like: the transfer stays in the status bar, the log
+  goes quiet after about two megabytes - the SSH window running out with nobody
+  emptying it - and some of the files have arrived.
+  Each entry is now taken into a small buffer as it arrives, so the archive
+  keeps moving while the file before it is still being written, and backpressure
+  travels the way pipes already make it travel.
+- An archive stream that goes quiet is given up on after the connection's
+  `operationTimeout`, and the transfer goes file by file instead. An archive is
+  one operation lasting as long as the whole transfer, so silence is the only
+  thing there is to time out against - and without it anything that stops the
+  bytes stops the transfer for good, with a progress bar that never moves as the
+  only sign.
+- A failed archive now ends its channel, so the `tar` still packing on the other
+  side stops with it instead of sitting blocked on a window nobody is reading.
+  An upload's staging folder goes at the same moment, since the trap catches the
+  hangup.
+
 ## 2.4.0 - 2026-09-25
 
 ### Added

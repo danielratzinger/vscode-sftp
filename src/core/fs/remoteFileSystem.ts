@@ -68,6 +68,11 @@ export default abstract class RemoteFileSystem extends FileSystem {
     this._remoteTimeOffsetInMilliseconds = hours * MILLISECONDS_PER_HOUR;
   }
 
+  /** How long a single operation may say nothing before it is given up on. */
+  get operationTimeout(): number {
+    return this._operationTimeout;
+  }
+
   getClient() {
     if (!this.client) {
       throw new Error('client not found!');

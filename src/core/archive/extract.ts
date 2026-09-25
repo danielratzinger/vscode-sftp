@@ -1,7 +1,9 @@
 import * as path from 'path';
+import { PassThrough } from 'stream';
 import { createGunzip } from 'zlib';
 import * as fse from 'fs-extra';
 import * as tar from 'tar';
+import { watchForStall } from '../fs/operationTimeout';
 import logger from '../../logger';
 
 /** What the caller wants done with the entries as they arrive. */
@@ -28,7 +30,24 @@ export interface ExtractOption {
     localPath: string,
     incoming: { size?: number; mtime: number }
   ): Promise<void>;
+  /**
+   * Give up if not one byte arrives for this long. Zero or less turns it off.
+   *
+   * An archive is one operation that runs for as long as the whole transfer, so
+   * unlike a single file it has no natural end to time out against - only
+   * silence. Without this, anything that stops the bytes stops the transfer for
+   * good, and the only sign is a progress bar that never moves.
+   */
+  stallAfter?: number;
 }
+
+/**
+ * How much of a file is held while the entry before it is still being written.
+ *
+ * Small on purpose: it is what makes the stream stop rather than memory fill
+ * when one file is waiting behind another.
+ */
+const HOLDING_BYTES = 64 * 1024;
 
 export interface ExtractResult {
   files: number;
@@ -77,21 +96,24 @@ export function isArchiveRoot(name: string): boolean {
   return cleaned === '' || cleaned === '.';
 }
 
-function writeEntry(entry: any, target: string): Promise<void> {
+function writeEntry(
+  held: NodeJS.ReadableStream,
+  target: string
+): Promise<void> {
   return new Promise((resolve, reject) => {
     // 'w' truncates what is already there and keeps the file it is: the inode
     // stays, so hard links hold and a symlink is written through, exactly as
     // the file-by-file transfer does it.
     const writer = fse.createWriteStream(target, { flags: 'w' });
     writer.once('error', reject).once('finish', () => resolve());
-    entry.once('error', reject);
-    entry.pipe(writer);
+    held.once('error', reject);
+    held.pipe(writer);
   });
 }
 
-async function linkEntry(entry: any, target: string): Promise<void> {
+async function linkEntry(linkpath: string, target: string): Promise<void> {
   try {
-    await fse.symlink(entry.linkpath, target);
+    await fse.symlink(linkpath, target);
   } catch (error) {
     // A link that is already there is left as it is, which is what the
     // file-by-file transfer does with one.
@@ -106,6 +128,17 @@ async function linkEntry(entry: any, target: string): Promise<void> {
  *
  * Every entry is written the way a single transfer would write it, because the
  * point of the archive is to arrive faster, not to arrive differently.
+ *
+ * What an entry is to be done with is decided as it arrives, because that much
+ * can be: the name, the type and the filters need nothing but the header. A
+ * file's bytes are then taken straight into a small holding buffer, and the
+ * slow part - making folders, keeping a copy of what is about to go - happens
+ * after, one entry at a time.
+ *
+ * Nothing pauses the stream the archive is arriving on. That was tried and it
+ * deadlocks: the bytes an entry is waiting for are in the stream that was
+ * paused to wait for it. Backpressure has to travel the other way, from the
+ * holding buffer back up through the parser, which is what piping it does.
  */
 export function extractInto(
   source: NodeJS.ReadableStream,
@@ -118,84 +151,6 @@ export function extractInto(
   let failure: Error | null = null;
   let work: Promise<void> = Promise.resolve();
 
-  const handle = async (entry: any) => {
-    const name = String(entry.path);
-    const target = entryTarget(option.localBase, name);
-
-    if (!target) {
-      if (!isArchiveRoot(name)) {
-        logger.warn(`[archive] refused an entry named ${name}`);
-        result.skipped += 1;
-      }
-      entry.resume();
-      return;
-    }
-
-    if (option.ignore && option.ignore(target)) {
-      result.skipped += 1;
-      entry.resume();
-      return;
-    }
-
-    // The walk asks this of files and symlinks and not of folders, which is
-    // what keeps a folder with a dot in its name out of its reach.
-    if (
-      entry.type !== 'Directory' &&
-      option.fileFilter &&
-      !option.fileFilter(target)
-    ) {
-      result.skipped += 1;
-      entry.resume();
-      return;
-    }
-
-    if (entry.type === 'Directory') {
-      await fse.mkdirp(target);
-      entry.resume();
-      return;
-    }
-
-    if (entry.type === 'SymbolicLink') {
-      await fse.mkdirp(path.dirname(target));
-      await linkEntry(entry, target);
-      entry.resume();
-      return;
-    }
-
-    if (entry.type !== 'File') {
-      // Devices, fifos, hard links: the file-by-file transfer has nothing to
-      // say about them either.
-      logger.debug(`[archive] nothing to do with ${entry.type} ${entry.path}`);
-      result.skipped += 1;
-      entry.resume();
-      return;
-    }
-
-    await fse.mkdirp(path.dirname(target));
-
-    if (option.keepReplaced) {
-      await option.keepReplaced(target, {
-        size: entry.size,
-        mtime: entry.mtime ? entry.mtime.getTime() : 0,
-      });
-    }
-
-    await writeEntry(entry, target);
-
-    if (entry.mtime) {
-      try {
-        await fse.utimes(target, entry.atime || entry.mtime, entry.mtime);
-      } catch (error) {
-        logger.debug(
-          `[archive] could not set the times on ${target}: ${error.message}`
-        );
-      }
-    }
-
-    result.files += 1;
-    result.bytes += entry.size || 0;
-  };
-
   return new Promise<ExtractResult>((resolve, reject) => {
     const fail = (error: Error) => {
       if (!failure) {
@@ -204,44 +159,140 @@ export function extractInto(
       }
     };
 
+    /**
+     * Queues the filesystem side of an entry, in the order the entries came.
+     *
+     * One entry that cannot be written is one file's failure, which is what it
+     * is file by file too: a name Windows has no way to spell, a symlink it
+     * will not allow. The stream itself failing is a different matter and
+     * arrives on the parser instead.
+     */
+    const queue = (what: string, job: () => Promise<void>) => {
+      work = work.then(() =>
+        job().catch(error => {
+          logger.warn(`[archive] could not write ${what}: ${error.message}`);
+          result.refused += 1;
+        })
+      );
+    };
+
     parser.on('entry', (entry: any) => {
-      if (failure) {
+      const name = String(entry.path);
+      const target = entryTarget(option.localBase, name);
+
+      if (failure || !target) {
+        if (!failure && !isArchiveRoot(name)) {
+          logger.warn(`[archive] refused an entry named ${name}`);
+          result.skipped += 1;
+        }
         entry.resume();
         return;
       }
 
-      // Nothing more is read while an entry is being dealt with, so an entry
-      // waiting on a backup copy cannot pile up in memory behind it.
-      source.pause();
-      work = work.then(
-        () =>
-          handle(entry).then(
-            () => {
-              source.resume();
-            },
-            error => {
-              // One entry this machine will not write is one file's failure,
-              // which is what it is file by file too: a name Windows has no
-              // way to spell, a symlink it will not let anyone create. The
-              // stream itself failing is a different matter, and arrives on
-              // the parser rather than here.
-              logger.warn(
-                `[archive] could not write ${entry.path}: ${error.message}`
-              );
-              result.refused += 1;
-              entry.resume();
-              source.resume();
-            }
-          ),
-        () => undefined
-      );
+      if (option.ignore && option.ignore(target)) {
+        result.skipped += 1;
+        entry.resume();
+        return;
+      }
+
+      // The walk asks this of files and symlinks and not of folders, which is
+      // what keeps a folder with a dot in its name out of its reach.
+      if (
+        entry.type !== 'Directory' &&
+        option.fileFilter &&
+        !option.fileFilter(target)
+      ) {
+        result.skipped += 1;
+        entry.resume();
+        return;
+      }
+
+      if (entry.type === 'Directory') {
+        entry.resume();
+        queue(name, () => fse.mkdirp(target));
+        return;
+      }
+
+      if (entry.type === 'SymbolicLink') {
+        const linkpath = entry.linkpath;
+        entry.resume();
+        queue(name, async () => {
+          await fse.mkdirp(path.dirname(target));
+          await linkEntry(linkpath, target);
+        });
+        return;
+      }
+
+      if (entry.type !== 'File') {
+        // Devices, fifos, hard links: the file-by-file transfer has nothing to
+        // say about them either.
+        logger.debug(`[archive] nothing to do with ${entry.type} ${name}`);
+        result.skipped += 1;
+        entry.resume();
+        return;
+      }
+
+      // Taken now, not when its turn comes: an entry nobody is reading is an
+      // entry the parser cannot get past, and the parser is what the rest of
+      // the archive arrives through. The buffer is small on purpose, so a file
+      // held up behind another one stops the stream rather than filling memory.
+      const held = new PassThrough({ highWaterMark: HOLDING_BYTES });
+      entry.once('error', (error: Error) => held.destroy(error));
+      entry.pipe(held);
+
+      const size = entry.size || 0;
+      const mtime = entry.mtime;
+      const atime = entry.atime;
+
+      queue(name, async () => {
+        if (failure) {
+          held.resume();
+          return;
+        }
+
+        await fse.mkdirp(path.dirname(target));
+
+        if (option.keepReplaced) {
+          await option.keepReplaced(target, {
+            size,
+            mtime: mtime ? mtime.getTime() : 0,
+          });
+        }
+
+        await writeEntry(held, target);
+
+        if (mtime) {
+          try {
+            await fse.utimes(target, atime || mtime, mtime);
+          } catch (error) {
+            logger.debug(
+              `[archive] could not set the times on ${target}: ${error.message}`
+            );
+          }
+        }
+
+        result.files += 1;
+        result.bytes += size;
+      });
     });
+
+    const watchdog = watchForStall(
+      option.stallAfter === undefined ? 0 : option.stallAfter,
+      'reading the archive',
+      fail
+    );
+    source.on('data', () => watchdog.progress());
 
     parser.on('error', fail);
     unzip.on('error', fail);
-    source.on('error', fail);
+    source.on('error', error => {
+      watchdog.stop();
+      fail(error);
+    });
 
     parser.on('end', () => {
+      watchdog.stop();
+
       // The last entries are still being written when the archive ends.
       work.then(() => {
         if (failure) {

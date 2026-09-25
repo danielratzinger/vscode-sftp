@@ -1,5 +1,6 @@
 jest.mock('fs');
 
+import { Readable } from 'stream';
 import { vol } from 'memfs';
 import * as tar from 'tar';
 import { entryTarget, extractInto, isArchiveRoot } from '../extract';
@@ -11,6 +12,16 @@ function archiveOf(files: { [path: string]: string }) {
     { gzip: true, cwd: '/remote', portable: true } as any,
     ['.']
   ) as any;
+}
+
+/** The same archive as bytes, for a test that hands them over itself. */
+function archiveBytesOf(files: { [path: string]: string }): Buffer {
+  vol.reset();
+  vol.fromJSON(files, '/remote');
+  return (tar.create(
+    { gzip: true, cwd: '/remote', portable: true, sync: true } as any,
+    ['.']
+  ) as any).read() as Buffer;
 }
 
 function read(path: string): string {
@@ -161,6 +172,99 @@ describe('reading an archive into a folder', () => {
     await expect(
       extractInto(source, { localBase: '/local' })
     ).rejects.toThrow(/nothing could be written/);
+  });
+
+  it('never holds back the stream the entries arrive through', async () => {
+    // The invariant the hang broke. Pausing the source to wait for a write is
+    // waiting for bytes that can only arrive through the source that was
+    // paused - and whether it deadlocks or merely survives depends on whether
+    // the pipe happens to resume it, which is not something to depend on.
+    // Asserted structurally rather than by reproducing the race, which needs a
+    // timing this test cannot pin down.
+    const source = archiveOf({ 'index.php': 'one', 'app/boot.php': 'two' });
+    const paused: string[] = [];
+    const realPause = source.pause.bind(source);
+    source.pause = (...args: any[]) => {
+      paused.push('pause');
+      return realPause(...args);
+    };
+
+    await extractInto(source, {
+      localBase: '/local',
+      keepReplaced: () => new Promise(done => setTimeout(done, 1)),
+    });
+
+    expect(paused).toEqual([]);
+  });
+
+  it('reads an archive that arrives in pieces, while a copy is being kept', async () => {
+    // The shape that deadlocked: a file whose bytes span several reads from the
+    // connection, with something slow to do before it can be written. Pausing
+    // the source to wait for the write meant waiting for bytes that could only
+    // arrive through the source that was paused.
+    const big = 'x'.repeat(512 * 1024);
+    vol.reset();
+    vol.fromJSON({ 'big.txt': big, 'after.txt': 'second' }, '/remote');
+    const bytes = (tar.create(
+      { gzip: true, cwd: '/remote', portable: true, sync: true } as any,
+      ['.']
+    ) as any).read() as Buffer;
+
+    // Handed over in small pieces, as a channel hands it over.
+    let at = 0;
+    const inPieces = new Readable({
+      read() {
+        if (at >= bytes.length) {
+          this.push(null);
+          return;
+        }
+        this.push(bytes.slice(at, at + 8 * 1024));
+        at += 8 * 1024;
+      },
+    });
+
+    const result = await extractInto(inPieces, {
+      localBase: '/local',
+      keepReplaced: () => new Promise(done => setTimeout(done, 1)),
+    });
+
+    expect(result.files).toBe(2);
+    expect(read('/local/big.txt')).toHaveLength(big.length);
+    expect(read('/local/after.txt')).toBe('second');
+  });
+
+  it('gives up on a stream that has gone quiet, rather than waiting for ever', async () => {
+    // What the hang looked like from here: bytes stop, nothing fails, and the
+    // only sign is a progress bar that never moves again.
+    const silent = new Readable({ read: () => undefined });
+
+    await expect(
+      extractInto(silent, { localBase: '/local', stallAfter: 50 })
+    ).rejects.toThrow(/reading the archive/);
+  });
+
+  it('waits as long as bytes keep arriving, however slowly', async () => {
+    const bytes = archiveBytesOf({ 'one.txt': 'first' });
+    let at = 0;
+    const trickle = new Readable({
+      read() {
+        setTimeout(() => {
+          if (at >= bytes.length) {
+            this.push(null);
+            return;
+          }
+          this.push(bytes.slice(at, at + 64));
+          at += 64;
+        }, 5);
+      },
+    });
+
+    const result = await extractInto(trickle, {
+      localBase: '/local',
+      stallAfter: 100,
+    });
+
+    expect(result.files).toBe(1);
   });
 
   it('fails when the stream is not an archive at all', async () => {

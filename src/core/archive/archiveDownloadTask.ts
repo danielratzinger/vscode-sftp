@@ -99,6 +99,7 @@ export default class ArchiveDownloadTask extends TransferTask {
         ignore: this._option.ignore,
         fileFilter: this._option.fileFilter,
         keepReplaced: this._option.keepReplaced,
+        stallAfter: this._host.operationTimeout,
       });
 
       const code = await channel.done;
@@ -116,6 +117,11 @@ export default class ArchiveDownloadTask extends TransferTask {
           (result.refused ? `, ${result.refused} this machine would not write` : '')
       );
     } catch (error) {
+      // Whatever went wrong, the server is still packing and will sit there
+      // blocked on a window nobody is emptying. Ending the channel ends its
+      // tar too, and frees the connection for the transfer that follows.
+      channel.cancel();
+
       // Asked to stop is not gone wrong, and starting the long way round after
       // being told to stop would be the opposite of what was asked.
       if (this.isCancelled()) {
