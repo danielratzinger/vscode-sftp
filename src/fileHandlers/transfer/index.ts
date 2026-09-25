@@ -461,6 +461,12 @@ export const downloadScripts = createFileHandler<TransferOption>({
       // File-level, so a folder with a dot in its name is not mistaken for one.
       fileFilter: (fsPath: string) => isScriptFile(fsPath, excludedExtensions),
       keepReplaced: keepReplacedOption(this),
+      // The archive saves the round trips, not the bytes: the excluded files
+      // travel and are thrown away here. Telling tar to leave them out would
+      // mean `--exclude=*.png`, which tar also applies to a *folder* called
+      // that and skips everything inside it - and a script lost that way is
+      // lost quietly, which is worse than a picture carried needlessly.
+      useArchiveTransfer: config.useArchiveTransfer !== false,
     };
   },
 });

@@ -115,6 +115,54 @@ describe('reading an archive into a folder', () => {
     expect(read('/local/index.php')).toBe('new');
   });
 
+  it('asks the file filter about files, not about folders', async () => {
+    const source = archiveOf({
+      'app/boot.php': 'kept',
+      'app/logo.png': 'dropped',
+      'assets.png/style.css': 'kept too',
+    });
+
+    const asked: string[] = [];
+    const result = await extractInto(source, {
+      localBase: '/local',
+      fileFilter: fsPath => {
+        asked.push(fsPath);
+        return !fsPath.endsWith('.png');
+      },
+    });
+
+    expect(read('/local/app/boot.php')).toBe('kept');
+    expect(vol.existsSync('/local/app/logo.png')).toBe(false);
+    // A folder whose name ends in an excluded extension keeps its contents,
+    // which is why the server is not told to exclude anything.
+    expect(read('/local/assets.png/style.css')).toBe('kept too');
+    expect(asked.some(p => p.endsWith('assets.png'))).toBe(false);
+    expect(result.files).toBe(2);
+  });
+
+  it('counts an entry this machine will not write, and carries on', async () => {
+    const source = archiveOf({ 'one.txt': 'first', 'two.txt': 'second' });
+    // A folder where the first file has to go: the write fails, as an
+    // unspellable name fails on Windows.
+    vol.mkdirSync('/local/one.txt', { recursive: true });
+
+    const result = await extractInto(source, { localBase: '/local' });
+
+    expect(result.refused).toBe(1);
+    expect(result.files).toBe(1);
+    expect(read('/local/two.txt')).toBe('second');
+  });
+
+  it('fails when nothing at all could be written', async () => {
+    const source = archiveOf({ 'one.txt': 'first' });
+    vol.mkdirSync('/local/one.txt', { recursive: true });
+
+    // Whatever is wrong is wrong with every entry, not with one of them.
+    await expect(
+      extractInto(source, { localBase: '/local' })
+    ).rejects.toThrow(/nothing could be written/);
+  });
+
   it('fails when the stream is not an archive at all', async () => {
     const { Readable } = require('stream');
     const rubbish = new Readable();

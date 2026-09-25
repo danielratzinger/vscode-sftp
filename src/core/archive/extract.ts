@@ -15,6 +15,11 @@ export interface ExtractOption {
    */
   ignore?: ((fsPath: string) => boolean) | null;
   /**
+   * The walk's file-level predicate, asked of files and not of folders - which
+   * is what makes a folder with a dot in its name safe from it.
+   */
+  fileFilter?: ((fsPath: string) => boolean) | null;
+  /**
    * Called before a file is written over, with the file about to go. The
    * file-by-file transfer does this per file; skipping it here would quietly
    * take away the copy somebody is relying on.
@@ -29,6 +34,8 @@ export interface ExtractResult {
   files: number;
   bytes: number;
   skipped: number;
+  /** Entries this machine would not write. One file, not the transfer. */
+  refused: number;
 }
 
 /**
@@ -104,7 +111,7 @@ export function extractInto(
   source: NodeJS.ReadableStream,
   option: ExtractOption
 ): Promise<ExtractResult> {
-  const result: ExtractResult = { files: 0, bytes: 0, skipped: 0 };
+  const result: ExtractResult = { files: 0, bytes: 0, skipped: 0, refused: 0 };
   const parser = new (tar as any).Parse();
   const unzip = createGunzip();
 
@@ -125,6 +132,18 @@ export function extractInto(
     }
 
     if (option.ignore && option.ignore(target)) {
+      result.skipped += 1;
+      entry.resume();
+      return;
+    }
+
+    // The walk asks this of files and symlinks and not of folders, which is
+    // what keeps a folder with a dot in its name out of its reach.
+    if (
+      entry.type !== 'Directory' &&
+      option.fileFilter &&
+      !option.fileFilter(target)
+    ) {
       result.skipped += 1;
       entry.resume();
       return;
@@ -201,9 +220,17 @@ export function extractInto(
               source.resume();
             },
             error => {
-              source.resume();
+              // One entry this machine will not write is one file's failure,
+              // which is what it is file by file too: a name Windows has no
+              // way to spell, a symlink it will not let anyone create. The
+              // stream itself failing is a different matter, and arrives on
+              // the parser rather than here.
+              logger.warn(
+                `[archive] could not write ${entry.path}: ${error.message}`
+              );
+              result.refused += 1;
               entry.resume();
-              fail(error);
+              source.resume();
             }
           ),
         () => undefined
@@ -217,9 +244,25 @@ export function extractInto(
     parser.on('end', () => {
       // The last entries are still being written when the archive ends.
       work.then(() => {
-        if (!failure) {
-          resolve(result);
+        if (failure) {
+          return;
         }
+
+        // Nothing landed and something was turned away: whatever is wrong is
+        // wrong with every entry, not with one of them, and calling that a
+        // finished transfer would be a lie.
+        if (result.files === 0 && result.refused > 0) {
+          fail(
+            new Error(
+              `nothing could be written: ${result.refused} entr${
+                result.refused === 1 ? 'y' : 'ies'
+              } turned away`
+            )
+          );
+          return;
+        }
+
+        resolve(result);
       }, fail);
     });
 

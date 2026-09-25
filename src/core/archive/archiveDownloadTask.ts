@@ -97,6 +97,7 @@ export default class ArchiveDownloadTask extends TransferTask {
       const result = await extractInto(channel.stdout, {
         localBase: this._localDir,
         ignore: this._option.ignore,
+        fileFilter: this._option.fileFilter,
         keepReplaced: this._option.keepReplaced,
       });
 
@@ -111,7 +112,8 @@ export default class ArchiveDownloadTask extends TransferTask {
         `[archive] ${this._remoteDir}: ${result.files} file${
           result.files === 1 ? '' : 's'
         }, ${result.bytes} bytes` +
-          (result.skipped ? `, ${result.skipped} skipped` : '')
+          (result.skipped ? `, ${result.skipped} skipped` : '') +
+          (result.refused ? `, ${result.refused} this machine would not write` : '')
       );
     } catch (error) {
       // Asked to stop is not gone wrong, and starting the long way round after

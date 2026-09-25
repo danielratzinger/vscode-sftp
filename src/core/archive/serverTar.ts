@@ -70,7 +70,14 @@ function packFlags(flavour: TarFlavour): string {
   return flavour === 'gnu' ? `${common} --ignore-failed-read` : common;
 }
 
-/** Streams a folder and everything under it to standard output. */
+/**
+ * Streams a folder and everything under it to standard output.
+ *
+ * Nothing is excluded here, on purpose. The walk's filters are consulted as
+ * the archive is read instead, because tar's `--exclude` applies to folders as
+ * well as files: `*.png` would take a folder called that and everything inside
+ * it, and a script lost that way is lost without a word.
+ */
 export function packFolderCommand(flavour: TarFlavour, dir: string): string {
   return `tar ${packFlags(flavour)} -czf - -C ${quote(dir)} .`;
 }

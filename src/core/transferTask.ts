@@ -71,8 +71,9 @@ export interface TransferOption {
    * one transfer per file, which is all the protocol itself can do.
    */
   useArchiveTransfer?: boolean;
-  /** The same predicate the walk consults, kept so the archive can consult it. */
+  /** The same predicates the walk consults, kept so the archive can consult them. */
   ignore?: ((fsPath: string) => boolean) | null;
+  fileFilter?: ((fsPath: string) => boolean) | null;
   mode?: number;
   filePerm?: number;
   dirPerm?: number;
