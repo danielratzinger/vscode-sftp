@@ -602,6 +602,32 @@ On a transfer that uses a temp file the check runs before the temp file replaces
 }
 ```
 
+### useArchiveTransfer
+Send a whole folder as one compressed archive over an SSH connection, instead of one file at a time. <br>
+SFTP only, and only where the server can run a command: `tar` and `gzip` have to be there. Anything missing, and the transfer goes file by file as it always did.
+
+A folder of small files is slow because of the round trips, not the bytes. Downloading asks the server to `tar` the folder and reads one stream, so the recursive listing goes away with it. Uploading streams an archive in, unpacks it into a staging folder inside the target, and moves each file into place — a rename within one file system, so nothing is ever half-written at the path a web server is reading.
+
+The result is meant to be indistinguishable from the slow way: the same `ignore` and `Download Scripts` filters are applied, both timestamps are kept, a file already there keeps its own permissions and a new one gets the ones it came with, `filePerm` and `dirPerm` still decide when they are set, symlinks stay symlinks, and nothing outside the folder is touched or removed.
+
+| 💡 Note |
+| :--- |
+| *An upload only takes this route past 50 files, since walking the local folder to count them costs nothing. A folder download has no listing to count — that the server does the recursion is the saving — so it always asks, and a small folder pays a few hundred milliseconds of setup for it.* |
+
+| ℹ️ What happens when it cannot |
+| :--- |
+| *Every way this can fail ends in the ordinary file-by-file transfer, with the reason in the output panel: a server set up for file transfer only, no `tar`, a `tar` nobody recognises, a command that exits badly, a stream that breaks. An upload leaves nothing behind either — the staging folder goes when the script ends, at once on a dropped connection, and a day later by the next upload's sweep if this editor dies between the two commands.* |
+
+| Key | Value | Default |
+| --- | --- | --- |
+| *useArchiveTransfer* | *boolean* | `true` |
+
+```json
+{
+  "useArchiveTransfer": false
+}
+```
+
 ### limitOpenFilesOnRemote
 Limit open file descriptors to the specific number in a remote server. <br>
 Set to true for using default `limit(222)`.

@@ -6,6 +6,59 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.4.0 - 2026-09-25
+
+### Added
+
+- **A folder now travels as one archive instead of one file at a time.** A
+  folder of small files is slow because of the round trips, not the bytes: SFTP
+  opens, reads and closes each one, so five thousand files over a link with 30ms
+  of latency is minutes of waiting for permission to send the next thing. Where
+  the server can run a command - SFTP with `tar` and `gzip` - a download now
+  asks it to pack the folder and reads one stream, and an upload streams one in.
+  The recursive listing goes away with it on the download side, because the
+  recursion is the server's to do. Switched off per connection with
+  `useArchiveTransfer: false`.
+- An upload unpacks into a staging folder inside the target and then moves each
+  file into place. Within one file system that is a rename, so a file is the old
+  one or the new one and never half of either - which is what `useTempFile` has
+  always been for, and what unpacking straight into the target could not give: a
+  half-written PHP file at the path a web server is reading. The staging folder
+  is cleared however the script ends, at once on a dropped connection, and a day
+  later by the next upload's sweep if this editor dies in between.
+- It is meant to be indistinguishable from the slow way, and that is where most
+  of the work went. The same `ignore` and `Download Scripts` filters are applied
+  as the archive is read, in the same places - folders are not asked what a
+  file-level filter thinks. Both timestamps come from the archive's extended
+  headers. A downloaded file is written in place, so the inode survives and a
+  hard link holds. A file already on the server keeps its own permissions, a new
+  one gets the ones it came with, and `filePerm` and `dirPerm` still decide when
+  they are set. Symlinks stay symlinks. Nothing outside the folder is touched,
+  and nothing is ever deleted.
+- Every way it can fail ends in the ordinary transfer, with the reason in the
+  output panel: a server set up for file transfer only, no `tar`, a `tar` nobody
+  recognises, a bad exit, a broken stream. A folder that half arrived is simply
+  written again. An upload only takes the archive route past 50 files, since the
+  walk that counts them is on this machine and costs nothing; a folder download
+  always asks, because counting first would mean the listing it exists to avoid.
+
+### Fixed
+
+- **A file in a transferred folder was created with the mode of the folder the
+  transfer started at.** Uploading one PHP file gave it 0644; uploading the
+  folder around it gave the same file 0755. The walk passed the mode to fall
+  back on straight down without refreshing it per file, which only showed on a
+  file that was not on the server yet.
+- **A mode Windows invented is no longer sent anywhere.** Windows has none to
+  report, so Node makes one up - 0666 for a file anyone may write, 0444 for a
+  read-only one - and 0666 on a server is a world-writable file, which some
+  hosting refuses to run at all. A file uploaded from Windows is 0644 now and a
+  folder 0755. `filePerm` and `dirPerm` still override both.
+- An entry a machine will not write is one file's failure rather than the whole
+  transfer's, which is what it is file by file: a name Windows has no way to
+  spell, a symlink it will not allow. Unless nothing landed at all, which says
+  the trouble is with every entry and not with one of them.
+
 ## 2.3.6 - 2026-09-25
 
 ### Fixed
