@@ -14,6 +14,7 @@ import {
 import { createCredentialResolver } from './credentialResolver';
 import upath from './upath';
 import Ignore from './ignore';
+import { profileToUse } from './profileChoice';
 import { FileSystem } from './fs';
 import Scheduler from './scheduler';
 import { DEFAULT_CONNECTION_LIMIT } from './fs/ftpFileSystem';
@@ -426,6 +427,7 @@ export default class FileService {
   private _name: string;
   private _watcherConfig: WatcherConfig;
   private _profiles: string[];
+  private _saidAboutProfile: Set<string> = new Set();
   private _pendingTransferTasks: Set<TransferTask> = new Set();
   private _transferSchedulers: TransferScheduler[] = [];
   private _migratedConfigs: Set<ServiceConfig> = new Set();
@@ -477,6 +479,20 @@ export default class FileService {
 
   getAvailableProfiles(): string[] {
     return this._profiles || [];
+  }
+
+  /**
+   * Said once each, not once per file: `getConfig` is asked for every operation,
+   * and a fallback repeated a thousand times says less than a fallback said
+   * once.
+   */
+  private _sayAboutProfile(what: string): void {
+    if (this._saidAboutProfile.has(what)) {
+      return;
+    }
+
+    this._saidAboutProfile.add(what);
+    logger.warn(what);
   }
 
   getPendingTransferTasks(): TransferTask[] {
@@ -617,17 +633,31 @@ export default class FileService {
     let config = this._config;
     const hasProfile =
       config.profiles && Object.keys(config.profiles).length > 0;
-    if (hasProfile && useProfile) {
-      logger.info(`Using profile: ${useProfile}`);
-      const profile = config.profiles![useProfile];
-      if (!profile) {
-        throw new Error(
-          `Unkown Profile "${useProfile}".` +
-            ' Please check your profile setting.' +
-            ' You can set a profile by running command `SFTP: Set Profile`.'
-        );
-      }
-      config = mergeProfile(config, profile);
+
+    // A name is selected for the whole window, and connections need not agree
+    // about which names exist - two contexts can call their profiles `dev1` and
+    // `dev2`. A name that means nothing here used to be an error, which made
+    // that documented arrangement unusable: selecting one context's profile
+    // broke every operation on the other.
+    const choice = profileToUse(
+      useProfile,
+      this.getAvailableProfiles(),
+      config.defaultProfile
+    );
+
+    if (choice.insteadOf) {
+      this._sayAboutProfile(
+        choice.use
+          ? `"${choice.insteadOf}" is not one of this connection's profiles, ` +
+              `so it is using "${choice.use}"`
+          : `"${choice.insteadOf}" is not one of this connection's profiles, ` +
+              `and it names no default, so it is using the configuration as written`
+      );
+    }
+
+    if (choice.use) {
+      logger.info(`Using profile: ${choice.use}`);
+      config = mergeProfile(config, config.profiles![choice.use]);
     }
 
     const completeConfig = getCompleteConfig(config, this.workspace);

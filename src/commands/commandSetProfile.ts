@@ -10,29 +10,28 @@ export default checkCommand({
   id: COMMAND_SET_PROFILE,
 
   async handleCommand(definedProfile) {
-    const profiles = getAllFileService().reduce<
-      Array<vscode.QuickPickItem & { value: string | null }>
-    >(
-      (acc, service) => {
-        if (service.getAvailableProfiles().length <= 0) {
-          return acc;
-        }
+    // One entry per name, with the connections it belongs to beside it. Two
+    // contexts may name their profiles differently - `dev1` and `dev2` - and
+    // then which is which is the whole question. Two that share a name are one
+    // choice, not the same choice twice.
+    const whoHasIt = new Map<string, string[]>();
+    getAllFileService().forEach(service => {
+      service.getAvailableProfiles().forEach(profile => {
+        const held = whoHasIt.get(profile) || [];
+        held.push(service.name || service.baseDir);
+        whoHasIt.set(profile, held);
+      });
+    });
 
-        service.getAvailableProfiles().forEach(profile => {
-          acc.push({
-            value: profile,
-            label: app.state.profile === profile ? `${profile} (active)` : profile,
-          });
-        });
-        return acc;
-      },
-      [
-        {
-          value: null,
-          label: 'UNSET',
-        },
-      ]
-    );
+    const named = Array.from(whoHasIt.keys()).length > 1;
+    const profiles: Array<vscode.QuickPickItem & { value: string | null }> = [
+      { value: null, label: 'UNSET' },
+      ...Array.from(whoHasIt.entries()).map(([profile, services]) => ({
+        value: profile,
+        label: app.state.profile === profile ? `${profile} (active)` : profile,
+        description: named ? services.join(', ') : undefined,
+      })),
+    ];
 
     if (profiles.length <= 1) {
       showInformationMessage('No Available Profile.');

@@ -87,7 +87,10 @@ export function getBasePath(context: string, workspace: string) {
 }
 
 export function createFileService(config: any, workspace: string) {
-  if (config.defaultProfile) {
+  // Only when nothing has been chosen yet. Every entry used to set this, so the
+  // last one loaded won - and configurations are loaded again whenever
+  // `sftp.json` is saved, which threw away whatever `Set Profile` had selected.
+  if (config.defaultProfile && app.state.profile == null) {
     app.state.profile = config.defaultProfile;
   }
 
