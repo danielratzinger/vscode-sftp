@@ -172,6 +172,28 @@ describe('reading an archive into a folder', () => {
     expect(result.files).toBe(2);
   });
 
+  it('asks the filters about the source, when told where that is', async () => {
+    // What the walk asks for a download is the path on the server, so reading
+    // the archive has to ask the same - otherwise a download saved somewhere
+    // else has its filters answered against a path that means nothing.
+    const source = archiveOf({ 'app/boot.php': 'kept', 'app/skip.log': 'no' });
+    const asked: string[] = [];
+
+    await extractInto(source, {
+      localBase: '/somewhere/else',
+      remoteBase: '/var/www/site',
+      ignore: fsPath => {
+        asked.push(fsPath);
+        return fsPath.endsWith('.log');
+      },
+    });
+
+    expect(asked).toContain('/var/www/site/app/boot.php');
+    expect(asked.every(p => p.startsWith('/var/www/site/'))).toBe(true);
+    expect(read('/somewhere/else/app/boot.php')).toBe('kept');
+    expect(vol.existsSync('/somewhere/else/app/skip.log')).toBe(false);
+  });
+
   it('counts an entry this machine will not write, and carries on', async () => {
     const source = archiveOf({ 'one.txt': 'first', 'two.txt': 'second' });
     // A folder where the first file has to go: the write fails, as an

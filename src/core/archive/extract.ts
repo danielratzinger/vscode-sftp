@@ -39,6 +39,16 @@ export interface ExtractOption {
    * good, and the only sign is a progress bar that never moves.
    */
   stallAfter?: number;
+  /**
+   * Where the folder is on the server, when the filters should be asked about
+   * that rather than about where it is landing.
+   *
+   * The walk asks `ignore` about the source, which for a download is the
+   * server's path. Reading the archive has to ask the same question, or a
+   * download saved somewhere other than where this connection maps it - `Download
+   * As` - would have its filters answered against a path that means nothing.
+   */
+  remoteBase?: string;
   /** Told how far it has got, as each file lands. */
   onProgress?(sofar: ExtractResult): void;
   /**
@@ -101,7 +111,7 @@ export interface ExtractResult {
  * archive is only ever as trustworthy as whoever wrote it. An absolute name or
  * one that climbs out of the folder is refused rather than followed.
  */
-export function entryTarget(localBase: string, name: string): string | null {
+export function entryRelative(name: string): string | null {
   const cleaned = trimName(name);
   if (cleaned === '' || cleaned === '.') {
     return null;
@@ -116,7 +126,16 @@ export function entryTarget(localBase: string, name: string): string | null {
     return null;
   }
 
-  return path.join(localBase, ...parts);
+  return parts.join('/');
+}
+
+export function entryTarget(localBase: string, name: string): string | null {
+  const relative = entryRelative(name);
+  if (relative === null) {
+    return null;
+  }
+
+  return path.join(localBase, ...relative.split('/'));
 }
 
 function trimName(name: string): string {
@@ -261,7 +280,14 @@ export function extractInto(
 
     parser.on('entry', (entry: any) => {
       const name = String(entry.path);
-      const target = entryTarget(option.localBase, name);
+      const relative = entryRelative(name);
+      const target = relative === null ? null : entryTarget(option.localBase, name);
+      // What the filters are asked about: the same path the walk would put to
+      // them, which for a download is the one on the server.
+      const asked =
+        option.remoteBase && relative !== null
+          ? `${option.remoteBase.replace(/\/+$/, '')}/${relative}`
+          : target;
 
       if (failure || !target) {
         if (!failure && !isArchiveRoot(name)) {
@@ -272,7 +298,7 @@ export function extractInto(
         return;
       }
 
-      if (option.ignore && option.ignore(target)) {
+      if (option.ignore && option.ignore(asked!)) {
         result.skipped += 1;
         entry.resume();
         return;
@@ -283,7 +309,7 @@ export function extractInto(
       if (
         entry.type !== 'Directory' &&
         option.fileFilter &&
-        !option.fileFilter(target)
+        !option.fileFilter(asked!)
       ) {
         result.skipped += 1;
         entry.resume();

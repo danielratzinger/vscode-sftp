@@ -45,10 +45,21 @@ function createTransferHandle(direction: TransferDirection) {
     let transferConfig;
 
     if (direction === TransferDirection.REMOTE_TO_LOCAL) {
+      if (option.saveAs) {
+        // The copy kept before a download writes over something is there to
+        // protect the working copy. A download the person pointed somewhere else
+        // is not writing over the working copy, and filling the store with files
+        // from outside the project would make `Restore Replaced File` a list of
+        // things nobody recognises.
+        option = { ...option, keepReplaced: undefined };
+      }
+
       transferConfig = {
         srcFsPath: remoteFsPath,
         srcFs: remoteFs,
-        targetFsPath: localFsPath,
+        // Somewhere else, when somebody asked for somewhere else. A download
+        // otherwise goes to the one place the connection maps this path to.
+        targetFsPath: option.saveAs || localFsPath,
         targetFs: localFs,
         transferOption: option,
         transferDirection: TransferDirection.REMOTE_TO_LOCAL,
@@ -378,7 +389,10 @@ function downloadFileOption(this: FileHandlerContext) {
 export const downloadFile = createFileHandler<TransferOption>({
   name: 'download file',
   async handle(option) {
-    if ((await confirmOverwrite(this)) !== 'download') {
+    // That question is about the file this connection maps to, and a download
+    // sent somewhere else does not touch it. The place it is going was named in
+    // a save dialog, which asks its own question about overwriting.
+    if (!option.saveAs && (await confirmOverwrite(this)) !== 'download') {
       return;
     }
 

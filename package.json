@@ -471,6 +471,16 @@
         "category": "SFTP"
       },
       {
+        "command": "sftp.download.fileAs",
+        "title": "Download File As…",
+        "category": "SFTP"
+      },
+      {
+        "command": "sftp.download.folderAs",
+        "title": "Download Folder As…",
+        "category": "SFTP"
+      },
+      {
         "command": "sftp.revealInExplorer",
         "title": "Reveal in Explorer",
         "category": "SFTP"
@@ -770,6 +780,14 @@
           "when": "false"
         },
         {
+          "command": "sftp.download.fileAs",
+          "when": "false"
+        },
+        {
+          "command": "sftp.download.folderAs",
+          "when": "false"
+        },
+        {
           "command": "sftp.revealInExplorer",
           "when": "false"
         },
@@ -1026,6 +1044,11 @@
           "when": "sftp.enabled && !(viewItem =~ /^file/)"
         },
         {
+          "command": "sftp.download.folderAs",
+          "group": "3_trans@7",
+          "when": "sftp.enabled && view == remoteExplorer && !(viewItem =~ /^file/)"
+        },
+        {
           "command": "sftp.download.scripts",
           "group": "3_trans@7",
           "when": "sftp.enabled && !(viewItem =~ /^file/)"
@@ -1083,6 +1106,11 @@
         {
           "command": "sftp.download.file",
           "group": "3_trans@6",
+          "when": "view == remoteExplorer && viewItem =~ /^file/"
+        },
+        {
+          "command": "sftp.download.fileAs",
+          "group": "3_trans@7",
           "when": "view == remoteExplorer && viewItem =~ /^file/"
         },
         {

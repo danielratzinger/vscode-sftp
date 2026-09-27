@@ -125,6 +125,7 @@ export default class ArchiveDownloadTask extends TransferTask {
     try {
       const result = await extractInto(channel.stdout, {
         localBase: this._localDir,
+        remoteBase: this._remoteDir,
         ignore: this._option.ignore,
         fileFilter: this._option.fileFilter,
         keepReplaced: this._option.keepReplaced,

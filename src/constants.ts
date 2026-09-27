@@ -88,3 +88,5 @@ export const COMMAND_CREATE_FOLDER = 'sftp.create.folder';
 export const COMMAND_CREATE_FILE = 'sftp.create.file';
 export const COMMAND_RENAME_REMOTE = 'sftp.rename.remote';
 export const COMMAND_CHMOD_REMOTE = 'sftp.remote.chmod';
+export const COMMAND_DOWNLOAD_FILE_AS = 'sftp.download.fileAs';
+export const COMMAND_DOWNLOAD_FOLDER_AS = 'sftp.download.folderAs';
