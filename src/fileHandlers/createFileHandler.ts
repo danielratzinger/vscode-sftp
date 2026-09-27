@@ -26,6 +26,31 @@ interface FileHandlerOption<T> {
   transformOption?: FileHandlerContextMethod<T>;
 }
 
+/**
+ * A path on both sides, whichever side it was named from.
+ *
+ * A handler is given one path and often needs the other: the same file has a
+ * name here and a name on the server, and an operation that happens on the
+ * server has to be told the server's. `UResource` maps either way round, and
+ * every caller needs the same connection to map against - so it is asked for
+ * here rather than rebuilt wherever it is wanted.
+ */
+export function resourceFor(
+  fileService: FileService,
+  config: ServiceConfig,
+  uri: Uri
+): UResource {
+  return UResource.from(uri, {
+    localBasePath: fileService.baseDir,
+    remoteBasePath: config.remotePath,
+    remoteId: fileService.id,
+    remote: {
+      host: config.host,
+      port: config.port,
+    },
+  });
+}
+
 export function handleCtxFromUri(uri: Uri): FileHandlerContext {
   const fileService = getFileService(uri);
   if (!fileService) {
@@ -36,20 +61,11 @@ export function handleCtxFromUri(uri: Uri): FileHandlerContext {
     }
   }
   const config = fileService.getConfig();
-  const target = UResource.from(uri, {
-    localBasePath: fileService.baseDir,
-    remoteBasePath: config.remotePath,
-    remoteId: fileService.id,
-    remote: {
-      host: config.host,
-      port: config.port,
-    },
-  });
 
   return {
     fileService,
     config,
-    target,
+    target: resourceFor(fileService, config, uri),
   };
 }
 
