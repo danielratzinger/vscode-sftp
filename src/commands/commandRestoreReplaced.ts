@@ -1,7 +1,12 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { COMMAND_RESTORE_REPLACED } from '../constants';
-import { showInformationMessage, showWarningMessage, diffFiles } from '../host';
+import {
+  showInformationMessage,
+  showModalWarning,
+  showWarningMessage,
+  diffFiles,
+} from '../host';
 import { getActiveTextEditor, getWorkspaceFolders } from '../host';
 import { Backup } from '../core/overwriteBackup';
 import { describeSize } from '../helper';
@@ -84,9 +89,10 @@ export default checkCommand({
       return;
     }
 
-    const answer = await vscode.window.showWarningMessage(
+    const answer = await showModalWarning(
       `Restore ${path.basename(localPath)} from ${chosen.label}?`,
-      { modal: true },
+      'The file as it is now is replaced. A copy of it is kept first, so this ' +
+        'can be undone the same way.',
       'Restore',
       'Compare'
     );

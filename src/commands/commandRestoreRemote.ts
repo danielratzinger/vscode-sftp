@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { COMMAND_RESTORE_REMOTE } from '../constants';
-import { showInformationMessage, showWarningMessage } from '../host';
+import { showInformationMessage, showModalWarning, showWarningMessage } from '../host';
 import logger, { withConnection } from '../logger';
 import connectionLabel from '../core/connectionLabel';
 import { describeAge } from '../mcp/localHistory';
@@ -88,10 +88,11 @@ export default checkCommand({
       : '';
 
     const go = `Restore ${toUpload.length}`;
-    const answer = await vscode.window.showWarningMessage(
+    const answer = await showModalWarning(
       `Put ${toUpload.length} file${toUpload.length === 1 ? '' : 's'} on ${where} ` +
-        `back to ${chosen.label}?${removing}`,
-      { modal: true },
+        `back to ${chosen.label}?`,
+      removing.trim() ||
+        'Every file is copied off the server before it is written over.',
       go
     );
 

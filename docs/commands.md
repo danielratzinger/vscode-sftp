@@ -85,6 +85,41 @@ Both settings ignore case. The connection's own `ignore` rules still apply on to
 | :--- |
 | *Where the server can pack a folder, this arrives as one archive (see [useArchiveTransfer](./common_configuration.md#usearchivetransfer)), which saves the round trips but not the bytes: the excluded files travel and are thrown away here. Telling `tar` to leave them out would mean `--exclude=*.png`, which `tar` also applies to a folder called that and skips everything inside it — and a script lost that way is lost without a word.* |
 
+### Rename
+On any file or folder in the Remote Explorer. Renames it on the server, and the copy of it on this machine when there is one.
+
+Both, because a download writes and never removes: renaming only the server's copy leaves the old name sitting here, and the next download brings back both — which is the mess [Remove Files Deleted from the Repository](#remove-files-deleted-from-the-repository) exists to clear up. The prompt says which of the two it is about to do, since whether there is a copy here depends on whether it was ever downloaded.
+
+A name may not contain a slash. Renaming changes what a file is called, not where it lives, and quietly turning one into a move is not something to find out afterwards.
+
+| ℹ️ When the name is already taken |
+| :--- |
+| *Both sides are looked at before anything moves, and what is asked depends on what is in the way. A file on the server: overwrite, or cancel. A file here only: overwrite, or rename on the server and leave this machine's copy alone. Both: one question. A **folder** in the way is refused outright — writing over a folder means deleting what is inside it, and nobody typing a new name is asking for that.* |
+| *Overwriting on the server uses OpenSSH's own rename where [openSsh](./common_configuration.md#openssh) says it is available, which leaves no moment when neither name has anything. Without it the old file is removed first, and the log says so.* |
+
+### Change Permissions
+On any file or folder in the Remote Explorer. Asks for permissions as octal digits — `644`, `755`, `2775` — and applies them on the server.
+
+The mode the file has now is filled in as the answer, because a permission nobody remembers is the usual reason for opening this at all. Several items selected at once share one mode, which is something somebody means; they are applied one at a time so a server that refuses one does not take the rest with it.
+
+[filePerm](./common_configuration.md#fileperm) and [dirPerm](./common_configuration.md#dirperm) decide what a *transfer* creates. This is for a file already there.
+
+| 💡 Note |
+| :--- |
+| *Nothing recursive. Files and folders want different modes, so one mode applied all the way down is almost always wrong — `755` over a folder of PHP makes every one of them executable.* |
+| *Letters are refused rather than guessed at: `rw-r--r--` is what somebody expects this to take, and reading it as a number would set permissions nobody asked for. Works over FTP too, as `SITE CHMOD`, which some servers will not do.* |
+
+### Download File As… / Download Folder As…
+Beside the ordinary download in the Remote Explorer. Asks where to put it, with the place this connection maps it to filled in.
+
+For the times the answer to "download this" is "yes, but not over the one I have" — a copy to compare against, a folder fetched somewhere to read without disturbing the working copy.
+
+Which files come is decided exactly as it always is: the connection's `ignore` rules still apply, and a folder still arrives as one archive where [useArchiveTransfer](./common_configuration.md#usearchivetransfer) can be used.
+
+| 💡 Note |
+| :--- |
+| *Two questions do not apply here, because they are about the file this connection maps to and that file is not being touched: the one about a local copy being newer, and the copy kept before a download overwrites something. The save dialog asks its own question about overwriting, and `Restore Replaced File` stays a list of your own files.* |
+
 ### Reveal in Finder
 Sits above `Reveal in Explorer` in the Remote Explorer's menu, on anything that has been downloaded — and only then, because there is nothing to show otherwise. `Reveal in Explorer` shows the file in the editor's own sidebar; this opens the system's file manager, which is where you go for what the editor does not do: a Quick Look, a drag into another application, a look at what else is in the folder.
 
