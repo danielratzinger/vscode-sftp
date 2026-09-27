@@ -6,6 +6,59 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.5.0 - 2026-09-27
+
+### Added
+
+- **Rename**, on any file or folder in the Remote Explorer. It renames on the
+  server *and* the copy on this machine when there is one, because a download
+  writes and never removes: renaming only the server's copy leaves the old name
+  here and the next download brings back both. Both sides are looked at before
+  anything moves, and a name already taken is a question rather than a bare
+  `Failure` from the server - overwrite, or rename on the server and leave this
+  machine's copy alone. A *folder* in the way is refused outright, since writing
+  over one means deleting what is inside it.
+- **Change Permissions**, on any file or folder in the Remote Explorer. Octal
+  digits, with the mode the file has now filled in as the answer. `filePerm` and
+  `dirPerm` decide what a transfer creates; this is for a file already there.
+  Nothing recursive, because files and folders want different modes.
+- **Download File As... / Download Folder As...**, beside the ordinary download.
+  Which files come is decided exactly as it always is - the same `ignore` rules,
+  and a folder still arrives as one archive - and only where they land differs.
+- **A profile can set `watcher`.** `uploadOnSave` could be set per profile and
+  the watcher could not, and the asymmetry pointed the wrong way: switching to a
+  profile that deploys to production meant the next thing a build wrote went
+  there on its own. A profile's watcher is merged over the root's, so it can turn
+  the uploading off without repeating the glob, and it is put back up when the
+  profile changes - which is the moment that matters.
+
+### Fixed
+
+- **Renaming over the wrong paths.** `renameRemote` existed, used only by
+  `Upload Changed Files` to pass on a rename git reported, and it handed the
+  *local* paths of both sides to the *remote* file system - and had the two the
+  wrong way round. Neither showed, because the promise was never awaited either.
+- **Two contexts could not name their profiles differently**, though the
+  documentation shows exactly that. A name a connection does not have was an
+  error thrown on every operation, so selecting one context's profile broke every
+  operation on the other. It now uses its own `defaultProfile`, or the
+  configuration as written, and says so once.
+- **Saving `sftp.json` threw away the selected profile.** Every configuration
+  loaded set the window's profile to its own default, so the last one won - and
+  configurations are loaded again on every save. Only the first default takes
+  effect now, and only when nothing has been chosen.
+- The profile picker listed a name once per connection that had it, so two
+  contexts sharing `dev` offered `dev` twice. One entry each now, with the
+  connections it belongs to beside it.
+- The Remote Explorer is refreshed when the profile changes. It holds a tree
+  built from a host and a remote path the new profile may have changed, and
+  nothing was telling it.
+- Two of the modal dialogs built their own rather than using the helper, and so
+  had no second line - the part that says what is about to happen. Restoring an
+  earlier copy of a file now says a copy of the current one is kept first, and
+  restoring a server says every file is copied off before it is written over.
+  Both were true already and neither was said.
+
 ## 2.4.4 - 2026-09-25
 
 ### Added
