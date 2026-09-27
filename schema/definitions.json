@@ -135,6 +135,11 @@
         "description": "After writing a file, compare its size on the destination against the source and fail the file if they differ. Skipped, not failed, when the server won't report a size.",
         "default": true
       },
+      "useArchiveTransfer": {
+        "type": "boolean",
+        "description": "Send a whole folder as one compressed archive over the SSH connection instead of one file at a time. SFTP only, and only where the server has `tar` and `gzip`; anything missing falls back to file by file. A folder of small files is slow because of the round trips, not the bytes.",
+        "default": true
+      },
       "mcp": {
         "type": "object",
         "description": "How this connection is offered to MCP clients.",
@@ -200,6 +205,11 @@
         "description": "Shell command whose output is used as the password, e.g. `security find-generic-password -w -s my-server` or `op read \"op://Private/my-server/password\"`. Takes precedence over `password`. Only runs in a trusted workspace.",
         "default": ""
       },
+      "passwordWriteCommand": {
+        "type": "string",
+        "description": "Shell command that stores the password, reading it on standard input, e.g. `security add-generic-password -U -s my-server -a me -w`. Lets `Change a Server’s Password…` write back to wherever `passwordCommand` reads from. Only runs in a trusted workspace.",
+        "default": ""
+      },
       "remotePath": {
         "type": "string",
         "description": "The absolute path on remote.",
@@ -237,6 +247,11 @@
       "passphraseCommand": {
         "type": "string",
         "description": "Shell command whose output is used as the private key passphrase. Takes precedence over `passphrase`. Only runs in a trusted workspace.",
+        "default": ""
+      },
+      "passphraseWriteCommand": {
+        "type": "string",
+        "description": "Shell command that stores the private key passphrase, reading it on standard input. The counterpart to `passphraseCommand`. Only runs in a trusted workspace.",
         "default": ""
       },
       "passphrase": {
@@ -358,6 +373,17 @@
         "description": "Extra parameters append to SSH command using by \"Open SSH in Terminal\"",
         "default": "\"cd \"${remotePath}\"; exec \\$SHELL -l\""
       }
+,
+      "hostVerification": {
+        "type": ["string", "boolean"],
+        "enum": ["strict", "ask", "off", true, false],
+        "description": "Whether the server's host key is checked against the known hosts file. `strict` refuses an unknown or changed key, `ask` puts it to you once, `off` accepts anything. Left out, the `sftp.hostVerification` setting decides."
+      },
+      "knownHostsPath": {
+        "type": "string",
+        "description": "The known hosts file to check the server's key against. Defaults to `~/.ssh/known_hosts`.",
+        "default": ""
+      }
     }
   },
   "ftp": {
@@ -372,6 +398,11 @@
       "showHiddenFiles": {
         "type": "boolean",
         "description": "Ask the server for hidden files by sending `LIST -a`. Falls back to a plain `LIST` when the server doesn't understand the flag. Set to false if your server mishandles it.",
+        "default": true
+      },
+      "passive": {
+        "type": "boolean",
+        "description": "Use passive mode, where this machine opens the data connection rather than the server. Needed behind most firewalls and NAT.",
         "default": true
       },
       "secure": {
