@@ -1,8 +1,15 @@
 import { Uri, window } from 'vscode';
 import { COMMAND_RENAME_REMOTE } from '../constants';
 import { upath } from '../core';
+import { FileType } from '../core';
 import { handleCtxFromUri, renameRemote } from '../fileHandlers';
-import { nameComplaint } from '../core/renameName';
+import {
+  CANCEL,
+  Choice,
+  Occupant,
+  nameComplaint,
+  whatToAsk,
+} from '../core/renameName';
 import { showWarningMessage } from '../host';
 import { checkCommand } from './abstract/createCommand';
 import { uriFromExplorerContextOrEditorContext } from './shared';
@@ -50,10 +57,75 @@ export default checkCommand({
       return;
     }
 
+    const wanted = name.trim();
     const renamed = origin.with({
-      path: upath.join(upath.dirname(origin.path), name.trim()),
+      path: upath.join(upath.dirname(origin.path), wanted),
     });
 
-    await renameRemote(renamed, { originUri: origin, renameLocal: true });
+    // Looked at before anything moves. Finding out halfway leaves the server
+    // renamed and this machine not, which is the one outcome worth a round trip
+    // to avoid.
+    const chosen = await decide(renamed, wanted);
+    if (!chosen) {
+      return;
+    }
+
+    await renameRemote(renamed, { originUri: origin, ...chosen });
   },
 });
+
+/** What is at a path on the server, as far as it will say. */
+async function onServer(uri: Uri): Promise<Occupant> {
+  const ctx = handleCtxFromUri(uri);
+  const remoteFs = await ctx.fileService.getRemoteFileSystem(ctx.config);
+
+  try {
+    const stat = await remoteFs.lstat(ctx.target.remoteFsPath);
+    return stat.type === FileType.Directory ? 'directory' : 'file';
+  } catch (error) {
+    // Not there is the ordinary answer, and the only one that matters here.
+    return 'nothing';
+  }
+}
+
+/** What is at a path on this machine. */
+async function onThisMachine(uri: Uri): Promise<Occupant> {
+  const ctx = handleCtxFromUri(uri);
+  const local = ctx.target.localFsPath;
+
+  if (!(await fse.pathExists(local))) {
+    return 'nothing';
+  }
+
+  return (await fse.stat(local)).isDirectory() ? 'directory' : 'file';
+}
+
+/**
+ * Whether to go ahead, and on what terms - asking only when there is something
+ * to ask.
+ */
+async function decide(renamed: Uri, name: string): Promise<Choice | undefined> {
+  const ask = whatToAsk(
+    {
+      remote: await onServer(renamed),
+      local: await onThisMachine(renamed),
+    },
+    name
+  );
+
+  if (ask.refuse) {
+    showWarningMessage(ask.refuse);
+    return undefined;
+  }
+
+  if (ask.goAhead) {
+    return ask.goAhead;
+  }
+
+  const answer = await showWarningMessage(ask.message!, ...ask.choices!);
+  if (!answer || answer === CANCEL) {
+    return undefined;
+  }
+
+  return ask.meaning![answer];
+}
