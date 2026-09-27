@@ -48,3 +48,39 @@ export function profileToUse(
   // certainly meant.
   return { use: null, insteadOf: wanted };
 }
+
+/** What a watcher is told to watch, and what to do when it sees something. */
+export interface WatchedFiles {
+  files: false | string;
+  autoUpload: boolean;
+  autoDelete: boolean;
+}
+
+/**
+ * The watcher a connection should have, once the chosen profile has had its say.
+ *
+ * `uploadOnSave` can be set per profile - the documented example does exactly
+ * that - because it is read afresh on every save. The watcher could not, because
+ * it is *installed* once and never looked at again, so the setting it was built
+ * from was whatever the file said at the root.
+ *
+ * Which left the asymmetry pointing the wrong way: "upload on save only to dev"
+ * was expressible and "watch and upload only to dev" was not. Switching to a
+ * profile that deploys to production meant the build output started going there
+ * on its own, with no save and no question.
+ *
+ * The whole object is overridable rather than the two useful keys, because one
+ * rule explains itself and a carve-out does not. A glob per profile is of little
+ * use - it describes this project's output, which does not change with the
+ * server - but it costs nothing to allow.
+ */
+export function watcherToUse(
+  root: WatchedFiles | undefined,
+  fromProfile: Partial<WatchedFiles> | undefined
+): WatchedFiles | undefined {
+  if (!fromProfile) {
+    return root;
+  }
+
+  return { ...root, ...fromProfile } as WatchedFiles;
+}

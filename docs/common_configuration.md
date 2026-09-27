@@ -438,6 +438,13 @@ Absolute path to the ignore file or Relative path relative to the workspace root
 ### watcher
 Configure the behavior of the `watcher` command.
 
+A watcher is for files the editor never reports a save for — build output, anything written by a tool rather than typed. That is what makes it different from `uploadOnSave`, and also what makes it worth setting per profile.
+
+| ⚠️ Set it per profile if any profile deploys somewhere you would not deploy automatically |
+| :--- |
+| *A `watcher` inside a profile is merged over the one at the root, so `"prod": { "watcher": { "autoUpload": false, "autoDelete": false } }` keeps the glob and stops the uploading. Without that, switching to a profile that points at production means the next thing your build writes goes there on its own — no save, no question.* |
+| *The watcher is put back up when you switch with `SFTP: Set Profile`, which is the moment it matters. A glob per profile is allowed too, though it is rarely useful: it describes this project's output, which does not change with the server.* |
+
 | Key | Value | Default |
 | --- | --- | --- |
 | *watcher* | *object* | `{}` |

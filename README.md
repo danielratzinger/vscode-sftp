@@ -232,7 +232,14 @@ one down to edit. Multiple selection works with Ctrl or Shift, and
 }
 ```
 
-Switch with **SFTP: Set Profile**.
+Switch with **SFTP: Set Profile**. `uploadOnSave` and `watcher` can both be set
+per profile, which is how you keep automatic uploading on for a staging server
+and off for production; `context` is read at the root only.
+
+Profiles need not be named the same across contexts. A file with two contexts can
+call one pair `dev1`/`prod1` and the other `dev2`/`prod2` — a name that means
+nothing to a connection leaves that connection on its own `defaultProfile`, or on
+the configuration as written.
 
 ### Multiple contexts
 

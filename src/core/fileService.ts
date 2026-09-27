@@ -14,7 +14,7 @@ import {
 import { createCredentialResolver } from './credentialResolver';
 import upath from './upath';
 import Ignore from './ignore';
-import { profileToUse } from './profileChoice';
+import { profileToUse, watcherToUse } from './profileChoice';
 import { FileSystem } from './fs';
 import Scheduler from './scheduler';
 import { DEFAULT_CONNECTION_LIMIT } from './fs/ftpFileSystem';
@@ -407,6 +407,12 @@ function mergeProfile(
   for (const key of keys) {
     if (key === 'ignore') {
       res.ignore = res.ignore.concat(source.ignore);
+    } else if (key === 'watcher') {
+      // Over rather than instead of, so a profile can say `autoUpload: false`
+      // without having to repeat the glob - which is the whole reason to set one
+      // per profile. `watcherToUse` answers the same way, and two answers about
+      // one setting is how they come to disagree.
+      res.watcher = { ...res.watcher, ...source.watcher } as any;
     } else {
       res[key] = source[key];
     }
@@ -479,6 +485,43 @@ export default class FileService {
 
   getAvailableProfiles(): string[] {
     return this._profiles || [];
+  }
+
+  /**
+   * The watcher this connection should have, with the chosen profile's say in
+   * it - so `autoUpload` can be on for the profile that deploys to a staging
+   * server and off for the one that deploys to production.
+   *
+   * Read afresh rather than kept, the way `uploadOnSave` has always been read.
+   * Installing it is another matter: see `refreshWatcher`.
+   */
+  get watcherConfig(): WatcherConfig | undefined {
+    const choice = profileToUse(
+      app.state.profile,
+      this.getAvailableProfiles(),
+      this._config.defaultProfile
+    );
+
+    return watcherToUse(
+      this._watcherConfig,
+      choice.use ? (this._config.profiles![choice.use] as any).watcher : undefined
+    );
+  }
+
+  /**
+   * Puts the watcher back up from the settings as they now stand.
+   *
+   * Needed because a watcher is installed rather than consulted: nothing reads
+   * it again once it is watching, so a profile switch has to say so. That is the
+   * moment that matters - switching to the profile that deploys to production is
+   * exactly when automatic uploading should stop.
+   */
+  refreshWatcher(): void {
+    if (!this._watcherService) {
+      return;
+    }
+
+    this._createWatcher();
   }
 
   /**
@@ -749,7 +792,7 @@ export default class FileService {
   }
 
   private _createWatcher() {
-    this._watcherService.create(this.baseDir, this._watcherConfig);
+    this._watcherService.create(this.baseDir, this.watcherConfig as WatcherConfig);
   }
 
   private _disposeWatcher() {

@@ -41,9 +41,9 @@ export default checkCommand({
     if (definedProfile !== undefined) {
       const index = profiles.findIndex(a => a.value === definedProfile);
       if (index !== -1) {
-        app.state.profile = definedProfile;
+        settle(definedProfile);
       } else {
-        app.state.profile = null;
+        settle(null);
         logger.warn(`try to set a unknown profile "${definedProfile}"`);
       }
       return;
@@ -51,6 +51,24 @@ export default checkCommand({
 
     const item = await vscode.window.showQuickPick(profiles, { placeHolder: 'select a profile' });
     if (item === undefined) return;
-    app.state.profile = item.value;
+    settle(item.value);
   },
 });
+
+/**
+ * Takes the choice, and tells the parts of the extension that were told once and
+ * not since.
+ *
+ * `uploadOnSave` needs nothing: it is read on every save, so it follows the
+ * profile by itself. A watcher is *installed*, and the Remote Explorer holds a
+ * tree built from a host and a remote path that the new profile may have changed
+ * - both would otherwise go on as they were until the next time `sftp.json` was
+ * saved. Switching to the profile that deploys to production is precisely when
+ * neither should.
+ */
+function settle(profile: string | null): void {
+  app.state.profile = profile;
+
+  getAllFileService().forEach(service => service.refreshWatcher());
+  app.remoteExplorer.refresh();
+}
