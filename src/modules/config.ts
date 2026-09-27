@@ -149,6 +149,26 @@ function getConfigPath(basePath) {
   return path.join(basePath, CONFIG_PATH);
 }
 
+/**
+ * Every option a configuration file may hold, at any level.
+ *
+ * Named separately from the schema itself so the editor's own schema in
+ * `schema/` can be held to it: `sftp.json` is validated against that, and an
+ * option missing from it is underlined in red while somebody types it. A test
+ * compares the two, because the way that goes wrong is by nobody noticing.
+ */
+export function knownConfigKeys(): string[] {
+  const nested = (key: string, value: any) =>
+    value && !value.isJoi && typeof value === 'object'
+      ? [key, ...Object.keys(value)]
+      : [key];
+
+  return Object.keys(configScheme).reduce<string[]>(
+    (all, key) => all.concat(nested(key, (configScheme as any)[key])),
+    []
+  );
+}
+
 export function validateConfig(config) {
   const { error } = Joi.validate(config, configScheme, {
     allowUnknown: true,
