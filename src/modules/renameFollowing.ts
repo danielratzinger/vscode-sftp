@@ -4,6 +4,7 @@ import { handleCtxFromUri, renameRemote } from '../fileHandlers';
 import {
   CANCEL,
   Occupant,
+  followingFromSetting,
   whatToAsk,
   worthPassingOn,
 } from '../core/renameName';
@@ -20,12 +21,16 @@ import logger from '../logger';
  * Nothing noticed: a rename is not a save, so none of the paths that upload on
  * save ever heard about it.
  *
- * Always asked, never assumed. A rename is not a save, and nobody renaming a
- * file in an editor has necessarily decided to change a server - which is the
- * whole reason `uploadOnSave` is a setting somebody turns on deliberately. Set
- * `sftp.renameOnServer` to `off` to stop being asked.
+ * Asked each time by default, because a rename is not a save and nobody renaming
+ * a file in an editor has necessarily decided to change a server - which is the
+ * whole reason `uploadOnSave` is a setting somebody turns on deliberately.
+ * `sftp.renameOnServer` takes `always` for those who have decided, and `off` to
+ * stop being asked.
+ *
+ * `always` answers "should the server follow", and only that. A new name that is
+ * already taken on the server is a different question - one about writing over
+ * something that exists - and is still put to the person whatever this says.
  */
-type Behaviour = 'ask' | 'off';
 
 let watcher: vscode.Disposable | undefined;
 
@@ -136,7 +141,10 @@ export function initRenameFollowing(): void {
   }
 
   watcher = vscode.workspace.onDidRenameFiles(async event => {
-    const behaviour = getUserSetting('sftp').get<Behaviour>('renameOnServer', 'ask');
+    const behaviour = followingFromSetting(
+      getUserSetting('sftp').get<string>('renameOnServer', 'ask')
+    );
+
     if (behaviour === 'off') {
       return;
     }
@@ -150,11 +158,19 @@ export function initRenameFollowing(): void {
         return;
       }
 
-      // Once for the batch: renaming a folder of files is one decision, and one
-      // question per file would be a dialog somebody dismisses without reading.
-      const answer = await showWarningMessage(describe(worth), RENAME, CANCEL);
-      if (answer !== RENAME) {
-        return;
+      if (behaviour === 'ask') {
+        // Once for the batch: renaming a folder of files is one decision, and one
+        // question per file would be a dialog somebody dismisses without reading.
+        const answer = await showWarningMessage(describe(worth), RENAME, CANCEL);
+        if (answer !== RENAME) {
+          return;
+        }
+      } else {
+        logger.info(
+          `[rename] passing ${worth.length} rename${
+            worth.length === 1 ? '' : 's'
+          } on to the server, as sftp.renameOnServer says to`
+        );
       }
 
       for (const one of worth) {

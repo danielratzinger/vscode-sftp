@@ -212,3 +212,18 @@ export function worthPassingOn(
 
   return { ask: true };
 }
+
+/** What to do about a rename made on this machine. */
+export type Following = 'ask' | 'always' | 'off';
+
+/**
+ * The setting, read so that only a value that says so means writing to a server.
+ *
+ * Anything unrecognised - a typo, a value from a newer version, a `true` somebody
+ * expected to work - comes back as `ask`. The other two directions are worse to
+ * guess at: `off` would quietly stop passing renames on, and `always` would write
+ * to a server because a setting was misspelt.
+ */
+export function followingFromSetting(value: string | undefined | null): Following {
+  return value === 'always' || value === 'off' ? value : 'ask';
+}

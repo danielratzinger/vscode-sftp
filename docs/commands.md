@@ -105,7 +105,8 @@ So you are asked, each time you rename something in the editor, whether the serv
 | 💡 Note |
 | :--- |
 | *It only asks where there is something to do. A file no connection covers, one the connection's `ignore` rules exclude, one the server has never seen — a new file's rename is nothing there — and a folder autosync is writing, which passes on what leaves the branch by itself. The output panel says which of those it was.* |
-| *Set `sftp.renameOnServer` to `off` to stop being asked. There is deliberately no "always": a rename is not a save, and nobody renaming a file has necessarily decided to change a server.* |
+| *`sftp.renameOnServer` takes `always` for when you have decided once and for all, and `off` to stop being asked. `always` answers **should the server follow** and only that — a new name already taken on the server is a different question, about writing over something that exists, and is still put to you.* |
+| *A value the setting does not recognise reads as `ask`. Guessing `always` from a misspelling would write to a server over a typo, and guessing `off` would quietly stop passing renames on.* |
 
 ### Change Permissions
 On any file or folder in the Remote Explorer. Asks for permissions as octal digits — `644`, `755`, `2775` — and applies them on the server.

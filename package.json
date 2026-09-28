@@ -2,7 +2,7 @@
   "name": "sftp",
   "displayName": "SFTP",
   "description": "SFTP/FTP sync, with an MCP server that lets local AI clients read your servers",
-  "version": "2.6.0",
+  "version": "2.6.1",
   "publisher": "danielratzinger",
   "author": "Daniel Ratzinger (https://github.com/danielratzinger)",
   "engines": {
@@ -108,11 +108,12 @@
         },
         "sftp.renameOnServer": {
           "type": "string",
-          "enum": ["ask", "off"],
+          "enum": ["ask", "always", "off"],
           "default": "ask",
-          "markdownDescription": "What to do when a file or folder is renamed on this machine. `ask` puts it to you each time, because a rename is not a save and nobody renaming a file in an editor has necessarily decided to change a server. `off` never asks.\n\nOnly asked where there is something to rename: a file the server has never seen is nothing there, and a folder autosync is writing passes its own renames on.",
+          "markdownDescription": "What to do when a file or folder is renamed on this machine. `ask` puts it to you each time, because a rename is not a save and nobody renaming a file in an editor has necessarily decided to change a server. `always` does it without asking. `off` leaves the server with the old name.\n\nOnly ever about files there is something to do for: one the server has never seen is nothing to rename there, and a folder autosync is writing passes its own renames on.\n\n`always` answers *should the server follow*, and only that. A new name already taken on the server is a different question — about writing over something that exists — and is still put to you.",
           "enumDescriptions": [
             "Ask each time whether to rename it on the server too.",
+            "Rename it on the server without asking. A name already taken there is still asked about.",
             "Never ask; the server keeps the old name."
           ]
         },

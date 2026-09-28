@@ -3,6 +3,7 @@ import {
   OVERWRITE,
   OVERWRITE_BOTH,
   SERVER_ONLY,
+  followingFromSetting,
   isSameFile,
   renamedPath,
   whatToAsk,
@@ -143,5 +144,25 @@ describe('whether a rename made here is worth putting to somebody', () => {
 
     expect(noes.every(one => !one.ask && Boolean(one.because))).toBe(true);
     expect(new Set(noes.map(one => one.because)).size).toBe(4);
+  });
+});
+
+describe('reading sftp.renameOnServer', () => {
+  it('takes the three it knows', () => {
+    expect(followingFromSetting('ask')).toBe('ask');
+    expect(followingFromSetting('always')).toBe('always');
+    expect(followingFromSetting('off')).toBe('off');
+  });
+
+  it('asks when the value means nothing to it', () => {
+    // Guessing `always` from a misspelt setting would write to a server over a
+    // typo; guessing `off` would quietly stop passing renames on. Asking is the
+    // only answer that cannot be wrong on its own.
+    expect(followingFromSetting('Always')).toBe('ask');
+    expect(followingFromSetting('yes')).toBe('ask');
+    expect(followingFromSetting('')).toBe('ask');
+    expect(followingFromSetting(undefined)).toBe('ask');
+    expect(followingFromSetting(null)).toBe('ask');
+    expect(followingFromSetting(true as any)).toBe('ask');
   });
 });

@@ -6,6 +6,19 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.6.1 - 2026-09-28
+
+### Added
+
+- `sftp.renameOnServer` takes **`always`**, for when the answer is decided once
+  and for all. It answers *should the server follow* and only that: a new name
+  already taken on the server is a different question, about writing over
+  something that exists, and is still put to you whatever this is set to.
+- A value the setting does not recognise reads as `ask`. Guessing `always` from a
+  misspelling would write to a server over a typo, and guessing `off` would
+  quietly stop passing renames on; asking is the only answer that cannot be wrong
+  on its own.
+
 ## 2.6.0 - 2026-09-28
 
 ### Added
