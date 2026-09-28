@@ -24,6 +24,10 @@ import { initAutosyncBackup } from './modules/autosyncBackup';
 import { initHostVerification } from './modules/hostVerification';
 import { reportError } from './helper';
 import fileActivityMonitor from './modules/fileActivityMonitor';
+import {
+  disposeRenameFollowing,
+  initRenameFollowing,
+} from './modules/renameFollowing';
 import { tryLoadConfigs } from './modules/config';
 import { getAllFileService, createFileService, disposeFileService } from './modules/serviceManager';
 import { getWorkspaceFolders, setContextValue } from './host';
@@ -38,6 +42,7 @@ async function setupWorkspaceFolder(dir) {
 
 function setup(workspaceFolders: readonly vscode.WorkspaceFolder[]) {
   fileActivityMonitor.init();
+  initRenameFollowing();
   const pendingInits = workspaceFolders.map(folder => setupWorkspaceFolder(folder.uri.fsPath));
 
   return Promise.all(pendingInits);
@@ -138,5 +143,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
 export function deactivate() {
   fileActivityMonitor.destory();
+  disposeRenameFollowing();
   getAllFileService().forEach(disposeFileService);
 }

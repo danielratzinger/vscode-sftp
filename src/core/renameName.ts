@@ -168,3 +168,47 @@ export function isSameFile(a?: Sameness | null, b?: Sameness | null): boolean {
     Math.floor(a.mtime / 1000) === Math.floor(b.mtime / 1000)
   );
 }
+
+/** What is known about a rename made on this machine. */
+export interface RenameHere {
+  /** Whether the file belongs to a configured connection at all. */
+  hasConnection: boolean;
+  /** Whether autosync is writing that connection. */
+  autosyncing: boolean;
+  /** Whether the connection's own rules exclude it. */
+  ignored: boolean;
+  /** What is at the old name on the server. */
+  onServer: Occupant;
+}
+
+/**
+ * Whether a rename made here is worth putting to somebody for the server.
+ *
+ * Every no has a reason worth keeping separate from the others, because a
+ * question asked when the answer cannot matter is worse than no question: it
+ * teaches people to dismiss the next one without reading it.
+ */
+export function worthPassingOn(
+  facts: RenameHere
+): { ask: boolean; because?: string } {
+  if (!facts.hasConnection) {
+    return { ask: false, because: 'no connection covers it' };
+  }
+
+  if (facts.autosyncing) {
+    // Autosync passes on what leaves the branch by itself, and would undo this.
+    return { ask: false, because: 'autosync is writing that connection' };
+  }
+
+  if (facts.ignored) {
+    return { ask: false, because: 'the connection ignores it' };
+  }
+
+  if (facts.onServer === 'nothing') {
+    // A file the server has never seen is not a rename there, it is nothing -
+    // and asking would make every rename in a new folder a question.
+    return { ask: false, because: 'it is not on the server' };
+  }
+
+  return { ask: true };
+}

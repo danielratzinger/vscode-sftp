@@ -2,7 +2,7 @@
   "name": "sftp",
   "displayName": "SFTP",
   "description": "SFTP/FTP sync, with an MCP server that lets local AI clients read your servers",
-  "version": "2.5.1",
+  "version": "2.6.0",
   "publisher": "danielratzinger",
   "author": "Daniel Ratzinger (https://github.com/danielratzinger)",
   "engines": {
@@ -105,6 +105,16 @@
           },
           "default": [],
           "markdownDescription": "Folders `Download Scripts` does not go into, matched by name at any depth. Empty by default, so every folder is walked. A common list is `[\"node_modules\", \"vendor\", \".git\", \"dist\", \"build\", \"__pycache__\"]`. The folder you ask for directly is always downloaded, even if it is named here."
+        },
+        "sftp.renameOnServer": {
+          "type": "string",
+          "enum": ["ask", "off"],
+          "default": "ask",
+          "markdownDescription": "What to do when a file or folder is renamed on this machine. `ask` puts it to you each time, because a rename is not a save and nobody renaming a file in an editor has necessarily decided to change a server. `off` never asks.\n\nOnly asked where there is something to rename: a file the server has never seen is nothing there, and a folder autosync is writing passes its own renames on.",
+          "enumDescriptions": [
+            "Ask each time whether to rename it on the server too.",
+            "Never ask; the server keeps the old name."
+          ]
         },
         "sftp.downloadWhenLocalIsNewer": {
           "type": "string",

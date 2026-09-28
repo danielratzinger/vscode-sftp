@@ -6,6 +6,7 @@ import {
   isSameFile,
   renamedPath,
   whatToAsk,
+  worthPassingOn,
 } from '../renameName';
 
 describe('a name that is already taken', () => {
@@ -96,5 +97,51 @@ describe('whether what is in the way is the same file', () => {
     expect(isSameFile(file, null)).toBe(false);
     expect(isSameFile(null, file)).toBe(false);
     expect(isSameFile(null, null)).toBe(false);
+  });
+});
+
+describe('whether a rename made here is worth putting to somebody', () => {
+  const onAServer = {
+    hasConnection: true,
+    autosyncing: false,
+    ignored: false,
+    onServer: 'file' as const,
+  };
+
+  it('is, when the file is on a server this window is connected to', () => {
+    expect(worthPassingOn(onAServer)).toEqual({ ask: true });
+  });
+
+  it('is not, for a file no connection covers', () => {
+    expect(
+      worthPassingOn({ ...onAServer, hasConnection: false }).because
+    ).toMatch(/no connection/);
+  });
+
+  it('is not, where autosync is writing - it passes renames on itself', () => {
+    expect(worthPassingOn({ ...onAServer, autosyncing: true }).ask).toBe(false);
+  });
+
+  it('is not, for a file the connection ignores', () => {
+    expect(worthPassingOn({ ...onAServer, ignored: true }).ask).toBe(false);
+  });
+
+  it('is not, for a file the server has never seen', () => {
+    // Otherwise every rename in a new folder would be a question.
+    expect(
+      worthPassingOn({ ...onAServer, onServer: 'nothing' }).because
+    ).toMatch(/not on the server/);
+  });
+
+  it('gives a reason for every no, so the log says which it was', () => {
+    const noes = [
+      { ...onAServer, hasConnection: false },
+      { ...onAServer, autosyncing: true },
+      { ...onAServer, ignored: true },
+      { ...onAServer, onServer: 'nothing' as const },
+    ].map(worthPassingOn);
+
+    expect(noes.every(one => !one.ask && Boolean(one.because))).toBe(true);
+    expect(new Set(noes.map(one => one.because)).size).toBe(4);
   });
 });

@@ -6,6 +6,29 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.6.0 - 2026-09-28
+
+### Added
+
+- **A rename made here can be passed on to the server**, which it never was: a
+  rename is not a save, so nothing that uploads on save ever heard about one, and
+  the server kept the old name. Since a download writes and never removes, the
+  next one brought back both names.
+  You are asked every time, because a rename is not a save and nobody renaming a
+  file in an editor has necessarily decided to change a server - which is why
+  `uploadOnSave` is something you turn on deliberately. Once for a batch, since
+  renaming a folder of files is one decision. `sftp.renameOnServer: "off"` stops
+  the asking.
+- It only asks where there is something to do, and says in the log why not
+  otherwise: a file no connection covers, one the connection ignores, one the
+  server has never seen - a new file's rename is nothing there - and a folder
+  autosync is writing, which passes on what leaves the branch by itself and would
+  undo this. A question asked when the answer cannot matter is worse than no
+  question, because it teaches people to dismiss the next one unread.
+- If the new name is taken on the server, that is asked about too, with the same
+  rules the Remote Explorer's `Rename` uses. The copy on this machine is never
+  touched: it has already been renamed, and this is only the server catching up.
+
 ## 2.5.1 - 2026-09-28
 
 ### Fixed

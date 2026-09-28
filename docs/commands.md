@@ -97,6 +97,16 @@ A name may not contain a slash. Renaming changes what a file is called, not wher
 | *Both sides are looked at before anything moves, and what is asked depends on what is in the way. A file on the server: overwrite, or cancel. A file here only: overwrite, or rename on the server and leave this machine's copy alone. Both: one question. A **folder** in the way is refused outright — writing over a folder means deleting what is inside it, and nobody typing a new name is asking for that.* |
 | *Overwriting on the server uses OpenSSH's own rename where [openSsh](./common_configuration.md#openssh) says it is available, which leaves no moment when neither name has anything. Without it the old file is removed first, and the log says so.* |
 
+#### When you rename a file here
+A rename is not a save, so nothing that uploads on save hears about one, and the server keeps the old name — and since a download writes and never removes, the next one brings back both names.
+
+So you are asked, each time you rename something in the editor, whether the server should follow. Once for a batch: renaming a folder of files is one decision. The copy on this machine is never touched again, it has already been renamed; only the server catches up.
+
+| 💡 Note |
+| :--- |
+| *It only asks where there is something to do. A file no connection covers, one the connection's `ignore` rules exclude, one the server has never seen — a new file's rename is nothing there — and a folder autosync is writing, which passes on what leaves the branch by itself. The output panel says which of those it was.* |
+| *Set `sftp.renameOnServer` to `off` to stop being asked. There is deliberately no "always": a rename is not a save, and nobody renaming a file has necessarily decided to change a server.* |
+
 ### Change Permissions
 On any file or folder in the Remote Explorer. Asks for permissions as octal digits — `644`, `755`, `2775` — and applies them on the server.
 
