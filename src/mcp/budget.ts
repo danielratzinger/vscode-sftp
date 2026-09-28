@@ -29,6 +29,31 @@ export const UNLIMITED: Budget = {
   remaining: () => Infinity,
 };
 
+/**
+ * The largest headroom worth leaving, and the share of a short ceiling to leave
+ * instead. Five seconds covers an ordinary round trip on a slow link; a ceiling
+ * too small for that gets a fifth of itself, so the relationship holds at any
+ * setting rather than collapsing when someone turns the ceiling down.
+ */
+export const MAX_HEADROOM = 5000;
+const HEADROOM_SHARE = 0.2;
+
+/**
+ * The deadline a looping tool should work to, given the ceiling on the call.
+ *
+ * Short of the ceiling by one round trip, because a loop can only notice its
+ * time is up between round trips - it stops just after its deadline, never
+ * before. Without the gap the dispatcher's backstop fires first every time and
+ * the work is thrown away as an error instead of returned as a partial answer.
+ */
+export function withoutHeadroom(ceiling: number): number {
+  if (!(ceiling > 0)) {
+    return ceiling;
+  }
+
+  return ceiling - Math.min(MAX_HEADROOM, Math.round(ceiling * HEADROOM_SHARE));
+}
+
 export function createBudget(ms: number, now: () => number = Date.now): Budget {
   if (!(ms > 0)) {
     return UNLIMITED;

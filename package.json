@@ -2,7 +2,7 @@
   "name": "sftp",
   "displayName": "SFTP",
   "description": "SFTP/FTP sync, with an MCP server that lets local AI clients read your servers",
-  "version": "2.6.1",
+  "version": "2.6.2",
   "publisher": "danielratzinger",
   "author": "Daniel Ratzinger (https://github.com/danielratzinger)",
   "engines": {
@@ -243,8 +243,8 @@
         },
         "sftp.mcp.callTimeout": {
           "type": "number",
-          "default": 120000,
-          "markdownDescription": "The ceiling on one MCP tool call, in milliseconds. A search or a tree walk that runs out of time stops and returns what it found, saying it was cut short; anything else is stopped with an error telling the model to ask for less. Set to 0 to let a call take as long as it takes."
+          "default": 45000,
+          "markdownDescription": "The ceiling on one MCP tool call, in milliseconds. A search or a tree walk that runs out of time stops and returns what it found, saying it was cut short; anything else is stopped with an error telling the model to ask for less. Keep it under whatever the client waits: an answer that arrives after the client has given up is worth nothing, and a partial answer arriving in time is worth a lot. Set to 0 to let a call take as long as it takes."
         },
         "sftp.mcp.maxFileBytes": {
           "type": "number",

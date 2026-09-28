@@ -1,4 +1,11 @@
-import { createBudget, CallTimeoutError, UNLIMITED, withBudget } from '../budget';
+import {
+  createBudget,
+  CallTimeoutError,
+  MAX_HEADROOM,
+  UNLIMITED,
+  withBudget,
+  withoutHeadroom,
+} from '../budget';
 
 describe('createBudget', () => {
   it('is spent when the time has gone', () => {
@@ -69,5 +76,21 @@ describe('withBudget', () => {
     const work = new Promise(resolve => setTimeout(() => resolve('slow'), 20));
 
     expect(await withBudget(work, 0, 'list')).toBe('slow');
+  });
+});
+
+describe('the headroom a looping tool works inside', () => {
+  it('leaves one round trip of the ceiling unspent', () => {
+    expect(withoutHeadroom(120000)).toBe(120000 - MAX_HEADROOM);
+  });
+
+  it('keeps the gap in proportion when the ceiling is small', () => {
+    // A fixed five seconds off a two-second ceiling would be no budget at all.
+    expect(withoutHeadroom(2000)).toBe(1600);
+  });
+
+  it('leaves no ceiling alone', () => {
+    expect(withoutHeadroom(0)).toBe(0);
+    expect(withoutHeadroom(-1)).toBe(-1);
   });
 });

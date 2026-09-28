@@ -6,6 +6,27 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.6.2 - 2026-09-28
+
+### Fixed
+
+- An MCP search or tree walk that ran out of time returned an error instead of
+  what it had already found. The tool and the backstop behind it were given the
+  same ceiling, and a loop only learns its time is up once the round trip in
+  flight comes back — a moment after the deadline, never before it — so the
+  backstop won every race and threw the matches away. The tool now works to a
+  deadline a little short of the ceiling, which is what the backstop was always
+  described as standing behind.
+- `sftp.mcp.callTimeout` defaulted to two minutes, which is longer than an MCP
+  client waits for a tool call: the answer arrived after the client had given up,
+  so a broad question looked like a dead server rather than one saying *ask for
+  less*. Now 45 seconds — the number the code had believed all along, while the
+  declared default quietly overrode it. Both are now held together by a test.
+- `search` with `dir` pointing at a file answered *no files to search* rather
+  than searching that file. It is the obvious way to narrow a search that ran out
+  of time, since the path already in hand is usually a file, and the reply read
+  as *the text is not there*.
+
 ## 2.6.1 - 2026-09-28
 
 ### Added

@@ -500,9 +500,18 @@ minutes so page two costs almost nothing.
 No call waits forever: every server operation has to answer within
 `operationTimeout` (60 seconds by default), and a transfer that goes silent for
 that long is abandoned and retried rather than left hanging. A whole tool call
-is capped by `sftp.mcp.callTimeout` (two minutes) on top of that — a search or a
+is capped by `sftp.mcp.callTimeout` (45 seconds) on top of that — a search or a
 tree walk that reaches it returns what it found so far and says it was cut
 short, rather than failing or running on.
+
+A walk only learns its time is up between round trips, so it stops a moment
+after its deadline rather than before it. The cap therefore holds back a few
+seconds for that last round trip to land in: without the gap the backstop behind
+the tool would fire first every time, and the matches already in hand would be
+thrown away and replaced by an error. Keep the cap under whatever the client
+waits for a tool call — usually about a minute. An answer that arrives after the
+client has given up is worth nothing, and the partial one that arrives in time is
+worth a great deal.
 ### Before a password goes out in the clear
 
 Plain FTP sends `USER` and `PASS` as readable text — but a great many hosts

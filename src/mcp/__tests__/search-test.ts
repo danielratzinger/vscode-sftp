@@ -259,6 +259,20 @@ describe('search', () => {
     expect((result.structured as any).matches[0].path).toBe('/srv/app/src/Session.php');
   });
 
+  it('searches one file when dir names a file', async () => {
+    // A model narrowing a search that ran out of time reaches for the path it
+    // already has, and that path is often a file. Walking it as a directory
+    // finds nothing, which reads as "not here" rather than "ask differently".
+    const result = await tool(createContext(), 'search').run({
+      server: 'Staging',
+      query: 'validate',
+      dir: '/srv/app/src/Session.php',
+    });
+
+    expect(result.text).not.toContain('No files to search');
+    expect((result.structured as any).matches[0].path).toBe('/srv/app/src/Session.php');
+  });
+
   it('requires a query, and an exposed server', async () => {
     expect((await tool(createContext(), 'search').run({ server: 'Staging' })).isError).toBe(true);
     expect(

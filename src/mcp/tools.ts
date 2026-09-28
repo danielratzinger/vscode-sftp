@@ -31,7 +31,7 @@ import {
   WalkOption,
   WalkResult,
 } from './search';
-import { Budget, createBudget, UNLIMITED } from './budget';
+import { Budget, createBudget, UNLIMITED, withoutHeadroom } from './budget';
 import { describeOutline, outlineOf } from './outline';
 import { diff as diffOf } from './diff';
 import {
@@ -396,9 +396,19 @@ export function createTools(
   /**
    * What is left of this call's time. The tools that loop ask between round
    * trips; the dispatcher stops anything that does not.
+   *
+   * Deliberately short of the ceiling. A loop learns its time is up only once
+   * the round trip in flight comes back, which is a moment *after* the deadline
+   * - so given the whole ceiling it would always be overtaken by the
+   * dispatcher's backstop, and the partial results it was about to return would
+   * be replaced by an error telling the model to ask for less. The headroom is
+   * what the last round trip gets to land in, and it keeps `callTimeout`
+   * meaning what it says: the call does not run past it.
    */
   const budgetFor = (): Budget =>
-    context.callTimeout ? createBudget(context.callTimeout()) : UNLIMITED;
+    context.callTimeout
+      ? createBudget(withoutHeadroom(context.callTimeout()))
+      : UNLIMITED;
 
   /**
    * The file list for a walk, fresh on the first page and remembered for the
@@ -429,6 +439,34 @@ export function createTools(
     remember(key, found);
 
     return found;
+  }
+
+  /**
+   * A one-file manifest, when a path a walk found nothing under turns out to be
+   * a file. Undefined for anything else - a directory that really is empty, a
+   * path that is gone, a server that would not say.
+   */
+  async function alone(
+    remote: RemoteLike,
+    path: string
+  ): Promise<WalkResult | undefined> {
+    try {
+      const stat = await remote.lstat(path);
+      if (stat.type !== FileType.File) {
+        return undefined;
+      }
+
+      return {
+        files: [{ path, size: stat.size, mtime: stat.mtime }],
+        truncated: false,
+        stoppedBy: [],
+        // No directory was listed to reach it: the path was the answer.
+        depth: 0,
+        directories: 0,
+      };
+    } catch (error) {
+      return undefined;
+    }
   }
 
   const sizeLimit = (): number => {
@@ -1030,7 +1068,9 @@ export function createTools(
         query: { type: 'string', description: 'Text to find, or a pattern with regex: true.' },
         dir: {
           type: 'string',
-          description: 'Folder to search. Defaults to the whole remote root, which is slow.',
+          description:
+            'Folder to search, or a single file. Defaults to the whole remote ' +
+            'root, which is slow.',
         },
         regex: {
           type: 'boolean',
@@ -1090,12 +1130,22 @@ export function createTools(
 
       const budget = budgetFor();
       const from = offsetOf(args.offset, Number.MAX_SAFE_INTEGER);
-      const found = await manifestOf(service, remote, root, option, from, budget);
+      let found = await manifestOf(service, remote, root, option, from, budget);
       if (found.files.length === 0) {
-        return {
-          text: `No files to search under ${root}.`,
-          structured: { matches: [], scanned: 0 },
-        };
+        // `dir` may name a file rather than a directory - which is what a model
+        // narrowing a search reaches for, because the path it already has is
+        // usually a file. Walking it finds nothing, and "nothing" reads as "the
+        // text is not there". So ask what the path is, but only here: on the
+        // ordinary path the walk has already answered and this would be a round
+        // trip spent learning what we knew.
+        const one = await alone(remote, root);
+        if (!one) {
+          return {
+            text: `No files to search under ${root}.`,
+            structured: { matches: [], scanned: 0 },
+          };
+        }
+        found = one;
       }
 
       const maxMatches = clamp(args.max_matches, 30, 300);
