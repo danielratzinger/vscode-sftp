@@ -6,6 +6,31 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.5.1 - 2026-09-28
+
+### Fixed
+
+- **`Rename` could delete the file it was asked to rename.** A remote URI keeps
+  the server's path in its query string and only an encoded copy of it in
+  `uri.path`, and the new name was put into the copy - so the "new" URI still
+  named the old file. Everything followed from that: the check for a name
+  already taken looked at the file being renamed and found it, which is the
+  warning about a file that was not there; and confirming the overwrite left
+  both sides of the rename pointing at one path, so the file was removed to make
+  room for itself and the rename then failed with `No such file`.
+  If this happened to you, the file is gone from the server and the local copy
+  is the only one left - upload it again.
+- Two guards so that chain cannot form again whatever else goes wrong: a rename
+  whose two paths are equal does nothing, and a file is only ever removed when it
+  has been seen to be there. A rename that fails for some other reason now
+  reports that reason instead of being read as "the target exists".
+- **A file identical to the one being put there is no longer in the way.** Same
+  size, same second - the comparison the rest of the extension uses - and the
+  question is not worth asking, since overwriting it changes nothing.
+- **A copy on this machine at the new name is only asked about when there is a
+  copy at the old name to move.** With nothing to move, nothing here is touched
+  either way, so there was nothing to ask.
+
 ## 2.5.0 - 2026-09-27
 
 ### Added

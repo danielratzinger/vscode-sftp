@@ -121,3 +121,50 @@ export function whatToAsk(clash: Clash, name: string): Ask {
     },
   };
 }
+
+/**
+ * The path a rename produces: the same folder, a new last part.
+ *
+ * Posix throughout, because it is a path on a server whatever this machine uses
+ * for its own. Kept apart from the editor's `Uri` because that was where this
+ * went wrong once: a remote uri carries the server's path in its query string
+ * and only a display copy in `uri.path`, so changing the obvious one left the
+ * real one pointing at the file being renamed - and then the two sides of the
+ * rename were the same path.
+ */
+export function renamedPath(current: string, name: string): string {
+  const trimmed = current.replace(/\/+$/, '');
+  const cut = trimmed.lastIndexOf('/');
+  const folder = cut <= 0 ? trimmed.slice(0, cut + 1) : trimmed.slice(0, cut);
+
+  return `${folder}/${name.trim()}`.replace(/\/{2,}/g, '/');
+}
+
+/** Enough of a file to tell whether two of them are the same one. */
+export interface Sameness {
+  size: number;
+  mtime: number;
+}
+
+/**
+ * Whether what is in the way is the very thing being put there.
+ *
+ * Then there is nothing to ask: overwriting it changes nothing and loses
+ * nothing. It happens more than it sounds - the same file downloaded twice, a
+ * copy made by hand under the name now being asked for.
+ *
+ * Compared by size and timestamp to the second, which is what every other
+ * comparison in this extension uses, and for the same reason: reading both files
+ * to be sure would cost a transfer to answer a question about whether to
+ * transfer.
+ */
+export function isSameFile(a?: Sameness | null, b?: Sameness | null): boolean {
+  if (!a || !b) {
+    return false;
+  }
+
+  return (
+    a.size === b.size &&
+    Math.floor(a.mtime / 1000) === Math.floor(b.mtime / 1000)
+  );
+}

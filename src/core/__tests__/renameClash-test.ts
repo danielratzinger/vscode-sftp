@@ -3,6 +3,8 @@ import {
   OVERWRITE,
   OVERWRITE_BOTH,
   SERVER_ONLY,
+  isSameFile,
+  renamedPath,
   whatToAsk,
 } from '../renameName';
 
@@ -50,5 +52,49 @@ describe('a name that is already taken', () => {
 
     expect(ask.choices).toEqual([OVERWRITE_BOTH, CANCEL]);
     expect(ask.message).toMatch(/on the server and on this machine/);
+  });
+});
+
+describe('the path a rename produces', () => {
+  it('keeps the folder and replaces the last part', () => {
+    expect(renamedPath('/httpdocs/site/stage/README.md', 'READ.md')).toBe(
+      '/httpdocs/site/stage/READ.md'
+    );
+  });
+
+  it('works on something directly under the root', () => {
+    expect(renamedPath('/README.md', 'READ.md')).toBe('/READ.md');
+  });
+
+  it('handles a folder, trailing slash and all', () => {
+    expect(renamedPath('/httpdocs/site/old/', 'new')).toBe('/httpdocs/site/new');
+  });
+
+  it('never doubles a separator', () => {
+    expect(renamedPath('/a/b', ' c ')).toBe('/a/c');
+    expect(renamedPath('/a//b', 'c')).toBe('/a/c');
+  });
+});
+
+describe('whether what is in the way is the same file', () => {
+  const file = { size: 4096, mtime: 1_700_000_000_000 };
+
+  it('is the same when size and second agree', () => {
+    expect(isSameFile(file, { size: 4096, mtime: 1_700_000_000_400 })).toBe(true);
+  });
+
+  it('is not the same on a different size', () => {
+    expect(isSameFile(file, { size: 4097, mtime: file.mtime })).toBe(false);
+  });
+
+  it('is not the same on a different second', () => {
+    expect(isSameFile(file, { size: 4096, mtime: file.mtime + 2000 })).toBe(false);
+  });
+
+  it('is never the same as nothing', () => {
+    // Nothing to compare is not a reason to skip the question.
+    expect(isSameFile(file, null)).toBe(false);
+    expect(isSameFile(null, file)).toBe(false);
+    expect(isSameFile(null, null)).toBe(false);
   });
 });

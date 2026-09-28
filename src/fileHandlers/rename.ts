@@ -1,6 +1,6 @@
 import * as fse from 'fs-extra';
 import { Uri } from 'vscode';
-import { fileOperations, FileType } from '../core';
+import { fileOperations, FileSystem, FileType } from '../core';
 import createFileHandler, { resourceFor } from './createFileHandler';
 import { refreshRemoteExplorer } from './shared';
 import logger from '../logger';
@@ -28,6 +28,15 @@ export interface RenameOption {
   overwrite?: boolean;
 }
 
+/** What is at a path on the server, or nothing when there is nothing there. */
+async function whatIsAt(remoteFs: FileSystem, remotePath: string) {
+  try {
+    return await remoteFs.lstat(remotePath);
+  } catch (error) {
+    return null;
+  }
+}
+
 export const renameRemote = createFileHandler<RenameOption>({
   name: 'rename',
   async handle({ originUri, renameLocal, overwrite }) {
@@ -39,6 +48,15 @@ export const renameRemote = createFileHandler<RenameOption>({
     // on whether it was asked for in the file explorer or the remote one.
     const from = origin.remoteFsPath;
     const to = this.target.remoteFsPath;
+
+    if (from === to) {
+      // Nothing to do, and everything to avoid: the overwrite path below would
+      // find something at the target, remove it, and then have nothing left to
+      // rename. Which is how a file gets deleted by being renamed to its own
+      // name.
+      logger.info(`${from} already has that name`);
+      return;
+    }
 
     if (overwrite && (this.config as any).openSsh) {
       // The one way to replace a file without a moment where neither name has
@@ -52,15 +70,24 @@ export const renameRemote = createFileHandler<RenameOption>({
           throw error;
         }
 
-        // SFTP refuses a rename onto something that exists, so the something
-        // has to go first. Not atomic, and there is no way to make it so
-        // without the extension above - said here rather than pretended away.
-        logger.info(`replacing ${to}, which cannot be done in one step here`);
-        const standing = await remoteFs.lstat(to);
+        // Not inferred from the failure: a rename can fail for reasons that have
+        // nothing to do with the target, and removing something on a guess is how
+        // a file gets deleted by a command that was asked to rename one. Only
+        // what is demonstrably there is removed, and any other failure is
+        // reported as itself.
+        const standing = await whatIsAt(remoteFs, to);
+        if (!standing) {
+          throw error;
+        }
+
         if (standing.type === FileType.Directory) {
           throw new Error(`${to} is a folder, and folders are not written over`);
         }
 
+        // SFTP refuses a rename onto something that exists, so the something has
+        // to go first. Not atomic, and there is no way to make it so without the
+        // extension above - said here rather than pretended away.
+        logger.info(`replacing ${to}, which cannot be done in one step here`);
         await fileOperations.removeFile(to, remoteFs, {});
         await fileOperations.rename(from, to, remoteFs);
       }
