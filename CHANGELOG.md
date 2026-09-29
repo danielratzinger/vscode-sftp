@@ -6,6 +6,17 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.6.4 - 2026-09-29
+
+### Changed
+
+- The two inline download icons in the Remote Explorer are gated the same way.
+  The one on a folder was held to `sftp.enabled` and the one on a file was not,
+  which made two lines that do the same job read differently for no reason. No
+  visible change: the context key is set as soon as there is a workspace folder,
+  and without one there are no connections and nothing in the tree to put an icon
+  on.
+
 ## 2.6.3 - 2026-09-29
 
 ### Fixed

@@ -2,7 +2,7 @@
   "name": "sftp",
   "displayName": "SFTP",
   "description": "SFTP/FTP sync, with an MCP server that lets local AI clients read your servers",
-  "version": "2.6.3",
+  "version": "2.6.4",
   "publisher": "danielratzinger",
   "author": "Daniel Ratzinger (https://github.com/danielratzinger)",
   "engines": {
@@ -1152,7 +1152,7 @@
         {
           "command": "sftp.download.file",
           "group": "inline",
-          "when": "view == remoteExplorer && viewItem =~ /^file/"
+          "when": "sftp.enabled && view == remoteExplorer && viewItem =~ /^file/"
         },
         {
           "command": "sftp.download.folder",
