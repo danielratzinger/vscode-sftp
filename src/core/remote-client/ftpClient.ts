@@ -1,5 +1,6 @@
 import * as Client from 'ftp';
 import RemoteClient, { ConnectOption } from './remoteClient';
+import { dataHost } from './pasv';
 
 // tslint:disable
 Client.prototype._send = function(cmd: string, cb: (err: Error) => void, promote: boolean) {
@@ -23,6 +24,34 @@ Client.prototype._send = function(cmd: string, cb: (err: Error) => void, promote
       this._socket.write(this._curReq.cmd + '\r\n');
     }
   } else if (!this._curReq && !queueLen && this._ending) this._reset();
+};
+// tslint:enable
+
+// tslint:disable
+/**
+ * Open the data connection where the server can actually be reached.
+ *
+ * A server behind NAT answers `PASV` with the address it knows itself by, and
+ * the library's answer to that is to try it, wait out `pasvTimeout`, and then
+ * use the address the control connection is on - ten seconds, per listing and
+ * per file, for an address that was never going to answer. The choice is made
+ * before the attempt instead, and only where it is certain. What the library
+ * does afterwards is untouched, so it remains the fallback for everything this
+ * cannot know.
+ */
+const connectToAdvertised = Client.prototype._pasvConnect;
+Client.prototype._pasvConnect = function(ip: string, port: number, cb) {
+  const reachable = dataHost(ip, this._socket && this._socket.remoteAddress);
+
+  if (reachable !== ip) {
+    this._debug &&
+      this._debug(
+        `[connection] PASV offered ${ip}, which nothing outside the server's own ` +
+          `network can reach; using ${reachable}, where the control connection is`
+      );
+  }
+
+  return connectToAdvertised.call(this, reachable, port, cb);
 };
 // tslint:enable
 

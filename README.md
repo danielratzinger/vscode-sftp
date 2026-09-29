@@ -88,7 +88,9 @@ to update the stored one.
 
 **Transfers that use the bandwidth.** FTP opens a pool of control connections
 rather than moving one file at a time; SFTP uses pipelined transfers instead
-of one request in flight. Every transfer is retried on a transient failure and
+of one request in flight. A server behind NAT that answers `PASV` with its own
+private address no longer costs a connect timeout per listing and per file — the
+address is checked before it is used rather than after it fails. Every transfer is retried on a transient failure and
 checked by size before a temp file replaces a real one.
 
 **Nothing waits forever.** A command must answer within `operationTimeout`; a

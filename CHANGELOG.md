@@ -6,6 +6,22 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.6.3 - 2026-09-29
+
+### Fixed
+
+- An FTP server behind NAT cost ten seconds per directory and per file. `PASV`
+  answers with the address to open the data connection to, and such a server
+  answers with the private address it knows itself by; the library tried it,
+  waited out `connectTimeout`, and only then used the address the control
+  connection was already on — once for every listing and every transfer, with the
+  server answering each command instantly in between. The address is now checked
+  before it is used, and one that nothing outside the server's own network could
+  reach is replaced by the one we got there on. A server on your own network still
+  speaks for itself, and the library's timeout-and-retry stays behind this as the
+  fallback for what cannot be known in advance. With `sftp.debug` on, a
+  substitution says so.
+
 ## 2.6.2 - 2026-09-28
 
 ### Fixed
