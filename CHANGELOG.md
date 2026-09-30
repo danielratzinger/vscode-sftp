@@ -6,6 +6,21 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.6.5 - 2026-09-30
+
+### Fixed
+
+- The autosync question — *another checkout was edited more recently, switch to
+  it?* — is asked on a minute's timer, and a notification cannot be withdrawn: VS
+  Code hands an extension no way to close one it has shown. So on a machine that
+  keeps making checkouts, each minute's question stacked beneath the last, and all
+  but the newest were about a checkout that had since stopped being the busiest.
+  Now only one question per connection is open at a time; while it is waiting, the
+  checkouts are not even walked. Nothing is lost by waiting, because the answer is
+  only ever about what is busiest now and the next look round is sixty seconds
+  away — and a checkout passed over while a question was open is no longer written
+  down as one that has been asked about, so it can still be raised later.
+
 ## 2.6.4 - 2026-09-29
 
 ### Changed

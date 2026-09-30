@@ -26,6 +26,7 @@ import {
   release,
 } from '../core/autosyncLock';
 import SyncQueue, { QueuedOp, resumed } from '../core/syncQueue';
+import { createGate } from '../helper/oneAtATime';
 import isNotFound from '../core/notFound';
 import {
   clearToOverwrite,
@@ -81,6 +82,21 @@ const INDEX_EVERY = 2000;
 
 /** How often to look at whether the work has moved to another checkout. */
 const LOOK_EVERY = 60 * 1000;
+
+/**
+ * One open "switch to it?" per connection.
+ *
+ * The question is asked on a timer, and a notification cannot be withdrawn -
+ * `showInformationMessage` hands out no handle to close. So asking again while
+ * the last one is still unanswered does not replace it, it stacks beneath it: a
+ * corner of questions about checkouts that have since stopped being the busiest.
+ * Whoever is deploying from a machine that keeps making new checkouts gets one a
+ * minute.
+ *
+ * Nothing is lost by waiting. The answer is only ever about what is busiest now,
+ * and the next look round is sixty seconds away.
+ */
+const questions = createGate();
 
 /**
  * How recently another checkout must have been written in to be worth
@@ -1809,12 +1825,19 @@ async function offerSomewhereBusier(service: FileService): Promise<void> {
     return;
   }
 
+  const id = stableId(service as any);
+
+  // Asked before the checkouts are walked, not after: there is no point reading
+  // a disk to decide on a question that will not be put.
+  if (questions.holding(id)) {
+    return;
+  }
+
   const chosen = activeWorktree(service);
   if (!chosen) {
     return;
   }
 
-  const id = stableId(service as any);
   const all = await everyCheckout(service);
   const deployable = all.filter(
     one => one.exists && (one.isMain || (one.branch && !nestedInScratch(one, all)))
@@ -1850,26 +1873,35 @@ async function offerSomewhereBusier(service: FileService): Promise<void> {
     return;
   }
 
-  asked[id] = already.concat(busiest.root);
-  await storage.update(OFFERED, asked);
+  // Held onto across the question: the guard above narrowed it, but the compiler
+  // cannot know that nothing clears it while somebody reads a notification.
+  const store = storage;
 
-  const where = connectionLabel(service.getConfig() as any);
-  const sync = 'Sync it instead';
-  const answer = await vscode.window.showInformationMessage(
-    `${busiest.one.branch || busiest.one.name} was edited ` +
-      `${describeAge(busiest.edited)} — more recently than ` +
-      `${chosen.branch || path.basename(chosen.root)}, which ${where} is ` +
-      'deploying. Switch to it?',
-    sync,
-    'Not now'
-  );
+  await questions.hold(id, async () => {
+    // Inside the hold, so that a checkout passed over while another question was
+    // open is not written down as one that has been asked about. It has not been,
+    // and the next look round should be free to raise it.
+    asked[id] = already.concat(busiest.root);
+    await store.update(OFFERED, asked);
 
-  if (answer === sync) {
-    await remember(service, {
-      root: busiest.root,
-      branch: busiest.one.branch,
-    });
-  }
+    const where = connectionLabel(service.getConfig() as any);
+    const sync = 'Sync it instead';
+    const answer = await vscode.window.showInformationMessage(
+      `${busiest.one.branch || busiest.one.name} was edited ` +
+        `${describeAge(busiest.edited)} — more recently than ` +
+        `${chosen.branch || path.basename(chosen.root)}, which ${where} is ` +
+        'deploying. Switch to it?',
+      sync,
+      'Not now'
+    );
+
+    if (answer === sync) {
+      await remember(service, {
+        root: busiest.root,
+        branch: busiest.one.branch,
+      });
+    }
+  });
 }
 
 /**
