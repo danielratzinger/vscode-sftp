@@ -61,3 +61,18 @@ describe('describeConnectError', () => {
     expect(describeConnectError(undefined)).not.toBe('');
   });
 });
+
+describe('the local end of the attempt', () => {
+  // As Node wrote it in a real failure: the local port says nothing about why.
+  it('is left out', () => {
+    const error: any = new Error('');
+    error.errors = [
+      new Error('connect ETIMEDOUT 80.74.153.100:2121'),
+      new Error('connect EHOSTUNREACH 2a00:1128:0:153::100:2121 - Local (:::52661)'),
+    ];
+
+    expect(describeConnectError(error)).toBe(
+      'connect ETIMEDOUT 80.74.153.100:2121; connect EHOSTUNREACH 2a00:1128:0:153::100:2121'
+    );
+  });
+});

@@ -22,6 +22,7 @@ function sftpFileSystemClass(): typeof SFTPFileSystemType {
 import logger from '../../logger';
 import CustomError from '../customError';
 import { describeConnectError } from './connectError';
+import { markExplained } from '../explainedError';
 import { hostKeyChecker } from './hostKeys';
 
 let MAX_OPEN_FD_NUM = 222;
@@ -375,7 +376,9 @@ export default class SSHClient extends RemoteClient {
       client
         .on('ready', resolve)
         .on('error', err => {
-          reject(new Error(`[${option.host}]: ${describeConnectError(err)}`));
+          reject(
+            markExplained(new Error(`[${option.host}]: ${describeConnectError(err)}`))
+          );
         })
         // Handlers, not calls: `this.end()` here ran at connect time and
         // registered its return value - undefined - as the listener, which

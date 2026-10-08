@@ -13,7 +13,7 @@ export function describeConnectError(error: any): string {
   }
 
   if (error.message) {
-    return error.message;
+    return describeOne(error);
   }
 
   const reasons = (Array.isArray(error.errors) ? error.errors : [])
@@ -33,7 +33,9 @@ function describeOne(error: any): string {
   }
 
   if (error.message) {
-    return error.message;
+    // Node appends the local end of the attempt, which says nothing about why
+    // it failed.
+    return String(error.message).replace(/ - Local \([^)]*\)$/, '');
   }
 
   const where = error.address

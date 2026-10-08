@@ -1,5 +1,5 @@
 import * as output from './ui/output';
-import { getExtensionSetting } from './modules/ext';
+import { wantsDebug } from './modules/ext';
 
 /**
  * Whether the verbose lines are wanted, asked each time rather than once.
@@ -10,15 +10,6 @@ import { getExtensionSetting } from './modules/ext';
  * rather than "the switch has not taken effect yet". Reading it per line costs
  * a lookup in VS Code's own cached configuration.
  */
-function wantsDebug(): boolean {
-  try {
-    const setting = getExtensionSetting();
-    return Boolean(setting.debug || setting.printDebugLog);
-  } catch (error) {
-    return false;
-  }
-}
-
 const paddingTime = time => ('00' + time).slice(-2);
 
 /**

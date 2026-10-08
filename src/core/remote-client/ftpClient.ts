@@ -1,6 +1,7 @@
 import * as Client from 'ftp';
 import RemoteClient, { ConnectOption } from './remoteClient';
 import { describeConnectError } from './connectError';
+import { markExplained } from '../explainedError';
 import { dataHost } from './pasv';
 
 // tslint:disable
@@ -114,7 +115,7 @@ export default class FTPClient extends RemoteClient {
           if (err && !err.message) {
             err.message = describeConnectError(err);
           }
-          reject(err);
+          reject(markExplained(err));
         })
         .connect({
           keepalive: 1000 * 10, // 10 secs, original

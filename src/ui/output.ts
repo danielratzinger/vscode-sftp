@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import app from '../app';
 import { EXTENSION_NAME } from '../constants';
 import StatusBarItem from './statusBarItem';
+import { forLog } from '../core/explainedError';
+import { wantsDebug } from '../modules/ext';
 
 let isShow = false;
 const outputChannel = vscode.window.createOutputChannel(EXTENSION_NAME);
@@ -33,7 +35,7 @@ export function print(...args) {
       }
 
       if (arg instanceof Error) {
-        return arg.stack;
+        return forLog(arg, wantsDebug());
       } else if (!arg.toString || arg.toString() === '[object Object]') {
         return JSON.stringify(arg);
       }

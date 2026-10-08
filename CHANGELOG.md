@@ -6,6 +6,17 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.6.7 - 2026-10-08
+
+### Changed
+
+- A connection that could not be made is logged as one line - which server,
+  and why, per address - rather than that line followed by eight lines of
+  socket plumbing that are the same every time. `sftp.debug` brings the trace
+  back. Every other error keeps its trace, because for a bug the trace is what
+  says where it went wrong. Node's ` - Local (:::52661)`, the local end of the
+  attempt, is left out too.
+
 ## 2.6.6 - 2026-10-08
 
 ### Fixed
