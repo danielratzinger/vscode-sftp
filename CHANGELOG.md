@@ -6,6 +6,18 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.6.6 - 2026-10-08
+
+### Fixed
+
+- A connection that could not be made logged the host's name followed by
+  nothing. Node tries every address a name resolves to, IPv4 and IPv6, and when
+  all of them fail it reports one `AggregateError` with an empty message and the
+  reasons in a list nobody read. They are spelled out now, one per address -
+  `connect ETIMEDOUT 80.74.153.100:2121; connect EHOSTUNREACH …` - which is the
+  difference between "the server is down" and "the server's firewall has
+  stopped answering this machine".
+
 ## 2.6.5 - 2026-09-30
 
 ### Fixed

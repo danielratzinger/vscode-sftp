@@ -1,5 +1,6 @@
 import * as Client from 'ftp';
 import RemoteClient, { ConnectOption } from './remoteClient';
+import { describeConnectError } from './connectError';
 import { dataHost } from './pasv';
 
 // tslint:disable
@@ -108,6 +109,11 @@ export default class FTPClient extends RemoteClient {
         })
         .on('error', err => {
           clearTimeout(givingUp);
+          // Passed on as it is, because callers read its code. Only the
+          // message is filled in, where Node left it empty.
+          if (err && !err.message) {
+            err.message = describeConnectError(err);
+          }
           reject(err);
         })
         .connect({
