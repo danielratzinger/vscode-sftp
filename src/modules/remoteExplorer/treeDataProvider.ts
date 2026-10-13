@@ -121,7 +121,26 @@ export default class RemoteTreeData
       return;
     }
 
+    // A connection this tree does not know: the connections were rebuilt -
+    // a `sftp.json` saved, a profile switched - and the tree has not been
+    // asked for its rows since. Refreshing one folder of it would refresh
+    // nothing, which is how a file just created or uploaded stayed out of
+    // sight until the folder was refreshed by hand. So the whole tree is.
+    if (!this.findRoot(item.resource.uri)) {
+      return this.refresh();
+    }
+
+    // The view knows its rows by identity, so a folder is refreshed as the
+    // row the view was given for it, not as an object that looks like it. A
+    // folder with no row - one just created or uploaded - is not on screen
+    // yet, and what has to be refreshed is the folder it appeared in.
     if (item.isDirectory) {
+      const known = this._map.get(item.resource.uri.query);
+      if (!known) {
+        return this.refresh({ ...item, isDirectory: false });
+      }
+      item = known;
+
       this._onDidChangeFolder.fire(item);
 
       // refresh top level files as well
@@ -311,12 +330,15 @@ export default class RemoteTreeData
   }
 
   findRoot(uri: vscode.Uri): ExplorerRoot | null | undefined {
+    // Dropped by a refresh and not yet asked for again by the view. Building
+    // the rows is in memory and cheap, and a question about a connection
+    // deserves an answer rather than a null that looks like "no such thing".
     if (!this._rootsMap) {
-      return null;
+      this._getRoots();
     }
 
     const rootId = UResource.makeResource(uri).remoteId;
-    return this._rootsMap.get(rootId);
+    return this._rootsMap ? this._rootsMap.get(rootId) : null;
   }
 
   async provideTextDocumentContent(

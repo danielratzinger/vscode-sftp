@@ -108,8 +108,13 @@ export const renameRemote = createFileHandler<RenameOption>({
     try {
       await fse.move(localFrom, localTo, { overwrite: Boolean(overwrite) });
     } catch (error) {
-      // The server has already been renamed, so this cannot be swallowed: the
-      // two sides now disagree, and only saying so lets anybody put it right.
+      // The server has already been renamed, so the tree shows that before
+      // anything else: a failure throws past `afterHandle`, and the old name
+      // would stay on screen for a file that no longer has it.
+      refreshRemoteExplorer(this.target, false);
+
+      // Nor can this be swallowed: the two sides now disagree, and only
+      // saying so lets anybody put it right.
       throw new Error(
         `renamed on the server, but the copy here could not follow: ` +
           `${error.message}`

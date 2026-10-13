@@ -6,6 +6,30 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.6.8 - 2026-10-13
+
+### Changed
+
+- While a connection autosyncs the folder this window has open, a save with
+  `uploadOnSave` on goes up the moment it is made, as it did before autosync -
+  gitignored files included, since saving one is asking for it. Before, the
+  watcher sent it once it had settled, and a gitignored file not at all. The
+  watcher no longer sends a second copy of what the save already sent. `.git`,
+  `.vscode` and `.claude` are never sent.
+
+### Fixed
+
+- A file or folder created, uploaded or renamed through the Remote Explorer
+  did not appear until its folder was refreshed by hand. The refresh looked
+  for the connection the new entry belonged to, and when the connections had
+  been rebuilt since the tree last built its rows - a `sftp.json` saved, a
+  profile switched - it found none and refreshed nothing. It now builds the
+  rows when they are missing and refreshes the whole tree when the connection
+  is one it does not know. A folder is refreshed as the row the view was
+  given for it rather than an object that looks the same, which the view
+  ignored; one with no row yet refreshes the folder it appeared in. And a
+  rename whose local copy cannot follow still shows the new name.
+
 ## 2.6.7 - 2026-10-08
 
 ### Changed
