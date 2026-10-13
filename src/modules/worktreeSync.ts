@@ -26,6 +26,7 @@ import {
   release,
 } from '../core/autosyncLock';
 import SyncQueue, { QueuedOp, resumed } from '../core/syncQueue';
+import SentOnSave from '../core/sentOnSave';
 import { createGate } from '../helper/oneAtATime';
 import isNotFound from '../core/notFound';
 import {
@@ -368,6 +369,29 @@ function nestedInScratch(one: Worktree, others: Worktree[]): boolean {
   });
 }
 
+/** What a save in this window has already sent, so the watcher does not send it again. */
+const sentOnSave = new SentOnSave();
+
+/**
+ * A save in this window went up by itself, written at `mtime`.
+ *
+ * Only for a connection autosyncing the folder this window has open: there the
+ * save is sent at once rather than when it has settled, and the watcher, which
+ * sees the same write, leaves it alone.
+ */
+export function sentBySave(file: string, mtime: number): void {
+  sentOnSave.record(file, mtime);
+}
+
+/**
+ * Whether a file is one autosync never sends, whatever anybody's rules say -
+ * `.git`, `.vscode`, `.claude`. A save does not send them either.
+ */
+export function neverUploaded(service: FileService, file: string): boolean {
+  const state = autosyncState(service);
+  return Boolean(state && isGitPlumbing(state.root, file));
+}
+
 function isGitPlumbing(root: string, file: string): boolean {
   const relative = path.relative(root, file);
 
@@ -488,7 +512,15 @@ async function flush(service: FileService, id: string): Promise<void> {
 
       for (const one of wanted) {
         try {
-          if ((await fse.lstat(one.file)).isFile()) {
+          const stat = await fse.lstat(one.file);
+
+          // Saved in this window and sent then, and not written since.
+          if (stat.isFile() && sentOnSave.alreadySent(one.file, stat.mtimeMs)) {
+            running.queue.done(one.file);
+            continue;
+          }
+
+          if (stat.isFile()) {
             uploads.push(one);
             continue;
           }

@@ -15,7 +15,13 @@ import { reportError, isValidFile, isConfigFile, isInWorkspace } from '../helper
 import connectionLabel from '../core/connectionLabel';
 import * as path from 'path';
 import { upath, UResource } from '../core';
-import { autosyncState, resumeAutosync, sayIfPaused } from './worktreeSync';
+import * as fse from 'fs-extra';
+import {
+  autosyncState,
+  neverUploaded,
+  resumeAutosync,
+  sentBySave,
+} from './worktreeSync';
 import { forgetRemoteCopy, remoteCopyAt, RemoteCopy } from './remoteEdits';
 import { downloadFile, uploadFile } from '../fileHandlers';
 import { FileHandlerContext } from '../fileHandlers/createFileHandler';
@@ -59,13 +65,22 @@ async function handleFileSave(uri: vscode.Uri) {
   const config = fileService.getConfig();
   const state = autosyncState(fileService);
 
-  // A connection has one writer. While it is this folder, the watcher sends
-  // the save and upload-on-save stands down, saying so once. While it is
-  // another folder, nothing here would ever send it, so every save that
-  // upload-on-save would have sent asks instead - silently keeping it off the
-  // server looked like a transfer that failed.
-  if (state && !(state.external && config.uploadOnSave)) {
-    sayIfPaused(fileService);
+  // A connection has one writer. While it is this folder, a save goes up at
+  // once, as upload-on-save always sent it - gitignored files included, since
+  // saving one is asking for it - and the watcher, seeing the same write, does
+  // not send it again. Without upload-on-save the watcher sends what git keeps
+  // when it has settled, as before.
+  if (state && !state.external) {
+    if (config.uploadOnSave && !neverUploaded(fileService, uri.fsPath)) {
+      await uploadOnSave(uri, config, mtime => sentBySave(uri.fsPath, mtime));
+    }
+    return;
+  }
+
+  // While it is another folder, nothing here would ever send it, so every save
+  // that upload-on-save would have sent asks instead - silently keeping it off
+  // the server looked like a transfer that failed.
+  if (state && !config.uploadOnSave) {
     return;
   }
 
@@ -80,18 +95,35 @@ async function handleFileSave(uri: vscode.Uri) {
   }
 
   if (config.uploadOnSave) {
-    const fspath = await realpathSync.native(uri.fsPath);
-    uri = vscode.Uri.file(fspath);
-    await withConnection(connectionLabel(config), async () => {
-      logger.info(`[file-save] ${fspath}`);
-      try {
-        await uploadFile(uri);
-      } catch (error) {
-        logger.error(error, `upload ${fspath}`);
-        app.sftpBarItem.updateStatus(StatusBarItem.Status.error);
-      }
-    });
+    await uploadOnSave(uri, config);
   }
+}
+
+/**
+ * Sends a saved file. `sent` hears the modification time of what went up,
+ * read before sending, so a write made during the upload is not mistaken for
+ * the one that was sent.
+ */
+async function uploadOnSave(
+  uri: vscode.Uri,
+  config: any,
+  sent?: (mtime: number) => void
+): Promise<void> {
+  const fspath = await realpathSync.native(uri.fsPath);
+  const target = vscode.Uri.file(fspath);
+  await withConnection(connectionLabel(config), async () => {
+    logger.info(`[file-save] ${fspath}`);
+    try {
+      const { mtimeMs } = await fse.lstat(fspath);
+      await uploadFile(target);
+      if (sent) {
+        sent(mtimeMs);
+      }
+    } catch (error) {
+      logger.error(error, `upload ${fspath}`);
+      app.sftpBarItem.updateStatus(StatusBarItem.Status.error);
+    }
+  });
 }
 
 /**
