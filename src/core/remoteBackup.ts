@@ -164,6 +164,17 @@ export async function keepRemote(
   remotePath: string,
   fetch: () => Promise<Fetched>
 ): Promise<'kept' | 'absent' | 'failed'> {
+  // The first copy a session takes of a file is the one that matters: it is
+  // what the server had before the session touched it. A second request for
+  // the same file - two passes of the queue at once, a second window in the
+  // same second - comes after an upload may already have landed, and what it
+  // fetches is the new file. Writing that over the first copy left a backup
+  // of the very thing it was meant to undo. So whatever is kept stays kept.
+  const earlier = await keptAlready(option, stamp, remotePath);
+  if (earlier) {
+    return earlier;
+  }
+
   const fetched = await fetch();
 
   if (fetched.kind === 'failed') {
@@ -175,12 +186,41 @@ export async function keepRemote(
     return 'absent';
   }
 
+  // Asked again after the fetch: another request may have noted the file as
+  // absent and uploaded it while this one was waiting on the server.
+  const meanwhile = await keptAlready(option, stamp, remotePath);
+  if (meanwhile) {
+    return meanwhile;
+  }
+
   const where = storedAt(option, stamp, remotePath);
   await fse.ensureDir(path.dirname(where));
-  await fse.writeFile(where, fetched.bytes);
+  try {
+    // `wx`: never over a copy that is already there, however it got there.
+    await fse.writeFile(where, fetched.bytes, { flag: 'wx' });
+  } catch (error) {
+    if (error && error.code === 'EEXIST') {
+      return 'kept';
+    }
+    throw error;
+  }
   await note(option, stamp, { p: remotePath });
 
   return 'kept';
+}
+
+/** What this session already holds for a file, if anything. */
+async function keptAlready(
+  option: RemoteBackupOption,
+  stamp: string,
+  remotePath: string
+): Promise<'kept' | 'absent' | undefined> {
+  if (await fse.pathExists(storedAt(option, stamp, remotePath))) {
+    return 'kept';
+  }
+
+  const entries = await readManifest(option, stamp);
+  return entries.some(one => one.p === remotePath && one.a) ? 'absent' : undefined;
 }
 
 /** Every session kept for this connection, newest first. */

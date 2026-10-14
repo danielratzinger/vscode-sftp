@@ -189,6 +189,8 @@ interface Live {
   tracked?: Set<string>;
   indexAt?: number;
   lookedAt: number;
+  /** True for the whole of a pass, including the look at git before it. */
+  flushing?: boolean;
 }
 
 const live = new Map<string, Live>();
@@ -529,12 +531,31 @@ async function forgetIndexSeen(id: string): Promise<void> {
   await storage.update(INDEX_SEEN, all);
 }
 
+/**
+ * One pass at a time, from the first moment of it.
+ *
+ * `working` used to be set only once the queue had something due - after git
+ * had been asked what left the index. The first time a session asks, that is
+ * a `git ls-files` over the whole checkout, and it can take longer than the
+ * half-second tick. The next tick then found nothing working, took the same
+ * due files, and both passes sent them: every file backed up twice and
+ * uploaded twice, the second backup taken after the first upload had landed.
+ */
 async function flush(service: FileService, id: string): Promise<void> {
   const running = live.get(id);
-  if (!running || running.working) {
+  if (!running || running.working || running.flushing) {
     return;
   }
 
+  running.flushing = true;
+  try {
+    await flushOnce(service, id, running);
+  } finally {
+    running.flushing = false;
+  }
+}
+
+async function flushOnce(service: FileService, id: string, running: Live): Promise<void> {
   const now = Date.now();
 
   const gone = await whatLeftTheProject(running, now).catch(() => [] as string[]);

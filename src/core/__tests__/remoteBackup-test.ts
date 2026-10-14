@@ -89,6 +89,43 @@ describe('keeping what the server had', () => {
   });
 });
 
+describe('keeping the first copy, whatever asks again', () => {
+  const STAMP = '2026-10-11-225540';
+
+  // Two passes over the same queue, or a second window in the same second:
+  // the second asks after the upload may already have landed.
+  it('does not write the uploaded file over what the server had', async () => {
+    await keepRemote(option, STAMP, '/httpdocs/a.php', bytes('before'));
+    const again = await keepRemote(option, STAMP, '/httpdocs/a.php', bytes('after the upload'));
+
+    expect(again).toBe('kept');
+    expect(vol.readFileSync(storedAt(option, STAMP, '/httpdocs/a.php'), 'utf8')).toBe(
+      'before'
+    );
+  });
+
+  it('does not ask the server again for a file it already has', async () => {
+    await keepRemote(option, STAMP, '/httpdocs/a.php', bytes('before'));
+    const fetch = jest.fn(bytes('after'));
+
+    await keepRemote(option, STAMP, '/httpdocs/a.php', fetch);
+
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  // Absent, then uploaded by the first request: the second finds a file there
+  // and must not take it for what the server had.
+  it('keeps a file absent once it has been found absent', async () => {
+    await keepRemote(option, STAMP, '/httpdocs/new.php', absent);
+    const again = await keepRemote(option, STAMP, '/httpdocs/new.php', bytes('uploaded'));
+
+    expect(again).toBe('absent');
+    expect(await restorePoints(option, STAMP)).toEqual([
+      { remotePath: '/httpdocs/new.php', stamp: STAMP, absent: true },
+    ]);
+  });
+});
+
 describe('putting the server back', () => {
   async function twoSessions() {
     await keepRemote(option, '2026-09-20-090000', '/httpdocs/a.php', bytes('monday a'));

@@ -6,6 +6,20 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.6.11 - 2026-10-14
+
+### Fixed
+
+- Autosync could back up and upload every file of a batch twice. The guard
+  against two passes over the queue at once was only set after git had been
+  asked what left the index, and the first time a session asks, that takes
+  longer than the half-second tick - so a second pass took the same files. A
+  second backup could be taken after the first upload had landed, replacing
+  what the server had with what had just been sent. The guard now holds for
+  the whole pass, and a session's first copy of a file is never replaced:
+  whatever asks again, from this window or another, gets the copy that is
+  already there.
+
 ## 2.6.10 - 2026-10-14
 
 ### Added
