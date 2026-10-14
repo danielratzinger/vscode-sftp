@@ -32,6 +32,7 @@ import {
   WalkResult,
 } from './search';
 import { Budget, createBudget, UNLIMITED, withoutHeadroom } from './budget';
+import { localTime } from './localTime';
 import { describeOutline, outlineOf } from './outline';
 import { diff as diffOf } from './diff';
 import {
@@ -767,7 +768,7 @@ export function createTools(
       return {
         text:
           `${target}\n` +
-          `  ${remoteStat.size} bytes, modified ${new Date(remoteStat.mtime).toISOString()}\n` +
+          `  ${remoteStat.size} bytes, modified ${localTime(remoteStat.mtime, true)}\n` +
           `  local copy would be at ${localPath}` +
           (about ? `\n  ${about}` : ''),
         structured: {
@@ -1398,7 +1399,7 @@ export function createTools(
       const lines = page.map(file => {
         const when =
           changedSince || args.sort === 'modified'
-            ? `  ${new Date(file.mtime).toISOString().slice(0, 16).replace('T', ' ')}  `
+            ? `  ${localTime(file.mtime)}  `
             : '';
         const view = viewOf(notes, file.path, file);
         const described =
@@ -1454,7 +1455,7 @@ export function createTools(
         return {
           text:
             `Nothing under ${root} has changed since ` +
-            `${new Date(changedSince).toISOString()}.`,
+            `${localTime(changedSince, true)}.`,
           structured: { root, total: 0, files: [] },
         };
       }
@@ -1463,7 +1464,7 @@ export function createTools(
         text:
           (changedSince
             ? `${selected.length} files under ${root} changed since ` +
-              `${new Date(changedSince).toISOString().slice(0, 10)}, `
+              `${localTime(changedSince)}, `
             : `${found.files.length} files under ${root}, `) +
           `${describedCount} described` +
           (from > 0 || next !== undefined
@@ -1873,7 +1874,7 @@ export function createTools(
   }
 
   function describeVersion(version: Older, at: number): string {
-    const when = new Date(version.timestamp).toISOString();
+    const when = localTime(version.timestamp, true);
     const why = version.source ? ` (${version.source})` : '';
 
     return `  ${at}: ${version.id} — ${when}, ${describeVersionAge(
@@ -2012,7 +2013,7 @@ export function createTools(
       return {
         text:
           `${localPath} as it was ${describeVersionAge(wanted.timestamp)} ` +
-          `(${new Date(wanted.timestamp).toISOString()})\n` +
+          `(${localTime(wanted.timestamp, true)})\n` +
           (note ? `${note}\n` : '') +
           '\n' +
           body,
@@ -2145,7 +2146,7 @@ export function createTools(
     return {
       label:
         `version ${wanted.id} from ${describeVersionAge(wanted.timestamp)} ` +
-        `(${new Date(wanted.timestamp).toISOString().slice(0, 16).replace('T', ' ')})`,
+        `(${localTime(wanted.timestamp)})`,
       text,
     };
   }

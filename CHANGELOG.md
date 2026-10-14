@@ -6,6 +6,30 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.6.10 - 2026-10-14
+
+### Added
+
+- `SFTP: Show History` opens a file's earlier versions in Finder: the server's
+  copies, kept before autosync wrote over it, and this machine's, kept before a
+  download wrote over it. One is shown selected in its folder, several are
+  offered newest first, and a file with none - or a connection - opens the
+  connection's folder with every session by date. The editor's Timeline would
+  be the natural home, but extensions cannot add to it yet.
+- The MCP `history` tool also lists the server's copies kept by autosync, as
+  `autosync:<time>`, in the same list as the editor's local history and the
+  copies kept by downloads, each saying where it came from.
+
+### Fixed
+
+- Commands run from the palette with nothing selected - `Restore Server to an
+  Earlier Point` among them - threw instead of asking which connection.
+- A restore never removed the files that were not on the server before the
+  session, and reported success anyway. It removes them now, and says so when
+  one cannot be removed.
+- Times in MCP output were UTC with the zone cut off, so 11:01 in Vienna read
+  as 09:01. They are local now, with the offset: `2026-10-14 11:01 +02:00`.
+
 ## 2.6.9 - 2026-10-14
 
 ### Added
