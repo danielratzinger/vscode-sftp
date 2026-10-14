@@ -1,5 +1,5 @@
 import * as fse from 'fs-extra';
-import { Uri } from 'vscode';
+import { Uri, workspace, WorkspaceEdit } from 'vscode';
 import { fileOperations, FileSystem, FileType } from '../core';
 import createFileHandler, { resourceFor } from './createFileHandler';
 import { refreshRemoteExplorer } from './shared';
@@ -35,6 +35,30 @@ async function whatIsAt(remoteFs: FileSystem, remotePath: string) {
   } catch (error) {
     return null;
   }
+}
+
+/**
+ * Moves the copy here, through the editor when it will.
+ *
+ * Moved behind the editor's back, a file that is open looks deleted - its tab
+ * struck through - and a new file appears that nothing has open. The editor's
+ * own rename takes the open tab with it, unsaved changes and all, so whoever
+ * renamed it carries on where they were. It also tells everything listening
+ * for renames, including this extension's own `renameFollowing`, which finds
+ * the old name already gone from the server and has nothing to ask.
+ *
+ * Done directly only when the editor declines.
+ */
+async function moveLocal(from: string, to: string, overwrite: boolean): Promise<void> {
+  const edit = new WorkspaceEdit();
+  edit.renameFile(Uri.file(from), Uri.file(to), { overwrite });
+
+  if (await workspace.applyEdit(edit)) {
+    return;
+  }
+
+  logger.debug(`[rename] the editor would not move ${from}; moving it directly`);
+  await fse.move(from, to, { overwrite });
 }
 
 export const renameRemote = createFileHandler<RenameOption>({
@@ -106,7 +130,7 @@ export const renameRemote = createFileHandler<RenameOption>({
     }
 
     try {
-      await fse.move(localFrom, localTo, { overwrite: Boolean(overwrite) });
+      await moveLocal(localFrom, localTo, Boolean(overwrite));
     } catch (error) {
       // The server has already been renamed, so the tree shows that before
       // anything else: a failure throws past `afterHandle`, and the old name
