@@ -262,6 +262,11 @@ On a connection in the Remote Explorer, or from the palette. Lists the autosync 
 
 Files that were not on the server at the chosen moment are removed, since that is what putting them back means. The count of those is stated separately in the confirmation, because it is the one destructive part. Uploads go through the connection's own transfer machinery, so `concurrency`, `verifyTransfer` and `useTempFile` apply as they do everywhere else.
 
+### Show History
+On a file in the file explorer, on the editor's context menu, or on a file or connection in the Remote Explorer. Opens the earlier versions of that file where they are kept — in Finder, or whatever the file manager is. Two stores keep them: the server's copy, kept before autosync first wrote over it in a session, and this machine's copy, kept before a download wrote over it. One copy is shown selected in its folder; several are offered newest first, since each autosync session keeps its copies in a folder of its own. A file with none, a connection, or the palette with nothing open opens the connection's folder, where every session is, by date.
+
+The editor's own Timeline would be the natural home for these, but adding to it is not something an installed extension can do: that API is still a proposal, open only to the editor's built-in extensions. Your saves are already there, from the editor's local history.
+
 Picking a folder usually happens after the work has started — an agent has been writing for twenty minutes before anybody looks — so you are offered a catch-up, and asked what it should cover. Where there is a branch, git answers exactly and for nothing: the files that checkout has and the deployed branch does not, plus whatever is not committed there yet. Where there is not — a plain project folder, or a checkout sitting on a commit rather than a branch — the only thing left to ask is the disk, so the offer is by time instead: changed in the last hour, the last 24 hours, the last 7 days, or everything in the folder. The count is shown before anything moves, and the upload can be cancelled while it runs.
 
 The catch-up uploads through the connection's own transfer machinery rather than a path of its own, so `concurrency`, `verifyTransfer`, `useTempFile` and the per-file retries are the same ones every other upload gets. Anything that still fails joins the retry queue.
@@ -403,6 +408,13 @@ on your disk, and the ones you saved earlier. The first two are what `read`
 and `local-copy` return. The third comes from VS Code's own local history,
 which `history` reads — it is the only record of how your working copy got
 to where it is.
+
+`history` also lists the server's own earlier copies — the ones autosync keeps
+before it first writes over a file in a session — so an agent asking what was
+deployed before something went wrong finds them in the same list, by time,
+each saying where it came from: saved in the editor, replaced by a download,
+or on the server before autosync wrote over it. An `autosync:` version is read
+and compared like any other.
 
 `diff` compares any two of them: the server against your copy (the default),
 an earlier version against what you have now, or an earlier version against the

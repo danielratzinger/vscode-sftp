@@ -286,6 +286,78 @@ describe('copies kept when a download overwrote something', () => {
   });
 });
 
+describe('the server\u2019s copies, kept before autosync wrote over them', () => {
+  function withEverything() {
+    return createContext({
+      replacedVersions: async () => [
+        { id: '1699999000000', timestamp: 1699999000000, read: async () => 'mine' },
+      ],
+      serverVersions: async (_service: any, remotePath: string) =>
+        remotePath === '/srv/app/index.php'
+          ? [
+              {
+                id: '1699999500000',
+                timestamp: 1699999500000,
+                read: async () => ['<?php', 'echo "deployed";'].join('\n'),
+              },
+            ]
+          : [],
+    } as any);
+  }
+
+  // Three places keep earlier versions, and which one caught a version is not
+  // something the caller should need to know to find it.
+  it('are in the one list, by time, saying where each came from', async () => {
+    const result: any = await tool(withEverything(), 'history').run({
+      server: 'Staging',
+      path: '/srv/app/index.php',
+    });
+
+    const ids = result.structured.versions.map((v: any) => v.id);
+    expect(ids).toContain('autosync:1699999500000');
+    expect(ids.indexOf('autosync:1699999500000')).toBeLessThan(
+      ids.indexOf('replaced:1699999000000')
+    );
+    expect(result.text).toContain('on the server before autosync wrote over it');
+    expect(result.text).toContain('replaced by a download');
+  });
+
+  it('reads one back', async () => {
+    const result: any = await tool(withEverything(), 'history').run({
+      server: 'Staging',
+      path: '/srv/app/index.php',
+      version: 'autosync:1699999500000',
+    });
+
+    expect(result.text).toContain('echo "deployed";');
+  });
+
+  it('diffs one against the server as it is now', async () => {
+    const result: any = await tool(withEverything(), 'diff').run({
+      server: 'Staging',
+      path: '/srv/app/index.php',
+      left: 'autosync:1699999500000',
+      right: 'remote',
+    });
+
+    expect(result.structured.changed).toBe(true);
+  });
+
+  it('are asked for by the server\u2019s path', async () => {
+    const asked: string[] = [];
+    const context = createContext({
+      serverVersions: async (_service: any, remotePath: string) => {
+        asked.push(remotePath);
+        return [];
+      },
+    } as any);
+
+    await tool(context, 'history').run({ server: 'Staging', path: '/srv/app/index.php' });
+
+    expect(asked).toEqual(['/srv/app/index.php']);
+  });
+});
+
 describe('comparing two earlier versions', () => {
   it('labels each side by the version it is', async () => {
     // Both sides are versions of one file, often from the same afternoon, so

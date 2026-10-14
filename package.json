@@ -285,6 +285,11 @@
         "category": "SFTP"
       },
       {
+        "command": "sftp.showHistory",
+        "title": "Show History",
+        "category": "SFTP"
+      },
+      {
         "command": "sftp.showMcpDetails",
         "title": "Show MCP Connection Details",
         "category": "SFTP"
@@ -619,6 +624,10 @@
           "when": "sftp.enabled"
         },
         {
+          "command": "sftp.showHistory",
+          "when": "sftp.enabled"
+        },
+        {
           "command": "sftp.switchAutosyncWorktree",
           "when": "sftp.enabled && sftp.autosyncWorktreeing"
         },
@@ -859,6 +868,11 @@
           "when": "sftp.enabled && !explorerResourceIsRoot && !explorerResourceIsFolder"
         },
         {
+          "command": "sftp.showHistory",
+          "group": "3_compare",
+          "when": "sftp.enabled && !explorerResourceIsRoot && !explorerResourceIsFolder"
+        },
+        {
           "command": "sftp.sync.localToRemote",
           "group": "sftp.sync@1",
           "when": "sftp.enabled && explorerResourceIsFolder"
@@ -954,6 +968,11 @@
           "when": "sftp.enabled && resourceScheme == file"
         },
         {
+          "command": "sftp.showHistory",
+          "group": "3_compare",
+          "when": "sftp.enabled && resourceScheme == file"
+        },
+        {
           "command": "sftp.remoteExplorer.editInLocal",
           "group": "2_files@1",
           "when": "sftp.enabled && resourceScheme == remote"
@@ -986,6 +1005,11 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "sftp.showHistory",
+          "group": "3_compare",
+          "when": "view == remoteExplorer && viewItem =~ /^(file|root)/"
+        },
         {
           "command": "sftp.openConnectInTerminal",
           "group": "navigation",

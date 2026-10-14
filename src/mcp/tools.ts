@@ -126,6 +126,14 @@ export interface ToolContext {
     service: ServiceLike,
     localPath: string
   ): Promise<Array<{ id: string; timestamp: number; read(): Promise<string> }>>;
+  /**
+   * Copies autosync kept of the server's file before it first wrote over it,
+   * one per session. Named by the server's path: they are the server's.
+   */
+  serverVersions?(
+    service: ServiceLike,
+    remotePath: string
+  ): Promise<Array<{ id: string; timestamp: number; read(): Promise<string> }>>;
   /** The URI string the editor knows a local file by. */
   uriFor?(localPath: string): string;
   walkOption?(service: ServiceLike): WalkOption;
@@ -1836,6 +1844,21 @@ export function createTools(
       );
     }
 
+    // And what the server had before autosync wrote over it - the one kind of
+    // earlier version that is the server's rather than this machine's, which
+    // is often exactly the one wanted when something deployed went wrong.
+    if (context.serverVersions) {
+      (await context.serverVersions(service, remotePath)).forEach(version =>
+        versions.push({
+          // Not `server:` - in `diff` that already names another connection.
+          id: `autosync:${version.id}`,
+          timestamp: version.timestamp,
+          source: 'on the server before autosync wrote over it',
+          read: () => version.read().catch(() => undefined),
+        })
+      );
+    }
+
     return {
       versions: versions.sort((a, b) => b.timestamp - a.timestamp),
       localPath,
@@ -1868,19 +1891,24 @@ export function createTools(
   }
 
   const NO_HISTORY =
-    'There are no earlier versions of this file. They come from two places: ' +
+    'There are no earlier versions of this file. They come from three places: ' +
     'the editor\u2019s local history, which covers files saved in this editor on ' +
-    'this machine (see workbench.localHistory.enabled), and copies kept when ' +
-    'a download wrote over a local file that differed from the server\u2019s.';
+    'this machine (see workbench.localHistory.enabled); copies kept when ' +
+    'a download wrote over a local file that differed from the server\u2019s; ' +
+    'and the server\u2019s own copy, kept before autosync first wrote over it ' +
+    'in a session (see sftp.autosync.backupRemote).';
 
   const history: ToolDefinition = {
     name: 'history',
     title: 'Earlier versions of a file',
     description:
-      'What a file looked like before it was last saved, from the editor\u2019s ' +
-      'own local history. Use it to see how the working copy got to where it ' +
-      'is - nothing else here knows that. Lists the versions, or returns one ' +
-      'of them when you name it.',
+      'Earlier versions of a file, from every place one is kept, in one list ' +
+      'newest first: the editor\u2019s local history (each save here), copies ' +
+      'kept when a download wrote over the local file, and the server\u2019s ' +
+      'own copy kept before autosync wrote over it. Use it to see how the ' +
+      'working copy got to where it is, or what the server had before a ' +
+      'deploy - nothing else here knows either. Lists the versions with where ' +
+      'each came from, or returns one of them when you name it.',
     inputSchema: {
       type: 'object',
       properties: {

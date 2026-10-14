@@ -17,6 +17,9 @@ import { historyRootFrom } from './localHistory';
 import { readBackup } from '../core/overwriteBackup';
 import connectionLabel from '../core/connectionLabel';
 import { connectionKeyFor, versionsOf } from '../modules/replacedFiles';
+import * as fse from 'fs-extra';
+import { optionFor as serverStoreFor, sessionsFor } from '../modules/autosyncBackup';
+import { copiesOf } from '../core/historyCopies';
 import { exposedConnections } from './exposure';
 import { stableId } from './identity';
 import { localiseCall, PeerRegistry, targetOf, unqualify } from './peers';
@@ -122,6 +125,21 @@ function toolContext(): ToolContext {
         id: backup.id,
         timestamp: backup.timestamp,
         read: () => readBackup(backup),
+      }));
+    },
+    serverVersions: async (service: any, remotePath: string) => {
+      const id = connectionKeyFor(service.getConfig());
+      const copies = await copiesOf({
+        remoteRoot: serverStoreFor(id).root,
+        connectionId: id,
+        sessions: await sessionsFor(service),
+        remotePath,
+        replaced: [],
+      });
+      return copies.map(copy => ({
+        id: String(copy.when),
+        timestamp: copy.when,
+        read: () => fse.readFile(copy.path, 'utf8'),
       }));
     },
     walkOption: (service: any) => ({
