@@ -643,7 +643,15 @@ export default class SFTPFileSystem extends RemoteFileSystem
   ): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const writer: WriteStream = this.sftp.createWriteStream(path, option);
-      writer.once('error', reject).once('finish', resolve); // transffered
+      // Done at `finish`, or at `close` when the stream closes the handle
+      // itself: with `autoClose` on, ssh2 closes and reports `close` without
+      // ever reporting `finish`. Waiting for `finish` alone left an upload
+      // like that - creating an empty file is one - waiting for ever, after
+      // the file was already there.
+      writer
+        .once('error', reject)
+        .once('finish', resolve)
+        .once('close', resolve);
 
       input.once('error', err => {
         reject(err);
