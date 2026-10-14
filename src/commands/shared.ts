@@ -116,6 +116,11 @@ export function getActiveFolder() {
 }
 
 // selected file or activeTarget or configContext
+//
+// From the palette there is no item at all, and nothing here may assume one:
+// reading `.resource` off it threw, and every command that falls back to
+// asking which connection - `Restore Server to an Earlier Point` among them -
+// failed before it could ask.
 export function uriFromExplorerContextOrEditorContext(item, items): undefined | Uri | Uri[] {
   // from explorer or editor context
   if (item instanceof Uri) {
@@ -125,9 +130,9 @@ export function uriFromExplorerContextOrEditorContext(item, items): undefined | 
     } else {
       return item;
     }
-  } else if ((item as ExplorerItem).resource) {
+  } else if (item && (item as ExplorerItem).resource) {
     // from remote explorer
-    if (Array.isArray(items) && (items[0] as ExplorerItem).resource) {
+    if (Array.isArray(items) && items[0] && (items[0] as ExplorerItem).resource) {
       // multi-select in remote explorer
       return items.map(_ => _.resource.uri);
     } else {
