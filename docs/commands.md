@@ -194,6 +194,8 @@ It looks at everything the picker does — the worktrees of the checkout being d
 
 **Deletions follow git's index, not the filesystem.** A file disappearing is not by itself a reason to take it off a live server — a build clears a folder, an editor swaps a file out and back, a branch switch rewrites half the tree. What git's index says is different: a file that has left `git ls-files` has left the project. So the index is compared every two seconds — one `lstat` to see whether git wrote it at all, and a `git ls-files` only when it did — and what has gone is removed from the server, after its copy is kept. A linked worktree's own index is read, not the repository's shared one.
 
+That holds across closing the editor as well. Each time the index is read, its state is remembered as a single git tree id (`git write-tree`); when autosync resumes, git compares that tree with the index now and names what left it in between — committed away, `git rm`'d, gone with a branch switch — and that is removed too. Nothing remembered, or a tree git has since pruned, removes nothing. Stopping autosync forgets the tree, so starting it again later does not remove, unasked, whatever left while it was off.
+
 Outside a repository there is no index to consult, so a folder that is not a checkout falls back to watching for deletions and still needs `watcher.autoDelete`, as it always did.
 
 **Nothing is dropped.** A file that fails to upload goes back in the queue behind a cooldown that grows with each further failure, up to five minutes, so a server that is briefly refusing is waited out rather than hammered. `sftp.autosync.retrySeconds` sets the first wait. What is still waiting when the window closes is written down and picked up when it opens again, and you are told it is being resumed. Stopping autosync drops the queue and says how many files were in it, because nothing would drain it afterwards.
@@ -242,7 +244,7 @@ It is **not** tried against the server first. If the new password is wrong, the 
 ### Remove Files Deleted from the Repository
 On a connection in the Remote Explorer, or from the palette — and only on one whose local folder is a working copy, since a folder with no history has nothing to ask. Asks git what the repository has deleted over its history, keeps the paths that really are gone from the checkout, and offers to take those off the server — with the list and the count before anything moves, and a copy of each kept first, so `Restore Server to an Earlier Point` still works afterwards.
 
-A server accumulates. Downloads write and never remove; a deploy uploads what exists rather than removing what stopped existing; autosync takes files off as they leave git's index, but only from the moment it starts watching. Everything dropped before that is still there.
+A server accumulates. Downloads write and never remove; a deploy uploads what exists rather than removing what stopped existing; autosync takes files off as they leave git's index — including while the editor was closed — but only from the moment it started watching. Everything dropped before that, or while it was stopped, is still there.
 
 **This and `Sync Local -> Remote` answer different questions, and confusing them is expensive.**
 

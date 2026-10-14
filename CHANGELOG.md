@@ -6,6 +6,27 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.6.9 - 2026-10-14
+
+### Added
+
+- Autosync now also takes off the server what left git's index while the
+  editor was closed - committed away, `git rm`'d, gone with a branch switch.
+  The index is remembered as a single git tree id each time it is read, and on
+  resuming git compares that tree with the index now. Nothing remembered, or a
+  tree git has since pruned, removes nothing; stopping autosync forgets the
+  tree, so starting again later removes nothing unasked.
+
+### Fixed
+
+- Creating a file in the Remote Explorer still needed a manual refresh. Creating
+  an empty file over SFTP never reported that it had finished - ssh2 reports
+  `close` and not `finish` when a stream closes its own handle - so the refresh
+  that comes after it never ran.
+- Renaming a file that was open in the Remote Explorer struck its tab through.
+  The editor now does the local rename itself, so the tab follows to the new
+  path with its unsaved changes.
+
 ## 2.6.8 - 2026-10-13
 
 ### Changed

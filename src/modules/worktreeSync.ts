@@ -14,6 +14,7 @@ import * as fse from 'fs-extra';
 import { checkoutsOf, lastEditIn } from '../core/clones';
 import { gitIgnoreIn, IgnoreLookup } from '../core/gitIgnored';
 import { indexWrittenAt, trackedIn, vanished } from '../core/trackedFiles';
+import { indexTree, leftBetween } from '../core/indexSnapshot';
 import { everDeletedIn, stillGoneIn } from '../core/removedFromHistory';
 import {
   forgetRepositoryAnswers,
@@ -450,9 +451,82 @@ async function whatLeftTheProject(running: Live, now: number): Promise<string[]>
   const before = running.tracked;
   running.tracked = tracked;
 
-  // The first look is what everything after it is compared against. Files that
-  // left before anybody was watching are not this session's to remove.
-  return before ? vanished(before, tracked) : [];
+  const id = stableId(running.service as any);
+  const tree = await indexTree(running.root);
+  const earlier = before ? undefined : indexSeenFor(id, running.root);
+  if (tree) {
+    await markIndexSeen(id, running.root, tree);
+  }
+
+  if (before) {
+    return vanished(before, tracked);
+  }
+
+  // The first look of a session. Whatever left the index since the last look
+  // of the previous one - while the editor was closed - left with nobody
+  // watching, and is still on the server. Git says which, from the two trees.
+  // Nothing remembered, or a tree git has since pruned, is no answer, and no
+  // answer removes nothing.
+  if (!earlier || !tree || earlier === tree) {
+    return [];
+  }
+
+  const left = await leftBetween(running.root, earlier, tree);
+  const gone = (left || []).filter(file => !tracked.has(file));
+
+  if (gone.length > 0) {
+    logger
+      .for(connectionLabel(running.service.getConfig() as any))
+      .info(
+        `[autosync] ${gone.length} file${gone.length === 1 ? '' : 's'} left the ` +
+          'branch while this window was closed.'
+      );
+  }
+
+  return gone;
+}
+
+/** The index as it was at the last look, per connection, across windows. */
+const INDEX_SEEN = 'sftp.autosyncIndexSeen';
+
+function indexSeenFor(id: string, root: string): string | undefined {
+  const all: { [id: string]: { root: string; tree: string } } =
+    (storage && storage.get(INDEX_SEEN, {})) || {};
+  const one = all[id];
+  // Another checkout's index says nothing about this one.
+  return one && samePath(one.root, root) ? one.tree : undefined;
+}
+
+async function markIndexSeen(id: string, root: string, tree: string): Promise<void> {
+  if (!storage) {
+    return;
+  }
+
+  const all: { [id: string]: { root: string; tree: string } } = storage.get(INDEX_SEEN, {});
+  if (all[id] && all[id].tree === tree && samePath(all[id].root, root)) {
+    return;
+  }
+
+  all[id] = { root, tree };
+  await storage.update(INDEX_SEEN, all);
+}
+
+/**
+ * Stopping is deciding the server no longer follows this checkout. Starting
+ * again later must not then remove whatever left it in between, unasked.
+ */
+async function forgetIndexSeen(id: string): Promise<void> {
+  if (!storage) {
+    return;
+  }
+
+  const all: { [id: string]: { root: string; tree: string } } = storage.get(INDEX_SEEN, {});
+  if (!all[id]) {
+    return;
+  }
+
+  delete all[id];
+  await storage.update(INDEX_SEEN, all);
 }
 
 async function flush(service: FileService, id: string): Promise<void> {
@@ -1132,6 +1206,7 @@ async function remember(
     // left to reappear a week later.
     await forgetOutstanding(id);
     await forgetSeen(id);
+    await forgetIndexSeen(id);
 
     logger
       .for(connectionLabel(service.getConfig() as any))
