@@ -7,6 +7,8 @@ import connectionLabel from '../core/connectionLabel';
 import { describeAge } from '../mcp/localHistory';
 import { uploadMany } from '../fileHandlers/uploadMany';
 import { removeRemote } from '../fileHandlers';
+import { resourceFor } from '../fileHandlers/createFileHandler';
+import isNotFound from '../core/notFound';
 import { UResource } from '../core';
 import {
   isEnabled,
@@ -129,33 +131,45 @@ export default checkCommand({
         );
 
         let removed = 0;
+        const notRemoved: string[] = [];
         for (const one of toRemove) {
           if (token.isCancellationRequested) {
             break;
           }
 
+          // A whole target, both sides of it. The remover reads the server's
+          // path off `remoteFsPath`, which only a `UResource` has; handed the
+          // bare remote resource it read `undefined`, and every file a restore
+          // should have taken away stayed.
+          const config = service.getConfig() as any;
+          const remoteUri = UResource.makeResource({
+            remote: { host: config.host, port: config.port },
+            fsPath: one.remotePath,
+            remoteId: service.id,
+          }).uri;
+
           try {
             await removeRemote({
               fileService: service,
-              config: service.getConfig(),
-              target: UResource.makeResource({
-                remote: {
-                  host: (service.getConfig() as any).host,
-                  port: (service.getConfig() as any).port,
-                },
-                fsPath: one.remotePath,
-                remoteId: service.id,
-              }),
-            } as any);
+              config,
+              target: resourceFor(service, config, remoteUri),
+            });
             removed += 1;
           } catch (error) {
+            // Not there is what a removal wants.
+            if (isNotFound(error)) {
+              removed += 1;
+              continue;
+            }
+            notRemoved.push(one.remotePath);
             logger.error(error, `restore remove ${one.remotePath}`);
           }
         }
 
-        const trouble = result.failed.length
-          ? `, ${result.failed.length} could not be written`
-          : '';
+        const failures = result.failed.length + notRemoved.length;
+        const trouble =
+          (result.failed.length ? `, ${result.failed.length} could not be written` : '') +
+          (notRemoved.length ? `, ${notRemoved.length} could not be removed` : '');
 
         logger
           .for(where)
@@ -165,11 +179,12 @@ export default checkCommand({
             }${trouble}.`
           );
 
-        if (result.failed.length) {
+        if (failures) {
+          // A restore that left files behind is not a restore that worked,
+          // however many others it put back.
           showWarningMessage(
-            `${result.failed.length} file${
-              result.failed.length === 1 ? '' : 's'
-            } could not be put back. The output panel says which.`
+            `${failures} file${failures === 1 ? '' : 's'} could not be put back ` +
+              'as they were. The output panel says which.'
           );
         } else {
           showInformationMessage(
