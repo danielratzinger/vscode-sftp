@@ -909,7 +909,13 @@ async function catchUpOnWhatWasMissed(
   }
 }
 
-function watchWorktree(service: FileService, chosen: Chosen): Live {
+/**
+ * `resuming` when the window is picking up a sync it was doing before it
+ * closed - the one case in which there is time nobody was watching. A sync
+ * started or switched by hand has the catch-up it offers, with its own
+ * question and its look at the server first.
+ */
+function watchWorktree(service: FileService, chosen: Chosen, resuming = false): Live {
   const config = service.getConfig();
   const root = chosen.root;
   const id = stableId(service as any);
@@ -1076,7 +1082,12 @@ function watchWorktree(service: FileService, chosen: Chosen): Live {
   const mark = seenAt(id);
   markSeen(id, Date.now()).catch(() => undefined);
 
-  if (mark) {
+  // Only when resuming. On a switch the mark belongs to whatever was synced
+  // before - another folder entirely - so "changed since" named everything the
+  // new one had touched in the meantime, and uploaded it unasked: 46 files,
+  // logged as "changed while this window was closed" in a window that was
+  // open, with none of the catch-up's look at the server first.
+  if (mark && resuming) {
     // After the watcher is listening, not before: anything written during the
     // scan is then caught by the watcher rather than falling between the two.
     catchUpOnWhatWasMissed(service, id, running, mark).catch(error =>
@@ -1676,6 +1687,7 @@ async function offerToCatchUp(service: FileService, plan: CatchUp): Promise<void
         }
       );
 
+      let removed = 0;
       {
         for (const file of toDelete) {
           if (token.isCancellationRequested) {
@@ -1691,9 +1703,17 @@ async function offerToCatchUp(service: FileService, plan: CatchUp): Promise<void
             continue;
           }
 
-          await remove(service, plan.syncRoot, file).catch(error =>
-            logger.error(error, `autosync catch-up delete ${file}`)
-          );
+          try {
+            await remove(service, plan.syncRoot, file);
+            removed += 1;
+          } catch (error) {
+            // Already gone from the server is what removing it was for.
+            if (isNotFound(error)) {
+              removed += 1;
+            } else {
+              logger.error(error, `autosync catch-up delete ${file}`);
+            }
+          }
         }
       }
 
@@ -1707,7 +1727,7 @@ async function offerToCatchUp(service: FileService, plan: CatchUp): Promise<void
       logger.info(
         `[autosync] caught up: ${result.uploaded.length} uploaded` +
           (result.failed.length ? `, ${result.failed.length} to retry` : '') +
-          (toDelete.length ? `, ${toDelete.length} removed` : '') +
+          (toDelete.length ? `, ${removed} of ${toDelete.length} removed` : '') +
           '.'
       );
     })
@@ -2231,7 +2251,7 @@ export async function resumeAutosync(): Promise<void> {
       startSession(service);
       sweepFor(service);
 
-      const running = watchWorktree(service, chosen);
+      const running = watchWorktree(service, chosen, true);
       live.set(id, running);
 
       // What was outstanding when the window closed is being sent again right

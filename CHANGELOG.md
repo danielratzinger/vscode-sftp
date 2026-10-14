@@ -6,6 +6,20 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.6.14 - 2026-10-14
+
+### Fixed
+
+- Switching autosync to another folder uploaded, unasked, everything that
+  folder had touched since the connection last synced anything - logged as
+  "changed while this window was closed" in a window that was open, and
+  without the look at the server a catch-up now takes first. That catch-up
+  is for picking a sync back up when the editor starts, and only runs then;
+  a switch has the catch-up it offers.
+- A catch-up removing a file the server no longer had logged a stack trace
+  and counted it as removed anyway. Gone is what removing it was for, so it
+  counts and says nothing; the summary says how many of how many went.
+
 ## 2.6.13 - 2026-10-14
 
 ### Fixed
