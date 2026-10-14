@@ -6,6 +6,18 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.6.12 - 2026-10-14
+
+### Added
+
+- A catch-up compares each file with the server before uploading it. One the
+  server has newer than the catch-up assumes - different from the base
+  revision, or written later where there is no revision - is listed, and
+  `Upload the other N` leaves it alone. A checkout made from an old commit had
+  caught a server up and taken back files that had been edited and deployed
+  without ever being committed. The catch-up question also says when the
+  window's own folder has uncommitted changes the checkout does not have.
+
 ## 2.6.11 - 2026-10-14
 
 ### Fixed

@@ -37,7 +37,9 @@ import {
   sweepFor,
 } from './autosyncBackup';
 import { describeAge } from '../mcp/localHistory';
-import { getUserSetting } from '../host';
+import { getUserSetting, showModalWarning } from '../host';
+import { aheadOnServer } from '../core/aheadOnServer';
+import { execFile } from 'child_process';
 
 /**
  * Deploying continuously from a folder, chosen rather than assumed.
@@ -1401,6 +1403,35 @@ async function fromGit(
  * Offered, with the count, rather than done: 174 files is a deploy, and a
  * deploy is not something to start because somebody chose from a list.
  */
+/** Of these files, the ones the server has newer than the catch-up assumes. */
+async function newerOnServer(
+  service: FileService,
+  plan: CatchUp,
+  files: string[],
+  base: string | undefined
+): Promise<string[]> {
+  return aheadOnServer({
+    remoteFs: await service.getRemoteFileSystem(service.getConfig()),
+    checkout: plan.checkout,
+    base,
+    files,
+    remotePathOf: file => remotePathOf(service, plan.syncRoot, file),
+  });
+}
+
+/** How many changes `git status` reports in a folder; 0 when it is not a checkout. */
+function uncommittedIn(folder: string): Promise<number> {
+  return new Promise(resolve => {
+    execFile(
+      'git',
+      ['status', '--porcelain', '--untracked-files=no'],
+      { cwd: folder, maxBuffer: 16 * 1024 * 1024 },
+      (error, stdout) =>
+        resolve(error ? 0 : String(stdout).split('\n').filter(line => line.trim()).length)
+    );
+  });
+}
+
 async function offerToCatchUp(service: FileService, plan: CatchUp): Promise<void> {
   const where = connectionLabel(service.getConfig() as any);
   const ignored = gitIgnoreIn(plan.checkout);
@@ -1417,6 +1448,8 @@ async function offerToCatchUp(service: FileService, plan: CatchUp): Promise<void
     description: string;
     hours?: number;
     from?: { upload: string[]; remove: string[] };
+    /** What the server is assumed to have, as a revision git can read. */
+    base?: string;
   };
   const choices: Choice[] = [];
 
@@ -1425,6 +1458,7 @@ async function offerToCatchUp(service: FileService, plan: CatchUp): Promise<void
       label: `Upload what this branch changed (${fromBranch.upload.length})`,
       description: `against ${fromBranch.against}`,
       from: fromBranch,
+      base: fromBranch.against,
     });
   }
 
@@ -1433,6 +1467,7 @@ async function offerToCatchUp(service: FileService, plan: CatchUp): Promise<void
       label: `Upload what is not committed (${uncommitted.upload.length})`,
       description: 'assumes nothing about what the server has',
       from: uncommitted,
+      base: 'HEAD',
     });
   }
 
@@ -1446,8 +1481,20 @@ async function offerToCatchUp(service: FileService, plan: CatchUp): Promise<void
 
   choices.push({ label: 'Nothing - watch from now', description: '' });
 
+  // The folder this window has open may hold work the checkout never had -
+  // edited and deployed without being committed. Whatever of it is on the
+  // server, a catch-up from the checkout would take back. Said up front.
+  const dirty = samePath(service.baseDir, plan.syncRoot)
+    ? 0
+    : await uncommittedIn(service.baseDir);
+
   const picked = await vscode.window.showQuickPick(choices, {
-    placeHolder: `Catch ${where} up to ${plan.branch || plan.syncRoot} first?`,
+    placeHolder:
+      `Catch ${where} up to ${plan.branch || plan.syncRoot} first?` +
+      (dirty > 0
+        ? ` Note: ${path.basename(service.baseDir)} has ${dirty} uncommitted ` +
+          `change${dirty === 1 ? '' : 's'} this checkout does not have.`
+        : ''),
   });
 
   if (!picked || (picked.hours === undefined && !picked.from)) {
@@ -1487,16 +1534,63 @@ async function offerToCatchUp(service: FileService, plan: CatchUp): Promise<void
       ? ` ${toDelete.length} removed from the branch will be taken off the server.`
       : '';
 
-  const answer = await vscode.window.showInformationMessage(
-    `Upload ${toUpload.length} file${toUpload.length === 1 ? '' : 's'} to ${where}?` +
-      alsoGone,
-    { modal: false },
-    `Upload ${toUpload.length}`,
-    'Not now'
+  // Before anything is sent: which of these does the server have newer than
+  // what the catch-up assumes it has? Those are changes that exist only there,
+  // and uploading takes them back.
+  const ahead = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Window, title: 'SFTP: comparing with the server\u2026' },
+    () =>
+      newerOnServer(service, plan, toUpload.concat(toDelete), picked.base).catch(error => {
+        logger.debug(`could not compare with the server: ${error.message}`);
+        return [] as string[];
+      })
   );
 
-  if (answer !== `Upload ${toUpload.length}`) {
-    return;
+  if (ahead.length > 0) {
+    const aheadSet = new Set(ahead);
+    const others = toUpload.filter(one => !aheadSet.has(one));
+    const shown = ahead
+      .slice(0, 12)
+      .map(one => `  ${path.relative(plan.syncRoot, one)}`)
+      .join('\n');
+    const rest = ahead.length > 12 ? `\n  \u2026and ${ahead.length - 12} more` : '';
+
+    const keepThem = `Upload the other ${others.length}`;
+    const replaceThem = `Upload all ${toUpload.length}`;
+    const choice = await showModalWarning(
+      `${ahead.length} file${ahead.length === 1 ? ' is' : 's are'} newer on the server ` +
+        'than what this catch-up assumes it has.',
+      (picked.base
+        ? `They differ from ${picked.base}: changes that exist only on the server - ` +
+          'deployed from somewhere else, perhaps without being committed. '
+        : 'They were written on the server after the copies here. ') +
+        "Uploading replaces them. The server's copies are kept first and can be " +
+        `restored, but the work in them is not in this checkout.\n\n${shown}${rest}`,
+      ...(others.length > 0 ? [keepThem, replaceThem] : [replaceThem])
+    );
+
+    if (choice === keepThem) {
+      toUpload = others;
+      toDelete = toDelete.filter(one => !aheadSet.has(one));
+    } else if (choice !== replaceThem) {
+      return;
+    }
+
+    if (toUpload.length === 0 && toDelete.length === 0) {
+      return;
+    }
+  } else {
+    const answer = await vscode.window.showInformationMessage(
+      `Upload ${toUpload.length} file${toUpload.length === 1 ? '' : 's'} to ${where}?` +
+        alsoGone,
+      { modal: false },
+      `Upload ${toUpload.length}`,
+      'Not now'
+    );
+
+    if (answer !== `Upload ${toUpload.length}`) {
+      return;
+    }
   }
 
   await vscode.window.withProgress(
