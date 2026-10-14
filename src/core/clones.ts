@@ -157,10 +157,45 @@ export async function lastEditIn(
 }
 
 /** Every checkout under `roots` whose origin is the same as `origin`. */
+/**
+ * How long a search for clones is trusted.
+ *
+ * Finding them means reading every folder under the search roots - every
+ * project in `~/Development`, say - and autosync asks on a timer, once per
+ * connection it is syncing. Six connections asking at once was a burst of
+ * well over a full core every minute, to learn that the same clones were
+ * still where they were. A new clone is rare and can wait ten minutes to be
+ * noticed; the worktrees of each one are still read fresh every time.
+ */
+const CLONES_TRUSTED_FOR = 10 * 60 * 1000;
+
+const knownClones = new Map<string, { at: number; found: string[] }>();
+
+/** Forget what was found, so the next search reads the disk again. */
+export function forgetClones(): void {
+  knownClones.clear();
+}
+
 export async function clonesOf(
   origin: string,
   roots: string[],
   exclude: string[] = []
+): Promise<string[]> {
+  const key = JSON.stringify([origin, roots, exclude]);
+  const known = knownClones.get(key);
+  if (known && Date.now() - known.at < CLONES_TRUSTED_FOR) {
+    return known.found.slice();
+  }
+
+  const found = await searchForClones(origin, roots, exclude);
+  knownClones.set(key, { at: Date.now(), found });
+  return found.slice();
+}
+
+async function searchForClones(
+  origin: string,
+  roots: string[],
+  exclude: string[]
 ): Promise<string[]> {
   const found: string[] = [];
   const excluded = exclude.map(one => path.resolve(one));

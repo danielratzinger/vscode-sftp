@@ -4,6 +4,7 @@ import { vol } from 'memfs';
 import {
   checkoutsOf,
   clonesOf,
+  forgetClones,
   lastEditIn,
   normaliseRemote,
   originOf,
@@ -15,7 +16,10 @@ import {
  * unrelated to yours as far as git is concerned, so what relates them is the
  * remote they came from - written a dozen different ways.
  */
-beforeEach(() => vol.reset());
+beforeEach(() => {
+  vol.reset();
+  forgetClones();
+});
 
 const config = (url: string) =>
   `[core]\n\trepositoryformatversion = 0\n[remote "origin"]\n\turl = ${url}\n\tfetch = +refs/heads/*\n`;
@@ -230,5 +234,43 @@ describe('every checkout of one project', () => {
 
     const roots = found.map(one => one.root);
     expect(new Set(roots).size).toBe(roots.length);
+  });
+});
+
+describe('remembering the clones it found', () => {
+  const ORIGIN = 'https://github.com/danielratzinger/enterprisemap.com.git';
+
+  // Read the disk once, then trust it: a timer asks this for every
+  // connection, and the answer almost never changes.
+  it('does not search again while the answer is fresh', async () => {
+    vol.fromJSON({
+      '/work/one/.git/config': config(ORIGIN),
+      '/work/one/.git/HEAD': 'ref: refs/heads/main',
+    });
+    expect(await clonesOf(ORIGIN, ['/work'])).toEqual(['/work/one']);
+
+    vol.fromJSON({
+      '/work/two/.git/config': config(ORIGIN),
+      '/work/two/.git/HEAD': 'ref: refs/heads/main',
+    });
+    expect(await clonesOf(ORIGIN, ['/work'])).toEqual(['/work/one']);
+  });
+
+  it('searches again once told to forget', async () => {
+    vol.fromJSON({ '/work/one/.git/config': config(ORIGIN), '/work/one/.git/HEAD': 'x' });
+    await clonesOf(ORIGIN, ['/work']);
+
+    vol.fromJSON({ '/work/two/.git/config': config(ORIGIN), '/work/two/.git/HEAD': 'x' });
+    forgetClones();
+
+    expect((await clonesOf(ORIGIN, ['/work'])).sort()).toEqual(['/work/one', '/work/two']);
+  });
+
+  // A caller changing the list it was handed must not change the next answer.
+  it('hands out a copy', async () => {
+    vol.fromJSON({ '/work/one/.git/config': config(ORIGIN), '/work/one/.git/HEAD': 'x' });
+    (await clonesOf(ORIGIN, ['/work'])).push('/somewhere/else');
+
+    expect(await clonesOf(ORIGIN, ['/work'])).toEqual(['/work/one']);
   });
 });

@@ -84,8 +84,31 @@ const TICK = 500;
 /** How often git's index is checked for files that left the project. */
 const INDEX_EVERY = 2000;
 
-/** How often to look at whether the work has moved to another checkout. */
-const LOOK_EVERY = 60 * 1000;
+/**
+ * How often to look at whether the work has moved to another checkout.
+ *
+ * Three minutes, not one. Each look lists the project's worktrees, finds its
+ * clones and reads the newest file in each of them, and it ran for every
+ * connection being synced - six of them, started together at the same
+ * second, made a burst of well over a full core every minute. Nobody is
+ * waiting on this answer to the minute: it is a suggestion to switch.
+ */
+const LOOK_EVERY = 3 * 60 * 1000;
+
+/**
+ * Whether anybody is there to see the question.
+ *
+ * A look while the window is in the background ends, at best, in a
+ * notification nobody reads until they come back - so it waits until they do,
+ * and looks once then.
+ */
+function windowFocused(): boolean {
+  try {
+    return vscode.window.state.focused;
+  } catch (error) {
+    return true;
+  }
+}
 
 /**
  * One open "switch to it?" per connection.
@@ -1019,12 +1042,36 @@ function watchWorktree(service: FileService, chosen: Chosen): Live {
   // same project, which is a question with no event behind it: an agent
   // picking up a checkout that already exists creates nothing and fires
   // nothing.
-  const looking = setInterval(() => {
+  let lastLook = Date.now();
+  const look = () => {
+    if (!windowFocused()) {
+      return;
+    }
+    lastLook = Date.now();
     offerSomewhereBusier(service).catch(error =>
       logger.debug(`could not look at the other checkouts: ${error.message}`)
     );
-  }, LOOK_EVERY);
-  running.held.push({ dispose: () => clearInterval(looking) });
+  };
+
+  // Each connection on its own beat, so the ones started together - which is
+  // all of them, at startup - do not all walk the disk in the same second.
+  let looking: any;
+  const firstLook = setTimeout(() => {
+    look();
+    looking = setInterval(look, LOOK_EVERY);
+  }, Math.floor(Math.random() * LOOK_EVERY));
+  const backInFront = vscode.window.onDidChangeWindowState(state => {
+    if (state.focused && Date.now() - lastLook > LOOK_EVERY / 2) {
+      look();
+    }
+  });
+  running.held.push({
+    dispose: () => {
+      clearTimeout(firstLook);
+      clearInterval(looking);
+      backInFront.dispose();
+    },
+  });
 
   const mark = seenAt(id);
   markSeen(id, Date.now()).catch(() => undefined);
@@ -2065,12 +2112,13 @@ async function offerSomewhereBusier(service: FileService): Promise<void> {
     one => one.exists && (one.isMain || (one.branch && !nestedInScratch(one, all)))
   );
 
-  const dated = await Promise.all(
-    deployable.map(async one => {
-      const root = syncRootIn(service, one.root);
-      return { one, root, edited: (await lastEditIn(root)) || 0 };
-    })
-  );
+  // One checkout at a time: a project with seventeen worktrees read all at
+  // once is seventeen walks of the disk in the same instant.
+  const dated: Array<{ one: Worktree; root: string; edited: number }> = [];
+  for (const one of deployable) {
+    const root = syncRootIn(service, one.root);
+    dated.push({ one, root, edited: (await lastEditIn(root)) || 0 });
+  }
 
   const here = dated.find(each => samePath(each.root, chosen.root));
   const busiest = dated.sort((a, b) => b.edited - a.edited)[0];

@@ -6,6 +6,19 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.6.13 - 2026-10-14
+
+### Fixed
+
+- The extension host went to 140% CPU twice a minute. Every connection being
+  autosynced looked, every minute, for a checkout of its project that had
+  been edited more recently - listing worktrees, searching every folder under
+  the project's parent for clones, and reading the newest file in each
+  checkout - and the ones started together all looked in the same second.
+  Now every three minutes, each connection on its own beat, only while the
+  window is in front (and once on coming back), one checkout at a time, with
+  the search for clones remembered for ten minutes.
+
 ## 2.6.12 - 2026-10-14
 
 ### Added
