@@ -6,6 +6,19 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.7.0 - 2026-10-15
+
+### Added
+
+- The MCP tools reach the agents on this machine without a snippet being
+  pasted anywhere, whichever agents those are. VS Code's own MCP registry gets
+  the server automatically, so Copilot's agent mode and anything else that uses
+  it finds the tools, with the bridge run on the editor's own runtime. Claude
+  Code and Codex, when installed, are offered the tools once when the server
+  starts and added through their own `mcp add`; one that is not installed is
+  skipped, one that already has an `sftp` server is left alone, and `SFTP: Make
+  Tools Available to AI Agents` asks again. Other clients keep the snippet.
+
 ## 2.6.14 - 2026-10-14
 
 ### Fixed

@@ -17,6 +17,13 @@ import { historyRootFrom } from './localHistory';
 import { readBackup } from '../core/overwriteBackup';
 import connectionLabel from '../core/connectionLabel';
 import { connectionKeyFor, versionsOf } from '../modules/replacedFiles';
+import {
+  AGENT_CLIENTS,
+  agentsWithout,
+  findExecutable,
+  isRegistered,
+  register,
+} from './agentClients';
 import * as fse from 'fs-extra';
 import { optionFor as serverStoreFor, sessionsFor } from '../modules/autosyncBackup';
 import { copiesOf } from '../core/historyCopies';
@@ -267,6 +274,138 @@ export async function startMcpServer(): Promise<void> {
     `[mcp] listening on 127.0.0.1:${running.port}. ` +
       `Run "SFTP: Show MCP Connection Details" to connect a client.`
   );
+
+  // Once per window: the server is up, so this is the moment the tools are
+  // worth having somewhere else too.
+  if (!offeredThisSession) {
+    offeredThisSession = true;
+    offerToAgents(false).catch(error =>
+      logger.debug(`could not offer the tools to the agents here: ${error.message}`)
+    );
+  }
+}
+
+let offeredThisSession = false;
+let memento: vscode.Memento | undefined;
+
+/** Agents somebody said not to ask about again, by command. */
+const NOT_ASKING = 'sftp.mcp.agentsNotAsked';
+
+/**
+ * Offers the tools to the agents installed on this machine that do not have
+ * them - Claude Code, Codex - through each one's own `mcp add`. An agent that
+ * is not installed is skipped without a word; one somebody declined is not
+ * asked about again, though a newly installed one is.
+ *
+ * `explicit` is the command: then it says what it found either way, and asks
+ * about every agent, declined or not.
+ */
+export async function offerToAgents(explicit: boolean): Promise<void> {
+  const declined: string[] = (memento && memento.get(NOT_ASKING, [])) || [];
+  const missing = (await agentsWithout()).filter(
+    one => explicit || declined.indexOf(one.client.command) === -1
+  );
+
+  if (missing.length === 0) {
+    if (explicit) {
+      vscode.window.showInformationMessage(
+        'Every agent found here already has the SFTP tools, or none is installed ' +
+          '(looked for: ' +
+          AGENT_CLIENTS.map(one => one.label).join(', ') +
+          '). Others can use the snippet in "SFTP: Show MCP Connection Details".'
+      );
+    }
+    return;
+  }
+
+  const names = missing.map(one => one.client.label).join(' and ');
+  const ADD = 'Add';
+  const NEVER = "Don't Ask Again";
+  const answer = await vscode.window.showInformationMessage(
+    `Make the SFTP tools available to ${names}? They are added to ` +
+      `${missing.length === 1 ? 'its' : 'their'} MCP configuration for every project.`,
+    ADD,
+    ...(explicit ? [] : [NEVER])
+  );
+
+  if (answer === NEVER && memento) {
+    await memento.update(
+      NOT_ASKING,
+      declined.concat(missing.map(one => one.client.command))
+    );
+    return;
+  }
+  if (answer !== ADD) {
+    return;
+  }
+
+  const bridge = await installBridge();
+  const node = findExecutable('node') || 'node';
+  const added: string[] = [];
+  const failed: string[] = [];
+
+  for (const { client, cli } of missing) {
+    // Asked again: another window may have added it while this one waited.
+    if (await isRegistered(client, cli)) {
+      added.push(client.label);
+      continue;
+    }
+
+    const result = await register(client, cli, bridge, node);
+    if (result.ok) {
+      added.push(client.label);
+      logger.info(`[mcp] added the SFTP tools to ${client.label}`);
+    } else {
+      failed.push(client.label);
+      logger.error(`[mcp] could not add the SFTP tools to ${client.label}: ${result.output}`);
+    }
+  }
+
+  if (failed.length > 0) {
+    vscode.window.showWarningMessage(
+      `Could not add the SFTP tools to ${failed.join(' and ')}. The output panel says why.`
+    );
+  }
+  if (added.length > 0) {
+    vscode.window.showInformationMessage(
+      `${added.join(' and ')} ${added.length === 1 ? 'has' : 'have'} the SFTP tools. ` +
+        'New sessions see them; one already running needs restarting.'
+    );
+  }
+}
+
+/**
+ * The editor's own MCP registry, where it has one.
+ *
+ * Any agent that uses VS Code's MCP support - Copilot's agent mode among them -
+ * finds the tools there without a configuration file anywhere being touched.
+ * Through the bridge, run by the editor's own runtime, so it needs no `node`
+ * installed. An editor too old for the API simply does not get it.
+ */
+function offerToTheEditor(context: vscode.ExtensionContext): void {
+  const lm: any = (vscode as any).lm;
+  const Definition: any = (vscode as any).McpStdioServerDefinition;
+  if (!lm || typeof lm.registerMcpServerDefinitionProvider !== 'function' || !Definition) {
+    return;
+  }
+
+  try {
+    context.subscriptions.push(
+      lm.registerMcpServerDefinitionProvider('sftp', {
+        provideMcpServerDefinitions: async () => {
+          if (!settings().get<boolean>('mcp.enabled', false)) {
+            return [];
+          }
+          const bridge = await installBridge();
+          return [
+            new Definition('SFTP', process.execPath, [bridge], { ELECTRON_RUN_AS_NODE: '1' }),
+          ];
+        },
+      })
+    );
+  } catch (error) {
+    logger.debug(`could not offer the tools to the editor: ${error.message}`);
+  }
 }
 
 /**
@@ -446,6 +585,10 @@ export function connectionDetails(): string {
     '',
     `The bridge lives at ${bridgePath()} and is refreshed on every start.`,
     '',
+    'Claude Code and Codex are offered the tools once, when the server starts;',
+    '"SFTP: Make Tools Available to AI Agents" asks again. Agents that use',
+    'VS Code\u2019s own MCP support, such as Copilot, find them without any setup.',
+    '',
     `Tools: ${exposed.map(tool => tool.name).join(', ')}`,
   ].join('\n');
 }
@@ -497,6 +640,8 @@ async function reuniteNotes(): Promise<void> {
 
 export function initMcp(context: vscode.ExtensionContext) {
   cacheRoot = context.globalStoragePath;
+  memento = context.globalState;
+  offerToTheEditor(context);
 
   // Once, at startup: notes filed under an id this connection no longer has,
   // and folders left by the numbering this all replaced. See `identity.ts`.

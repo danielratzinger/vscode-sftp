@@ -2,7 +2,7 @@
   "name": "sftp",
   "displayName": "SFTP",
   "description": "SFTP/FTP sync, with an MCP server that lets local AI clients read your servers",
-  "version": "2.6.14",
+  "version": "2.7.0",
   "publisher": "danielratzinger",
   "author": "Daniel Ratzinger (https://github.com/danielratzinger)",
   "engines": {
@@ -36,6 +36,12 @@
   "icon": "resources/icon.png",
   "main": "./dist/extension",
   "contributes": {
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "sftp",
+        "label": "SFTP"
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         {
@@ -292,6 +298,11 @@
       {
         "command": "sftp.showMcpDetails",
         "title": "Show MCP Connection Details",
+        "category": "SFTP"
+      },
+      {
+        "command": "sftp.mcp.addToAgents",
+        "title": "Make Tools Available to AI Agents",
         "category": "SFTP"
       },
       {
@@ -853,6 +864,10 @@
         },
         {
           "command": "sftp.showMcpDetails",
+          "when": "sftp.enabled"
+        },
+        {
+          "command": "sftp.mcp.addToAgents",
           "when": "sftp.enabled"
         }
       ],

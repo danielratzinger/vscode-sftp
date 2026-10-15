@@ -74,6 +74,7 @@ export const COMMAND_MIGRATE_PASSWORDS = 'sftp.migratePasswords';
 export const COMMAND_ROTATE_PASSWORD = 'sftp.rotatePassword';
 export const COMMAND_RESTORE_REMOTE = 'sftp.restoreRemote';
 export const COMMAND_SHOW_HISTORY = 'sftp.showHistory';
+export const COMMAND_MCP_ADD_TO_AGENTS = 'sftp.mcp.addToAgents';
 export const COMMAND_AUTOSYNC_REVEAL_FINDER_MAC = 'sftp.autosyncReveal.mac';
 export const COMMAND_AUTOSYNC_REVEAL_FINDER_WINDOWS = 'sftp.autosyncReveal.windows';
 export const COMMAND_AUTOSYNC_REVEAL_FINDER_LINUX = 'sftp.autosyncReveal.linux';

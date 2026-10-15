@@ -335,10 +335,21 @@ Lets a local AI client — Claude Desktop and most others — read the files on 
 servers configured here, so you can ask about deployed code without mirroring a
 tree by hand.
 
-Off by default. Turn it on with the `sftp.mcp.enabled` setting, then run
-**SFTP: Show MCP Connection Details** from the command palette and paste the
-snippet into your client. It carries no token and no port, so it never needs
-updating:
+Off by default. Turn it on with the `sftp.mcp.enabled` setting. Whichever
+agents you use, most of them then need nothing more:
+
+- **Agents that use VS Code's own MCP support** — Copilot's agent mode among
+  them — find the server in the editor's MCP registry. Nothing is written
+  anywhere, and the bridge runs on the editor's own runtime, so no `node` is
+  needed. An editor too old for that API skips it.
+- **Claude Code and Codex**, when installed, are offered the tools once when
+  the server starts, and added through their own `mcp add` if you say yes —
+  for every project. One that is not installed is skipped without a word, one
+  that already has an `sftp` server is left alone, and **SFTP: Make Tools
+  Available to AI Agents** asks again.
+- **Any other client** — Claude Desktop, Cursor, OpenCode — takes the snippet
+  from **SFTP: Show MCP Connection Details**. It carries no token and no port,
+  so it never needs updating:
 
 ```json
 {
