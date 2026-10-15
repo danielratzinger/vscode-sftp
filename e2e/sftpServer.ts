@@ -65,6 +65,9 @@ function longname(name: string, stat: fs.Stats): string {
   return `${kind}rw-r--r--   1 owner group ${stat.size} Jan 1 00:00 ${name}`;
 }
 
+/** Entries per READDIR answer: OpenSSH's own figure, give or take. */
+const READDIR_PIECE = 100;
+
 export async function startSftpServer(
   root: string,
   option: { port?: number; privateKey?: string } = {}
@@ -180,11 +183,15 @@ export async function startSftpServer(
         return sftp.status(reqid, STATUS_CODE.EOF);
       }
 
-      const names = dir.entries.slice(dir.at).map(name => {
+      // A hundred at a time, as OpenSSH answers: a directory of thousands is
+      // many round trips on a real server, and a client that only ever saw it
+      // arrive whole would never be tested against that.
+      const piece = dir.entries.slice(dir.at, dir.at + READDIR_PIECE);
+      const names = piece.map(name => {
         const stat = fs.lstatSync(path.join(within(dir.path), name));
         return { filename: name, longname: longname(name, stat), attrs: attrsOf(stat) };
       });
-      dir.at = dir.entries.length;
+      dir.at += piece.length;
       sftp.name(reqid, names);
     });
 

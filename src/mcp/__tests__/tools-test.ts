@@ -89,6 +89,123 @@ describe('servers', () => {
   });
 });
 
+describe('list, of a directory too large for one page', () => {
+  /** A directory the server hands over a hundred names at a time, as SFTP does. */
+  function bigDirectory(count: number, onRead: () => void = () => undefined) {
+    const names = Array.from({ length: count }, (_, i) => `f${String(i).padStart(5, '0')}.log`);
+    let closed = 0;
+    const remote = {
+      list: async () => {
+        throw new Error('a large directory must not be read whole');
+      },
+      openListing: async () => {
+        let at = 0;
+        return {
+          read: async () => {
+            onRead();
+            if (at >= names.length) {
+              return undefined;
+            }
+            const piece = names.slice(at, at + 100).map(n => entry(n, FileType.File));
+            at += 100;
+            return piece;
+          },
+          close: async () => {
+            closed += 1;
+          },
+        };
+      },
+      lstat: async () => ({ type: FileType.File, size: 0, mtime: 0 }),
+      readFile: async () => '',
+    };
+    return { remote, names, closed: () => closed };
+  }
+
+  it('answers the first page without reading the whole directory', async () => {
+    let reads = 0;
+    const dir = bigDirectory(36000, () => (reads += 1));
+    const result: any = await tool(createContext({ remoteFs: async () => dir.remote as any }), 'list').run({
+      server: 'Staging',
+    });
+
+    expect(result.structured.entries).toHaveLength(1000);
+    expect(result.structured.cursor).toBeTruthy();
+    expect(reads).toBeLessThan(15);
+    expect(result.text).toContain('with more to come');
+  });
+
+  it('reads on from where it stopped, page by page, to the end', async () => {
+    const dir = bigDirectory(2550);
+    const context = createContext({ remoteFs: async () => dir.remote as any });
+    const seen: string[] = [];
+
+    let result: any = await tool(context, 'list').run({ server: 'Staging' });
+    seen.push(...result.structured.entries.map((e: any) => e.name));
+    while (result.structured.cursor) {
+      result = await tool(context, 'list').run({
+        server: 'Staging',
+        cursor: result.structured.cursor,
+      });
+      seen.push(...result.structured.entries.map((e: any) => e.name));
+    }
+
+    expect(seen.length).toBe(2550);
+    expect(new Set(seen).size).toBe(2550);
+    expect(result.text).toContain('the last of 2550');
+    expect(dir.closed()).toBeGreaterThan(0);
+  });
+
+  // A directory that ends within the first page is listed as it always was.
+  it('lists a small directory whole and sorted', async () => {
+    const dir = bigDirectory(250);
+    const result: any = await tool(createContext({ remoteFs: async () => dir.remote as any }), 'list').run({
+      server: 'Staging',
+    });
+
+    expect(result.structured.total).toBe(250);
+    expect(result.structured.cursor).toBeUndefined();
+  });
+
+  it('says plainly when a cursor is no longer open', async () => {
+    const result: any = await tool(createContext(), 'list').run({
+      server: 'Staging',
+      cursor: 'gone',
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.text).toContain('without one to start over');
+  });
+
+  // Short of time, a shorter page is better than none.
+  it('hands back what it has when the call runs short of time', async () => {
+    const dir = bigDirectory(36000);
+    const slow = {
+      ...dir.remote,
+      openListing: async () => {
+        const inner = await dir.remote.openListing();
+        return {
+          read: async () => {
+            await new Promise(resolve => setTimeout(resolve, 30));
+            return inner.read();
+          },
+          close: inner.close,
+        };
+      },
+    };
+    const context = createContext({
+      remoteFs: async () => slow as any,
+      callTimeout: () => 150,
+    } as any);
+
+    const result: any = await tool(context, 'list').run({ server: 'Staging' });
+
+    expect(result.isError).toBeFalsy();
+    expect(result.structured.entries.length).toBeGreaterThan(0);
+    expect(result.structured.entries.length).toBeLessThan(1000);
+    expect(result.structured.cursor).toBeTruthy();
+  });
+});
+
 describe('list', () => {
   it('lists a directory, folders first', async () => {
     const result = await tool(createContext(), 'list').run({

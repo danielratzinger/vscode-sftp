@@ -574,6 +574,71 @@ export default class SFTPFileSystem extends RemoteFileSystem
     });
   }
 
+  /**
+   * A directory read a piece at a time, as SFTP itself delivers it.
+   *
+   * `list` waits for every piece before answering, and SFTP sends a directory
+   * about a hundred entries per round trip - so a folder of thirty-six
+   * thousand files was three hundred and sixty round trips before the first
+   * name came back, and a caller with a deadline got nothing at all. This
+   * hands each piece over as it arrives and leaves the directory open on the
+   * server, so the next page reads on from where the last one stopped.
+   *
+   * `read` answers undefined once there is no more. `close` must be called by
+   * whoever stops early.
+   */
+  openListing(dir: string): Promise<{
+    read(): Promise<FileEntry[] | undefined>;
+    close(): Promise<void>;
+  }> {
+    return new Promise((resolve, reject) => {
+      this.sftp.opendir(dir, (err, handle) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+
+        let closed = false;
+        const close = () =>
+          new Promise<void>(done => {
+            if (closed) {
+              done();
+              return;
+            }
+            closed = true;
+            this.sftp.close(handle, () => done());
+          });
+
+        resolve({
+          read: () =>
+            new Promise<FileEntry[] | undefined>((answer, fail) => {
+              if (closed) {
+                answer(undefined);
+                return;
+              }
+              this.sftp.readdir(handle, (readErr, list) => {
+                // EOF is how SFTP says the directory has been read to the end.
+                if (readErr && (readErr as any).code === 1) {
+                  answer(undefined);
+                  return;
+                }
+                if (readErr) {
+                  fail(readErr);
+                  return;
+                }
+                answer(
+                  (list || [])
+                    .filter(item => item.filename !== '.' && item.filename !== '..')
+                    .map(item => this.toFileEntry(this.pathResolver.join(dir, item.filename), item))
+                );
+              });
+            }),
+          close,
+        });
+      });
+    });
+  }
+
   unlink(path: string): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       this.sftp.unlink(path, err => {

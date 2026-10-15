@@ -143,8 +143,16 @@ export interface ToolContext {
   localPathFor?(service: ServiceLike, remotePath: string): string;
 }
 
+/** A directory read a piece at a time; see `SFTPFileSystem.openListing`. */
+export interface ListingLike {
+  read(): Promise<FileEntry[] | undefined>;
+  close(): Promise<void>;
+}
+
 export interface RemoteLike {
   list(dir: string): Promise<FileEntry[]>;
+  /** Where the protocol can: SFTP can, FTP's LIST cannot. */
+  openListing?(dir: string): Promise<ListingLike>;
   lstat(fsPath: string): Promise<{ type: FileType; size: number; mtime: number }>;
   readFile(fsPath: string): Promise<string | Buffer>;
 }
@@ -394,6 +402,94 @@ function describeNote(view: {
   return '';
 }
 
+/** A large directory being read page by page, its handle held open between calls. */
+interface OpenListing {
+  id: string;
+  server: string;
+  dir: string;
+  listing: ListingLike;
+  /** Read from the server and not yet handed out. */
+  buffered: FileEntry[];
+  served: number;
+  ended: boolean;
+  idle?: any;
+}
+
+/** How long a large listing stays open between pages. */
+const LISTING_KEPT_FOR = 2 * 60 * 1000;
+
+const openListings = new Map<string, OpenListing>();
+
+function newCursor(): string {
+  return Math.random().toString(36).slice(2, 12);
+}
+
+/**
+ * Reads on until there is enough for a page, the directory ends, or the call's
+ * time is nearly gone - a short page in time beats a full one that is never
+ * delivered.
+ */
+async function fillListing(open: OpenListing, want: number, budget: Budget): Promise<void> {
+  if (open.idle) {
+    clearTimeout(open.idle);
+    open.idle = undefined;
+  }
+
+  while (!open.ended && open.buffered.length < want && !budget.spent()) {
+    const piece = await open.listing.read();
+    if (!piece) {
+      open.ended = true;
+      await open.listing.close().catch(() => undefined);
+      break;
+    }
+    open.buffered.push(...piece);
+  }
+}
+
+/**
+ * A directory for a walk, read a piece at a time where the protocol allows,
+ * and no further than the call's time. One folder of tens of thousands of
+ * files inside a project otherwise used the whole call reading names, and the
+ * walk around it came back with nothing; cut short, it comes back with what it
+ * found and says it stopped for time.
+ */
+async function listWithin(remote: RemoteLike, dir: string, budget: Budget): Promise<FileEntry[]> {
+  if (!remote.openListing) {
+    return remote.list(dir);
+  }
+
+  const listing = await remote.openListing(dir);
+  const entries: FileEntry[] = [];
+  try {
+    while (!budget.spent()) {
+      const piece = await listing.read();
+      if (!piece) {
+        break;
+      }
+      entries.push(...piece);
+    }
+  } finally {
+    await listing.close().catch(() => undefined);
+  }
+  return entries;
+}
+
+function keepListing(open: OpenListing): void {
+  openListings.set(open.id, open);
+  open.idle = setTimeout(() => closeListing(open), LISTING_KEPT_FOR);
+  if (open.idle && open.idle.unref) {
+    open.idle.unref();
+  }
+}
+
+function closeListing(open: OpenListing): void {
+  if (open.idle) {
+    clearTimeout(open.idle);
+  }
+  openListings.delete(open.id);
+  open.listing.close().catch(() => undefined);
+}
+
 export function createTools(
   context: ToolContext,
   /** Connections other windows have registered with this one. */
@@ -441,7 +537,7 @@ export function createTools(
       }
     }
 
-    const found = await walk(dir => remote.list(dir), root, {
+    const found = await walk(dir => listWithin(remote, dir, budget), root, {
       ...option,
       stopWhen: () => budget.spent(),
     });
@@ -611,6 +707,12 @@ export function createTools(
             'Skip this many entries, to read on past a long listing. Use the ' +
             'nextOffset the previous call returned.',
         },
+        cursor: {
+          type: 'string',
+          description:
+            'For a directory too large to list at once: the cursor the previous ' +
+            'call returned, to read the next page from where it stopped.',
+        },
       },
       required: ['server'],
     },
@@ -619,6 +721,7 @@ export function createTools(
       offset: numberField,
       total: numberField,
       nextOffset: numberField,
+      cursor: stringField,
       truncated: booleanField,
       entries: {
         type: 'array',
@@ -645,7 +748,44 @@ export function createTools(
         return outside(service, args.path);
       }
       const remote = await context.remoteFs(service);
-      const entries = await remote.list(dir);
+
+      // Reading on through a directory too large for one page.
+      if (args.cursor !== undefined) {
+        const open = openListings.get(String(args.cursor));
+        if (!open || open.dir !== dir || open.server !== stableId(service)) {
+          return errorResult(
+            'That cursor is no longer open - a large listing is kept for two ' +
+              'minutes between pages. Call list again without one to start over.'
+          );
+        }
+        await fillListing(open, MAX_LIST_ENTRIES, budgetFor());
+        return largePage(open);
+      }
+
+      let entries: FileEntry[];
+      if (remote.openListing && args.offset === undefined) {
+        // A piece at a time: if the directory ends within the first page it is
+        // listed as before, whole and sorted; if it does not, there is no
+        // waiting for all of it - the first page goes back with a cursor.
+        const open: OpenListing = {
+          id: newCursor(),
+          server: stableId(service),
+          dir,
+          listing: await remote.openListing(dir),
+          buffered: [],
+          served: 0,
+          ended: false,
+        };
+        await fillListing(open, MAX_LIST_ENTRIES + 1, budgetFor());
+
+        if (!open.ended) {
+          openListings.set(open.id, open);
+          return largePage(open);
+        }
+        entries = open.buffered;
+      } else {
+        entries = await remote.list(dir);
+      }
 
       if (entries.length === 0) {
         return { text: `${dir} is empty.`, structured: { path: dir, entries: [] } };
@@ -690,6 +830,49 @@ export function createTools(
       };
     },
   };
+
+  /**
+   * A page of a directory too large to list at once, in the order the server
+   * keeps it - sorting would mean reading all of it first, which is the thing
+   * that could not be done in time. Each page is sorted within itself.
+   */
+  function largePage(open: OpenListing): ToolResult {
+    const page = open.buffered.splice(0, MAX_LIST_ENTRIES).sort(byDirectoryThenName);
+    const from = open.served + 1;
+    open.served += page.length;
+    const done = open.ended && open.buffered.length === 0;
+
+    if (done) {
+      closeListing(open);
+    } else {
+      keepListing(open);
+    }
+
+    return {
+      text:
+        `${open.dir} (a large directory: entries ${from}-${open.served}` +
+        (done ? `, the last of ${open.served})` : ', with more to come)') +
+        ', in the order the server keeps them, sorted within this page\n' +
+        page.map(describeEntry).join('\n') +
+        (done
+          ? ''
+          : `\n\u2026 more. Call again with cursor: "${open.id}" for the next page, ` +
+            'within two minutes, or use `search` to find what you are after.'),
+      structured: {
+        path: open.dir,
+        offset: from - 1,
+        cursor: done ? undefined : open.id,
+        truncated: !done,
+        entries: page.map(entry => ({
+          name: entry.name,
+          path: entry.fspath,
+          type: entry.type === FileType.Directory ? 'directory' : 'file',
+          size: entry.size,
+          mtime: entry.mtime,
+        })),
+      },
+    };
+  }
 
   const stat: ToolDefinition = {
     name: 'stat',

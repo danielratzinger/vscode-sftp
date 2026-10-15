@@ -6,6 +6,21 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.7.1 - 2026-10-15
+
+### Fixed
+
+- The MCP `list` tool gave up on a folder of 36,000 files after 45 seconds. It
+  paged already, but read the whole directory first in order to sort it, and
+  SFTP hands a directory over a hundred names per round trip. Over SFTP a
+  directory is now read a piece at a time: one that ends within the first page
+  is listed whole and sorted as before; a larger one answers at once with a
+  page and a `cursor`, its handle held open on the server for two minutes, and
+  each next page reads on from where the last stopped. A call short of time
+  returns a shorter page rather than nothing. `tree` and `search` read large
+  folders the same way and stop for time instead of running out of it. FTP
+  cannot list in pieces and is unchanged.
+
 ## 2.7.0 - 2026-10-15
 
 ### Added
