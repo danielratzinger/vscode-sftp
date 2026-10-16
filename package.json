@@ -2,7 +2,7 @@
   "name": "sftp",
   "displayName": "SFTP",
   "description": "SFTP/FTP sync, with an MCP server that lets local AI clients read your servers",
-  "version": "2.7.1",
+  "version": "2.7.2",
   "publisher": "danielratzinger",
   "author": "Daniel Ratzinger (https://github.com/danielratzinger)",
   "engines": {
@@ -588,6 +588,11 @@
         "category": "SFTP"
       },
       {
+        "command": "sftp.autosyncOpenWindow",
+        "title": "Open Autosynced Folder in VS Code",
+        "category": "SFTP"
+      },
+      {
         "command": "sftp.revealInRemoteExplorer",
         "title": "Reveal in Remote Explorer",
         "category": "SFTP"
@@ -672,6 +677,10 @@
         },
         {
           "command": "sftp.autosyncReveal.terminal",
+          "when": "sftp.enabled && sftp.autosyncElsewhere"
+        },
+        {
+          "command": "sftp.autosyncOpenWindow",
           "when": "sftp.enabled && sftp.autosyncElsewhere"
         },
         {
@@ -959,6 +968,26 @@
           "command": "sftp.stopAutosyncWorktree",
           "group": "sftp.trans@2",
           "when": "sftp.enabled && explorerResourceIsFolder && resourcePath in sftp.autosyncPaths"
+        },
+        {
+          "command": "sftp.autosyncOpenWindow",
+          "group": "navigation@22",
+          "when": "sftp.enabled && (resourcePath in sftp.autosyncAwayPaths || (workbenchState == folder && sftp.autosyncElsewhere))"
+        },
+        {
+          "command": "sftp.autosyncReveal.mac",
+          "group": "navigation@23",
+          "when": "sftp.enabled && isMac && (resourcePath in sftp.autosyncAwayPaths || (workbenchState == folder && sftp.autosyncElsewhere))"
+        },
+        {
+          "command": "sftp.autosyncReveal.windows",
+          "group": "navigation@23",
+          "when": "sftp.enabled && isWindows && (resourcePath in sftp.autosyncAwayPaths || (workbenchState == folder && sftp.autosyncElsewhere))"
+        },
+        {
+          "command": "sftp.autosyncReveal.linux",
+          "group": "navigation@23",
+          "when": "sftp.enabled && isLinux && (resourcePath in sftp.autosyncAwayPaths || (workbenchState == folder && sftp.autosyncElsewhere))"
         }
       ],
       "editor/context": [
@@ -1120,22 +1149,27 @@
         },
         {
           "command": "sftp.autosyncReveal.mac",
-          "group": "3_trans@3",
+          "group": "navigation@2",
           "when": "sftp.enabled && isMac && viewItem =~ /-autosyncaway/"
         },
         {
           "command": "sftp.autosyncReveal.windows",
-          "group": "3_trans@3",
+          "group": "navigation@2",
           "when": "sftp.enabled && isWindows && viewItem =~ /-autosyncaway/"
         },
         {
           "command": "sftp.autosyncReveal.linux",
-          "group": "3_trans@3",
+          "group": "navigation@2",
           "when": "sftp.enabled && isLinux && viewItem =~ /-autosyncaway/"
         },
         {
           "command": "sftp.autosyncReveal.terminal",
-          "group": "3_trans@4",
+          "group": "navigation@3",
+          "when": "sftp.enabled && viewItem =~ /-autosyncaway/"
+        },
+        {
+          "command": "sftp.autosyncOpenWindow",
+          "group": "navigation@1",
           "when": "sftp.enabled && viewItem =~ /-autosyncaway/"
         },
         {

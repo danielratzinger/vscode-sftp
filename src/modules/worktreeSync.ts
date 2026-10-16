@@ -1169,6 +1169,19 @@ async function sayWhetherAnythingIsSyncing(): Promise<void> {
     syncing
   );
 
+  // Only the projects whose connection deploys a folder somewhere else: the
+  // ones for which "open the autosynced folder" names a different place.
+  await vscode.commands.executeCommand(
+    'setContext',
+    'sftp.autosyncAwayPaths',
+    getAllFileService()
+      .filter(service => {
+        const state = autosyncState(service);
+        return Boolean(state && state.external);
+      })
+      .map(service => service.baseDir)
+  );
+
   // And whether anything here is a working copy at all, which is what decides
   // if `Remove Files Deleted from the Repository` is offered: it has nothing to
   // ask a folder with no history. One key for the window, because the palette

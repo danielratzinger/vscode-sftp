@@ -6,6 +6,18 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.7.2 - 2026-10-16
+
+### Added
+
+- `Open Autosynced Folder in VS Code` opens the folder a connection deploys in
+  a window of its own, while it is not this window's folder - not this window
+  switched over, which would lose the connection the agent's checkout has no
+  `sftp.json` for and reload every other one. A save made there is deployed
+  like any change in that folder. It and `Reveal Autosynced Folder in Finder`
+  are at the top of the right-click menu in the file explorer and the Remote
+  Explorer.
+
 ## 2.7.1 - 2026-10-15
 
 ### Fixed

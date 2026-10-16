@@ -79,6 +79,7 @@ export const COMMAND_AUTOSYNC_REVEAL_FINDER_MAC = 'sftp.autosyncReveal.mac';
 export const COMMAND_AUTOSYNC_REVEAL_FINDER_WINDOWS = 'sftp.autosyncReveal.windows';
 export const COMMAND_AUTOSYNC_REVEAL_FINDER_LINUX = 'sftp.autosyncReveal.linux';
 export const COMMAND_AUTOSYNC_REVEAL_TERMINAL = 'sftp.autosyncReveal.terminal';
+export const COMMAND_AUTOSYNC_OPEN_WINDOW = 'sftp.autosyncOpenWindow';
 export const COMMAND_REVEAL_IN_REMOTE_EXPLORER = 'sftp.revealInRemoteExplorer';
 
 export const COMMAND_REMOTEEXPLORER_REFRESH = 'sftp.remoteExplorer.refresh';
