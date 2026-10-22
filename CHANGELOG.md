@@ -6,6 +6,29 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.7.4 - 2026-10-22
+
+### Added
+
+- A refused login is not tried again on its own. Autosync, retries, MCP calls
+  and the tree all retried against a server that had refused the password,
+  and a few failures in a minute is what hosts lock an address out for. The
+  login is paused instead: it is tried again when you expand or refresh the
+  connection in the Remote Explorer, or when the password changes - no more
+  than once every ten seconds - or by anything after fifteen minutes. A
+  password changed only on the server is covered by asking; one changed here
+  is noticed on its own, in the Keychain within the minute.
+
+### Changed
+
+- FTP asks about a folder once: listings are kept for three seconds, along
+  with "this folder is not there", and two asking at once share one. Where
+  the server offers MLST, one file is asked about in a line on the open
+  connection, with no data connection and no TLS handshake. Writes through
+  the extension forget the folders they touch at once.
+- `"secure": "implicit"` fails at once, naming `"protocol": "ftps"` instead.
+  The FTP library cannot connect that way at all; every attempt timed out.
+
 ## 2.7.3 - 2026-10-22
 
 ### Added
