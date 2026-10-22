@@ -14,6 +14,15 @@ Set to `control` for control encryption only, or `implicit` for implicitly encry
 }
 ```
 
+**`"protocol": "ftps"`** is FTP, encrypted, and always means `"secure": true` - whatever `secure` says beside it, or if it says nothing. `true` is the one setting under which both connections are encrypted: commands and password over `AUTH TLS`, listings and file contents over `PROT P`. A server that cannot do it is a connection that fails, never one that carries on in the clear. `implicit` encrypts the control connection only; the data connections are opened without TLS.
+
+```json
+{
+  "protocol": "ftps",
+  "host": "waws-prod-ate-003.ftp.azurewebsites.windows.net"
+}
+```
+
 ### secureOptions
 Additional options to be passed to `tls.connect()`.
 

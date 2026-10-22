@@ -182,10 +182,43 @@ export function validateConfig(config) {
   return error;
 }
 
+/**
+ * `"protocol": "ftps"`, read as what it means: FTP, encrypted.
+ *
+ * Encrypted here means `"secure": true` - and only that, whatever `secure`
+ * says beside it or whether it says anything. It is the one setting under
+ * which both connections are encrypted: commands and password over `AUTH
+ * TLS`, listings and file contents over `PROT P`, and a server that will not
+ * do either is a connection that fails rather than one that carries on in the
+ * clear. `"control"` leaves the files readable, `false` everything, and
+ * `"implicit"` - in the FTP library underneath - encrypts the commands but
+ * opens the data connections without TLS. A word that promises encryption
+ * should not be quietly overruled by one beside it.
+ *
+ * Profiles are read the same way, since a profile can name the protocol too.
+ */
+export function readFtps(config: any): any {
+  if (!config || typeof config !== 'object') {
+    return config;
+  }
+
+  const read = (one: any) =>
+    one && one.protocol === 'ftps' ? { ...one, protocol: 'ftp', secure: true } : one;
+
+  const next = read(config);
+  if (next.profiles && typeof next.profiles === 'object') {
+    next.profiles = Object.keys(next.profiles).reduce((all, name) => {
+      all[name] = read(next.profiles[name]);
+      return all;
+    }, {} as any);
+  }
+  return next;
+}
+
 export function readConfigsFromFile(configPath): Promise<any[]> {
   return fse.readJson(configPath).then(config => {
     const configs = Array.isArray(config) ? config : [config];
-    return configs.map(mergedDefault);
+    return configs.map(readFtps).map(mergedDefault);
   });
 }
 

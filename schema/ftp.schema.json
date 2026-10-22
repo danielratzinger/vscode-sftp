@@ -19,8 +19,8 @@
       "type": "object",
       "properties": {
         "protocol": {
-          "enum": ["ftp"],
-          "description": "ftp connection protocol."
+          "enum": ["ftp", "ftps"],
+          "description": "ftp connection protocol. \"ftps\" is FTP encrypted: it always means \"secure\": true, whatever \"secure\" says."
         },
 
         "profiles": {

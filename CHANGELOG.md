@@ -6,6 +6,24 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.7.3 - 2026-10-22
+
+### Added
+
+- `"protocol": "ftps"`: FTP, encrypted. It always means `"secure": true`,
+  whatever `secure` says beside it - the one setting under which commands,
+  listings and file contents are all encrypted, and a server that cannot do it
+  fails rather than carrying on in the clear. Profiles too.
+
+### Fixed
+
+- Autosync over FTP uploaded no new file. Before overwriting it keeps the
+  server's copy, and a file not on the server yet read as a server that would
+  not answer: IIS - Azure App Service - says a missing folder is "The system
+  cannot find the path specified", and a missing file in an existing folder
+  was reported as "file not exist". Both now read as not there. A bare 550 still
+  does not, since it also means access denied.
+
 ## 2.7.2 - 2026-10-16
 
 ### Added

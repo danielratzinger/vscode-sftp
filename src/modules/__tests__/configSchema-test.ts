@@ -57,3 +57,39 @@ describe('the schema the editor checks sftp.json against', () => {
     expect(knownConfigKeys().length).toBeGreaterThan(20);
   });
 });
+
+describe('"protocol": "ftps"', () => {
+  const { readFtps } = require('../config');
+
+  // Encrypted is what the word promises, so nothing beside it may undo that.
+  it('is FTP with secure true, whatever secure says', () => {
+    [undefined, false, 'control', 'implicit', true].forEach(secure => {
+      const read = readFtps({ protocol: 'ftps', host: 'h', ...(secure === undefined ? {} : { secure }) });
+      expect(read.protocol).toBe('ftp');
+      expect(read.secure).toBe(true);
+    });
+  });
+
+  it('is read the same way in a profile', () => {
+    const read = readFtps({
+      protocol: 'sftp',
+      profiles: { azure: { protocol: 'ftps', secure: 'control' }, other: { host: 'x' } },
+    });
+
+    expect(read.protocol).toBe('sftp');
+    expect(read.profiles.azure).toEqual({ protocol: 'ftp', secure: true });
+    expect(read.profiles.other).toEqual({ host: 'x' });
+  });
+
+  it('leaves every other protocol as it is', () => {
+    expect(readFtps({ protocol: 'ftp', secure: 'control' })).toEqual({
+      protocol: 'ftp',
+      secure: 'control',
+    });
+  });
+
+  it('is accepted by the schema the editor checks sftp.json against', () => {
+    const schema = JSON.parse(fs.readFileSync(path.join(SCHEMA_DIR, 'ftp.schema.json'), 'utf8'));
+    expect(JSON.stringify(schema)).toContain('"ftps"');
+  });
+});
