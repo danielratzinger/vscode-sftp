@@ -207,6 +207,41 @@ describe('FTPS', () => {
   });
 });
 
+describe('implicit FTPS', () => {
+  // The library underneath cannot do it: it wraps a socket in TLS before it is
+  // connected and reads the unencrypted one, so the greeting never arrives.
+  // What matters is saying so at once, and never sending anything in the clear.
+  it('is refused at once, with what to use instead, and nothing is sent', async () => {
+    const implicitServer = await startFtpServer(root, { ...certificates(), implicit: true });
+    const fileSystem = new FTPFileSystem(upath, {
+      clientOption: {
+        host: '127.0.0.1',
+        port: implicitServer.port,
+        username: 'tester',
+        password: 'anything',
+        secure: 'implicit',
+        secureOptions: { rejectUnauthorized: false },
+        connectTimeout: 8000,
+        debug: () => undefined,
+      },
+    } as any);
+
+    try {
+      const started = Date.now();
+      const outcome = await fileSystem
+        .connect((fileSystem as any).client._option, { askForPasswd: async () => undefined })
+        .then(() => 'connected', error => error.message);
+
+      expect(outcome).toMatch(/"protocol": "ftps"/);
+      expect(Date.now() - started).toBeLessThan(1000);
+      expect(implicitServer.commands()).toEqual([]);
+    } finally {
+      fileSystem.end();
+      await implicitServer.close();
+    }
+  });
+});
+
 describe('FTP against a real server', () => {
   it('connects and lists a directory', async () => {
     const fileSystem = await connect();

@@ -19,6 +19,8 @@ export interface SecureOption {
   /** PEM key and certificate; the server then offers AUTH TLS. */
   key: Buffer | string;
   cert: Buffer | string;
+  /** TLS from the first byte, as on port 990, rather than after AUTH TLS. */
+  implicit?: boolean;
 }
 
 export interface Misbehaviour {
@@ -181,8 +183,6 @@ export async function startFtpServer(
       });
     };
 
-    say('220 Test server ready');
-
     let buffer = '';
     const readFrom = (socket: net.Socket | tls.TLSSocket) => {
       socket.on('data', chunk => {
@@ -199,7 +199,21 @@ export async function startFtpServer(
       socket.on('error', () => undefined);
     };
 
-    readFrom(rawControl);
+    if (secure && secure.implicit) {
+      const secured = new tls.TLSSocket(rawControl, {
+        isServer: true,
+        secureContext: tls.createSecureContext({
+          key: secure.key as any,
+          cert: secure.cert as any,
+        }),
+      });
+      control = secured;
+      readFrom(secured);
+    } else {
+      readFrom(rawControl);
+    }
+
+    say('220 Test server ready');
 
     /**
      * FTPS upgrades the control connection in place: the client sends
@@ -365,7 +379,10 @@ export async function startFtpServer(
             say('150 Opening data connection');
             const stream = fs.createWriteStream(file);
             socket.pipe(stream);
-            socket.on('end', () => say('226 Transfer complete'));
+            // Once the file is on disk, as a real server answers - not when
+            // the last byte arrived, which left a client that looked straight
+            // away finding the file still being written.
+            stream.on('finish', () => say('226 Transfer complete'));
           };
           runWhenPaired();
           return;

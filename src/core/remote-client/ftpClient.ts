@@ -87,6 +87,24 @@ export default class FTPClient extends RemoteClient {
     });
 
     const { username, connectTimeout = 3 * 1000, ...option } = connectOption;
+
+    // Implicit FTPS - TLS from the first byte, usually on port 990 - cannot
+    // work through the library underneath: it wraps a socket in TLS before
+    // that socket is connected, then reads the unencrypted one, so the
+    // server's greeting never arrives and every attempt ends in a timeout.
+    // Said at once, with the way that does work, instead of after the wait.
+    if ((option as any).secure === 'implicit') {
+      return Promise.reject(
+        markExplained(
+          new Error(
+            `[${(option as any).host}]: implicit FTPS ("secure": "implicit") is not ` +
+              'supported. Use explicit FTPS instead - "protocol": "ftps", usually on ' +
+              'port 21 - which servers offering port 990 almost always offer as well.'
+          )
+        )
+      );
+    }
+
     return new Promise<void>((resolve, reject) => {
       // Cleared once the attempt is over either way: a timer left running
       // holds the event loop open until it fires, for no purpose once the
