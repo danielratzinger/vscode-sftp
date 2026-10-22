@@ -6,6 +6,7 @@
  * rooted at a different entry hides the fault this guards against.
  */
 import '../src/extension';
+import initCommands from '../src/initCommands';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -133,7 +134,18 @@ async function refusedLogin(): Promise<any> {
   }
 }
 
+/** Every command registered, as activation registers them, once each. */
+function registerCommands() {
+  initCommands({ subscriptions: [] } as any);
+  const g: any = global;
+  return {
+    registered: (g.__registeredCommands || []).length,
+    duplicates: g.__duplicateCommands || [],
+  };
+}
+
 async function main() {
+  result.commands = registerCommands();
   result.connect.sftp = await tryConnect('sftp', 1);
   // FTPS, so the cleartext check has nothing to say and the attempt reaches
   // the socket.

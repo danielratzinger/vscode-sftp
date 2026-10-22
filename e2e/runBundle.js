@@ -38,7 +38,20 @@ const stub = new Proxy(
             isTrusted: true,
           };
         case 'commands':
-          return { registerCommand: () => disposable, executeCommand: () => Promise.resolve() };
+          return {
+            // As strict as the editor: an id registered twice throws, which is
+            // how a command loaded twice was found - only in the real editor.
+            registerCommand: id => {
+              const registered = (global.__registeredCommands = global.__registeredCommands || []);
+              if (registered.indexOf(id) !== -1) {
+                (global.__duplicateCommands = global.__duplicateCommands || []).push(id);
+                throw new Error(`command '${id}' already exists`);
+              }
+              registered.push(id);
+              return disposable;
+            },
+            executeCommand: () => Promise.resolve(),
+          };
         case 'extensions':
           return { getExtension: () => undefined };
         case 'Uri':

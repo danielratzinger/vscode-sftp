@@ -12,7 +12,7 @@ export default function init(context: ExtensionContext) {
       // Do not look in subdirectories
       false,
       // Only include "_base-" prefixed .vue files
-      /command.*.ts$/
+      /command.*\.ts$/
     ),
     /command(.*)/,
     createCommand,
@@ -25,7 +25,7 @@ export default function init(context: ExtensionContext) {
       // Do not look in subdirectories
       false,
       // Only include "_base-" prefixed .vue files
-      /fileCommand.*.ts$/
+      /fileCommand.*\.ts$/
     ),
     /fileCommand(.*)/,
     createFileCommand,
@@ -38,7 +38,7 @@ export default function init(context: ExtensionContext) {
       // Do not look in subdirectories
       false,
       // Only include "_base-" prefixed .vue files
-      /fileMultiCommand.*.ts$/
+      /fileMultiCommand.*\.ts$/
     ),
     /fileMultiCommand(.*)/,
     createFileMultiCommand,
@@ -52,7 +52,18 @@ function nomalizeCommandName(rawName) {
 }
 
 async function loadCommands(requireContext, nameRegex, commandCreator, context: ExtensionContext) {
+  // Webpack offers each file under two keys, with its extension and without.
+  // The patterns above take the one with; this keeps a file whose name ends in
+  // "ts" - `...Agents`, `...Scripts` - from being registered twice should a
+  // pattern ever let the other through, which is what an unescaped dot did.
+  const seen = new Set<string>();
   requireContext.keys().forEach(fileName => {
+    const stem = fileName.replace(/\.ts$/, '');
+    if (seen.has(stem)) {
+      return;
+    }
+    seen.add(stem);
+
     const clearName = fileName
       // Remove the "./" from the beginning
       .replace(/^\.\//, '')

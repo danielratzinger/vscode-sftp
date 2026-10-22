@@ -86,6 +86,11 @@ describe('the packaged bundle', () => {
     // can be read".
     expect(report.read).toBe('<?php echo "read through the bundle";');
 
+    // Each command registered once: a file whose name ends in "ts" was
+    // registered a second time under its key without the extension.
+    expect(report.commands.registered).toBeGreaterThan(50);
+    expect(report.commands.duplicates).toEqual([]);
+
     // A refused password is offered once; the next attempt, straight after,
     // is answered here without reaching the server.
     expect(report.refused.first).toMatch(/authentication methods failed/i);
