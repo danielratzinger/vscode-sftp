@@ -41,6 +41,8 @@ export interface Misbehaviour {
    * FTP - says "The system cannot find the path specified."
    */
   notFoundAs?: string;
+  /** Offer MLST in FEAT and answer it, as IIS and most modern servers do. */
+  offerMlst?: boolean;
 }
 
 export interface RunningFtpServer {
@@ -49,6 +51,10 @@ export interface RunningFtpServer {
   misbehave(next: Misbehaviour): void;
   /** Control connections opened so far; the pool should open more than one. */
   connections(): number;
+  /** Every command received, in order, verb only - to count what a task cost. */
+  commands(): string[];
+  /** Forget the commands received so far. */
+  clearCommands(): void;
   close(): Promise<void>;
 }
 
@@ -84,6 +90,7 @@ export async function startFtpServer(
 ): Promise<RunningFtpServer> {
   let misbehaviour: Misbehaviour = {};
   let opened = 0;
+  const received: string[] = [];
   // Held so `close` can end them: a control or data connection the client
   // never finished with would otherwise keep the process alive after the test
   // that made it has passed. The tests here deliberately make some of those.
@@ -220,6 +227,8 @@ export async function startFtpServer(
       const command = (space === -1 ? line : line.slice(0, space)).toUpperCase();
       const argument = space === -1 ? '' : line.slice(space + 1);
 
+      received.push(command);
+
       if (misbehaviour.stallCommand && command === misbehaviour.stallCommand) {
         return; // Never answers.
       }
@@ -234,10 +243,27 @@ export async function startFtpServer(
         case 'FEAT':
           control.write(
             '211-Features\r\n MDTM\r\n SIZE\r\n UTF8\r\n' +
+              (misbehaviour.offerMlst ? ' MLST type*;size*;modify*;\r\n' : '') +
               (secure ? ' AUTH TLS\r\n PBSZ\r\n PROT\r\n' : '') +
               '211 End\r\n'
           );
           return;
+        case 'MLST': {
+          if (!misbehaviour.offerMlst) {
+            return say('500 Unknown command');
+          }
+          let stat: fs.Stats;
+          try {
+            stat = fs.lstatSync(within(argument));
+          } catch (error) {
+            return say(`550 ${misbehaviour.notFoundAs || 'Not found'}`);
+          }
+          const type = stat.isDirectory() ? 'dir' : 'file';
+          return control.write(
+            `250-Listing ${argument}\r\n type=${type};size=${stat.size};` +
+              `modify=${mdtm(stat)}; ${argument}\r\n250 End\r\n`
+          );
+        }
         case 'OPTS':
           return say('200 Ok');
         case 'AUTH':
@@ -378,6 +404,10 @@ export async function startFtpServer(
       misbehaviour = next;
     },
     connections: () => opened,
+    commands: () => received.slice(),
+    clearCommands: () => {
+      received.length = 0;
+    },
     close: () =>
       new Promise<void>(resolve => {
         live.slice().forEach(socket => socket.destroy());

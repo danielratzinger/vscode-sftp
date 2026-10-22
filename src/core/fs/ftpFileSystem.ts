@@ -10,6 +10,9 @@ import {
 } from './operationTimeout';
 import { isConnectionLost } from './transientError';
 import FTPClient from '../remote-client/ftpClient';
+import ListingCache from './listingCache';
+import { offersMlst, parseMlst } from './mlst';
+import isNotFound from '../notFound';
 
 export const DEFAULT_CONNECTION_LIMIT = 4;
 
@@ -102,6 +105,10 @@ export default class FTPFileSystem extends RemoteFileSystem {
   // `undefined` until we've seen how the server reacts to the `-a` flag.
   private _supportListAll: boolean | undefined;
   private _supportSIZE: boolean = true;
+  /** Listings kept for a moment; see `listingCache.ts`. */
+  private _listings = new ListingCache<FileEntry>(isNotFound);
+  /** Whether the server answers MLST; undefined until FEAT has been read. */
+  private _supportMLST: boolean | undefined;
   private _timeOffsetProbe: Promise<boolean> | null = null;
 
   static getFileType(type) {
@@ -236,6 +243,64 @@ export default class FTPFileSystem extends RemoteFileSystem {
     }
   }
 
+  /**
+   * A file's facts from MLST, or undefined to say "ask some other way": the
+   * server does not offer it, or answered in a way not understood. A file that
+   * is not there is thrown as such, as any other lstat would.
+   */
+  private async _mlst(path: string): Promise<FileStats | undefined> {
+    if (this._supportMLST === false) {
+      return undefined;
+    }
+
+    return this._withClient(
+      ftp =>
+        new Promise<FileStats | undefined>((resolve, reject) => {
+          if (this._supportMLST === undefined) {
+            this._supportMLST = offersMlst(ftp._feat);
+          }
+          if (!this._supportMLST || typeof ftp._send !== 'function') {
+            return resolve(undefined);
+          }
+
+          ftp._send(`MLST ${path}`, (err, text, code) => {
+            if (err) {
+              const status = Number(err.code || code);
+              // Not implemented, or not for this argument: never again here.
+              if (status === 500 || status === 501 || status === 502 || status === 504) {
+                this._supportMLST = false;
+                return resolve(undefined);
+              }
+              if (isNotFound(err)) {
+                return reject(
+                  Object.assign(new Error(`No such file: ${path}`), { code: 'ENOENT' })
+                );
+              }
+              // A 550 that does not say "not there" may be "access denied";
+              // the listing of the folder is asked instead, as before.
+              if (status === 550) {
+                return resolve(undefined);
+              }
+              return reject(err);
+            }
+
+            const facts = parseMlst(text || '');
+            if (!facts) {
+              return resolve(undefined);
+            }
+            resolve({
+              type: facts.type,
+              mode: facts.mode !== undefined ? facts.mode : 0o666,
+              size: facts.size,
+              mtime: facts.mtime,
+              atime: facts.mtime,
+            });
+          });
+        }),
+      `MLST ${path}`
+    );
+  }
+
   toFileStat(stat): FileStats {
     const mtime = this.toLocalTime(stat.date.getTime());
     return {
@@ -269,6 +334,13 @@ export default class FTPFileSystem extends RemoteFileSystem {
         mtime: 0,
         atime: 0,
       };
+    }
+
+    // One line on the connection already open, where the server offers it,
+    // instead of listing the whole folder over a new data connection.
+    const viaMlst = await this._mlst(path);
+    if (viaMlst) {
+      return viaMlst;
     }
 
     const parentPath = this.pathResolver.dirname(path);
@@ -316,6 +388,7 @@ export default class FTPFileSystem extends RemoteFileSystem {
       return Promise.resolve();
     }
 
+    this._listings.forget(path);
     return this.atomicSetLastMod(path, new Date(mtime * 1000)).catch(_ => {
       logger.info('Don\'t Support MFMT');
       this._supportMFMT = false;
@@ -540,7 +613,11 @@ export default class FTPFileSystem extends RemoteFileSystem {
 
   async chmod(path: string, mode: number): Promise<void> {
     const command = `CHMOD ${mode.toString(8)} ${path}`;
-    return await this.atomicSite(command);
+    try {
+      return await this.atomicSite(command);
+    } finally {
+      this._listings.forget(path);
+    }
   }
 
   async put(input: Readable, path, _option?: FileOption): Promise<void> {
@@ -590,6 +667,7 @@ export default class FTPFileSystem extends RemoteFileSystem {
           throw inputError || error;
         } finally {
           input.removeListener('error', onInputError);
+          this._listings.forget(path);
         }
       },
       `upload ${path}`,
@@ -608,7 +686,11 @@ export default class FTPFileSystem extends RemoteFileSystem {
   }
 
   async mkdir(dir: string): Promise<void> {
-    return await this.atomicMakeDir(dir);
+    try {
+      return await this.atomicMakeDir(dir);
+    } finally {
+      this._listings.forget(dir);
+    }
   }
 
   async ensureDir(dir: string): Promise<void> {
@@ -681,6 +763,10 @@ export default class FTPFileSystem extends RemoteFileSystem {
   }
 
   async list(dir: string): Promise<FileEntry[]> {
+    return this._listings.list(dir, () => this._listFresh(dir));
+  }
+
+  private async _listFresh(dir: string): Promise<FileEntry[]> {
     const stats = await this.atomicList(dir);
 
     // Before the entries are converted, so the first listing is already
@@ -709,11 +795,19 @@ export default class FTPFileSystem extends RemoteFileSystem {
   }
 
   async unlink(path: string): Promise<void> {
-    return await this.atomicDeleteFile(path);
+    try {
+      return await this.atomicDeleteFile(path);
+    } finally {
+      this._listings.forget(path);
+    }
   }
 
   async rmdir(path: string, recursive: boolean): Promise<void> {
-    return await this.atomicRemoveDir(path, recursive);
+    try {
+      return await this.atomicRemoveDir(path, recursive);
+    } finally {
+      this._listings.forget(path);
+    }
   }
 
   async rename(srcPath: string, destPath: string): Promise<void> {
@@ -721,6 +815,8 @@ export default class FTPFileSystem extends RemoteFileSystem {
   }
 
   async renameAtomic(srcPath: string, destPath: string): Promise<void> {
+    this._listings.forget(srcPath);
+    this._listings.forget(destPath);
     return this._withClient(
       ftp =>
         new Promise<void>((resolve, reject) => {

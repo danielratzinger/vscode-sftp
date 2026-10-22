@@ -268,6 +268,63 @@ describe('FTP against a real server', () => {
     fileSystem.end();
   });
 
+  // What autosync asks before keeping the server's copy of each file in a
+  // batch: is it there? Six files in one folder.
+  const SIX = ['a', 'b', 'c', 'd', 'e', 'f'].map(name => `/app/${name}.php`);
+
+  it('lists a folder once for six files asked about at once', async () => {
+    const fileSystem = await connect();
+    server.clearCommands();
+
+    await Promise.all(SIX.map(file => fileSystem.lstat(file).catch(() => undefined)));
+
+    const lists = server.commands().filter(command => command === 'LIST');
+    expect(lists.length).toBeLessThanOrEqual(2);
+    fileSystem.end();
+  });
+
+  // An empty server, as Azure's was: every folder missing, every file new.
+  it('remembers a missing folder for every file in it', async () => {
+    server.misbehave({ notFoundAs: 'The system cannot find the path specified. ' });
+    const fileSystem = await connect();
+    server.clearCommands();
+
+    for (const file of SIX.map(one => one.replace('/app/', '/new/'))) {
+      await fileSystem.lstat(file).catch(() => undefined);
+    }
+
+    expect(server.commands().filter(command => command === 'LIST').length).toBeLessThanOrEqual(2);
+    fileSystem.end();
+  });
+
+  // A write through this file system is seen at once, not three seconds later.
+  it('sees a file it has just uploaded', async () => {
+    const fileSystem = await connect();
+    await fileSystem.lstat('/app/fresh.php').catch(() => undefined);
+
+    await fileSystem.put(require('stream').Readable.from(['<?php']), '/app/fresh.php');
+
+    expect((await fileSystem.lstat('/app/fresh.php')).size).toBe(5);
+    fileSystem.end();
+  });
+
+  it('asks about one file with MLST, without a data connection, where offered', async () => {
+    server.misbehave({ offerMlst: true });
+    const fileSystem = await connect();
+    server.clearCommands();
+
+    const stat = await fileSystem.lstat('/app/boot.php');
+    const missing = await fileSystem.lstat('/app/new.php').catch(error => error);
+
+    expect(stat.size).toBe(FILES['app/boot.php'].length);
+    expect(isNotFound(missing)).toBe(true);
+    const asked = server.commands();
+    expect(asked).toContain('MLST');
+    expect(asked).not.toContain('PASV');
+    expect(asked).not.toContain('LIST');
+    fileSystem.end();
+  });
+
   it('reads a file whole', async () => {
     const fileSystem = await connect();
 

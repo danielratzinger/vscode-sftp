@@ -56,8 +56,11 @@ describe('FTPFileSystem#list', () => {
     expect(names(await fs.list('/pub'))).toEqual(['a']);
     expect(calls).toEqual(['-a /pub', '/pub']);
 
-    // The verdict sticks, so the flag isn't retried on every listing.
+    // The verdict sticks, so the flag isn't retried on every listing. The
+    // listing itself is remembered for a moment, so that is set aside to see
+    // what a fresh one asks.
     calls.length = 0;
+    (fs as any)._listings.clear();
     expect(names(await fs.list('/pub'))).toEqual(['a']);
     expect(calls).toEqual(['/pub']);
   });
@@ -69,6 +72,7 @@ describe('FTPFileSystem#list', () => {
     expect(calls).toEqual(['-a /pub', '/pub']);
 
     calls.length = 0;
+    (fs as any)._listings.clear();
     await fs.list('/pub');
     expect(calls).toEqual(['/pub']);
   });
@@ -79,6 +83,7 @@ describe('FTPFileSystem#list', () => {
     expect(await fs.list('/empty')).toEqual([]);
 
     calls.length = 0;
+    (fs as any)._listings.clear();
     await fs.list('/empty');
     expect(calls[0]).toBe('-a /empty');
   });
@@ -94,6 +99,16 @@ describe('FTPFileSystem#list', () => {
 
     calls.length = 0;
     expect(names(await fs.list('/pub'))).toEqual(['.env']);
+    expect(calls).toEqual(['-a /pub']);
+  });
+
+  // Asked twice in the same moment, the second is answered from the first.
+  it('lists a folder once for two asking in the same moment', async () => {
+    const { fs, calls } = createFs(() => [entry('a')]);
+
+    await fs.list('/pub');
+    await fs.list('/pub');
+
     expect(calls).toEqual(['-a /pub']);
   });
 
