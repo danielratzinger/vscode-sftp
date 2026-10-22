@@ -343,6 +343,18 @@ export default class FTPFileSystem extends RemoteFileSystem {
       return viaMlst;
     }
 
+    // Known not to be there from listings already taken - a folder above it
+    // missing, or listed without the next step down - costs no listing at all.
+    if (
+      this._listings.knownAbsent(
+        path,
+        entry => entry.name,
+        entry => entry.type === FileType.Directory
+      )
+    ) {
+      throw Object.assign(new Error(`No such file: ${path}`), { code: 'ENOENT' });
+    }
+
     const parentPath = this.pathResolver.dirname(path);
     const nameIdentity = this.pathResolver.basename(path);
     const stats = await this.list(parentPath);

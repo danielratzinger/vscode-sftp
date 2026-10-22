@@ -332,6 +332,28 @@ describe('FTP against a real server', () => {
     fileSystem.end();
   });
 
+  // Azure again: wwwroot listed, and then each file in a folder that was never
+  // uploaded asked about. The listing already said none of those folders exist.
+  it('asks nothing more about folders a listing above them already lacks', async () => {
+    server.misbehave({ notFoundAs: 'The system cannot find the path specified. ' });
+    const fileSystem = await connect();
+    await fileSystem.list('/app');
+    server.clearCommands();
+
+    for (const file of [
+      '/app/includes/php/a.php',
+      '/app/tests/Unit/b.php',
+      '/app/vendor/psr/simple-cache/src/c.php',
+      '/app/vendor/psr/log/d.php',
+    ]) {
+      const error = await fileSystem.lstat(file).catch(e => e);
+      expect(isNotFound(error)).toBe(true);
+    }
+
+    expect(server.commands().filter(command => command === 'LIST')).toEqual([]);
+    fileSystem.end();
+  });
+
   // A write through this file system is seen at once, not three seconds later.
   it('sees a file it has just uploaded', async () => {
     const fileSystem = await connect();

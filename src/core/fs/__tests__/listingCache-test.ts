@@ -138,6 +138,63 @@ describe('a listing remembered for a moment', () => {
   });
 });
 
+describe('knowing a path is not there without asking', () => {
+  type Entry = { name: string; dir: boolean };
+  const nameOf = (one: Entry) => one.name;
+  const isFolder = (one: Entry) => one.dir;
+
+  // Azure's wwwroot held one file; every folder under it was asked about.
+  it('reads an empty folder above as the absence of everything below it', async () => {
+    const cache = new ListingCache<Entry>(isMissing);
+    await cache.list('/site/wwwroot', async () => [{ name: 'hostingstart.html', dir: false }]);
+
+    expect(cache.knownAbsent('/site/wwwroot/includes/php/a.php', nameOf, isFolder)).toBe(true);
+    expect(cache.knownAbsent('/site/wwwroot/tests/Unit/b.php', nameOf, isFolder)).toBe(true);
+  });
+
+  it('reads a folder known missing as the absence of everything below it', async () => {
+    const cache = new ListingCache<Entry>(isMissing);
+    await cache.list('/site/wwwroot/vendor', async () => {
+      throw missing();
+    }).catch(() => undefined);
+
+    expect(cache.knownAbsent('/site/wwwroot/vendor/psr/simple-cache/src/x.php', nameOf, isFolder)).toBe(true);
+  });
+
+  it('does not claim what it does not know', async () => {
+    const cache = new ListingCache<Entry>(isMissing);
+    await cache.list('/site', async () => [{ name: 'wwwroot', dir: true }]);
+
+    // wwwroot is there, and nothing is known about what is in it.
+    expect(cache.knownAbsent('/site/wwwroot/a.php', nameOf, isFolder)).toBe(false);
+    expect(cache.knownAbsent('/other/a.php', nameOf, isFolder)).toBe(false);
+  });
+
+  it('knows a file listed in its folder is there, and one not listed is not', async () => {
+    const cache = new ListingCache<Entry>(isMissing);
+    await cache.list('/app', async () => [{ name: 'a.php', dir: false }]);
+
+    expect(cache.knownAbsent('/app/a.php', nameOf, isFolder)).toBe(false);
+    expect(cache.knownAbsent('/app/b.php', nameOf, isFolder)).toBe(true);
+  });
+
+  // A file cannot have anything under it.
+  it('knows nothing is under a file', async () => {
+    const cache = new ListingCache<Entry>(isMissing);
+    await cache.list('/app', async () => [{ name: 'config', dir: false }]);
+
+    expect(cache.knownAbsent('/app/config/x.php', nameOf, isFolder)).toBe(true);
+  });
+
+  it('forgets it once something is written there', async () => {
+    const cache = new ListingCache<Entry>(isMissing);
+    await cache.list('/site/wwwroot', async () => []);
+    cache.forget('/site/wwwroot/includes');
+
+    expect(cache.knownAbsent('/site/wwwroot/includes/a.php', nameOf, isFolder)).toBe(false);
+  });
+});
+
 describe('MLST', () => {
   it('reads a file’s facts from the reply', () => {
     const facts = parseMlst(

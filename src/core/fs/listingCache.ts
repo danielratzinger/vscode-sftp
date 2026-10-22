@@ -69,6 +69,42 @@ export default class ListingCache<T> {
   }
 
   /**
+   * Whether `path` cannot be there, judged only from what is already known: a
+   * folder above it known to be missing, or one above it listed without the
+   * next step down in it - or with it as a file. On an empty server the first
+   * listing of the root says so for everything under it, where asking about
+   * each folder separately cost a listing apiece.
+   *
+   * `isFolder` says, of an entry, whether it can have anything under it.
+   */
+  knownAbsent(path: string, nameOf: (entry: T) => string, isFolder: (entry: T) => boolean): boolean {
+    const now = this._now();
+    const parts = normal(path).split('/').filter(Boolean);
+
+    for (let depth = parts.length - 1; depth >= 0; depth -= 1) {
+      const above = depth === 0 ? '/' : `/${parts.slice(0, depth).join('/')}`;
+      const known = this._known.get(above);
+      if (!known || now - known.at >= this._trustedFor) {
+        continue;
+      }
+      if (known.missing) {
+        return true;
+      }
+
+      const next = parts[depth];
+      const entry = known.entries!.find(one => nameOf(one) === next);
+      // The last step is the thing itself: absent if not listed. Any step
+      // before it has to be a folder for anything to be under it.
+      if (!entry) {
+        return true;
+      }
+      return depth < parts.length - 1 && !isFolder(entry);
+    }
+
+    return false;
+  }
+
+  /**
    * Something at `path` was written, created, removed or renamed: the folder it
    * is in lists differently now, and if it is a folder, so does everything
    * that was remembered as not being under it.
