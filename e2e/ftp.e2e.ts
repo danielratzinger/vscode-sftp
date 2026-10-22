@@ -11,6 +11,7 @@ import {
   withTls,
 } from '../src/core/ftpsPolicy';
 import { startFtpServer, RunningFtpServer } from './ftpServer';
+import isNotFound from '../src/core/notFound';
 import { createTools } from '../src/mcp/tools';
 import { validate } from './schemaCheck';
 
@@ -240,6 +241,30 @@ describe('FTP against a real server', () => {
     // No dotfiles, because the server hides them without the flag - but the
     // listing itself still works, which is the point.
     expect(entries.map(entry => entry.name).sort()).toEqual(['app', 'index.php']);
+    fileSystem.end();
+  });
+
+  // What a backup before an upload asks first. Not there has to read as not
+  // there - otherwise the copy cannot be kept, and the file is never sent.
+  it('says a file that is not there is not there', async () => {
+    const fileSystem = await connect();
+
+    const error = await fileSystem.lstat('/app/new.php').catch(e => e);
+
+    expect(error).toBeInstanceOf(Error);
+    expect(isNotFound(error)).toBe(true);
+    fileSystem.end();
+  });
+
+  // Azure App Service, on a folder the upload has yet to create.
+  it('says a folder that is not there is not there, the way IIS puts it', async () => {
+    server.misbehave({ notFoundAs: 'The system cannot find the path specified. ' });
+    const fileSystem = await connect();
+
+    const error = await fileSystem.lstat('/src/Writer/Xlsx/Style.php').catch(e => e);
+
+    expect(error).toBeInstanceOf(Error);
+    expect(isNotFound(error)).toBe(true);
     fileSystem.end();
   });
 

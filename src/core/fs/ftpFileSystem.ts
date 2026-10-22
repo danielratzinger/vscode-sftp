@@ -278,7 +278,11 @@ export default class FTPFileSystem extends RemoteFileSystem {
     const fileStat = stats.find(ns => ns.name === nameIdentity);
 
     if (!fileStat) {
-      throw new Error('file not exist');
+      // Said the way every other file system here says it, so that callers
+      // asking "is it not there?" hear yes - "file not exist" matched none of
+      // the ways that question is asked, and every new file read as a server
+      // that could not be reached.
+      throw Object.assign(new Error(`No such file: ${path}`), { code: 'ENOENT' });
     }
 
     return fileStat;

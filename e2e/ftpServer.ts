@@ -36,6 +36,11 @@ export interface Misbehaviour {
    * broken.
    */
   breakDataTls?: boolean;
+  /**
+   * The text of a 550 for a path that is not there. IIS - Azure App Service's
+   * FTP - says "The system cannot find the path specified."
+   */
+  notFoundAs?: string;
 }
 
 export interface RunningFtpServer {
@@ -290,7 +295,7 @@ export async function startFtpServer(
           try {
             entries = fs.readdirSync(within(target || '.'));
           } catch (error) {
-            return say('550 Not found');
+            return say(`550 ${misbehaviour.notFoundAs || 'Not found'}`);
           }
 
           // A server that was not asked for them hides dotfiles.
