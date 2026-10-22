@@ -38,6 +38,8 @@ export interface RunningServer {
   publicKey: string;
   /** The same key, so a restart can present it again. */
   privateKey: string;
+  /** How many times a password has been offered - refused or not. */
+  passwordAttempts(): number;
   /** Changed between calls to make one operation misbehave. */
   misbehave(next: Misbehaviour): void;
   close(): Promise<void>;
@@ -70,7 +72,7 @@ const READDIR_PIECE = 100;
 
 export async function startSftpServer(
   root: string,
-  option: { port?: number; privateKey?: string } = {}
+  option: { port?: number; privateKey?: string; refuseLogins?: boolean } = {}
 ): Promise<RunningServer> {
   // Given a key, it presents that one - which is how a test can restart "the
   // same server" or stand up one pretending to be it with a different key.
@@ -84,6 +86,7 @@ export async function startSftpServer(
   // is most of them, since a connection pool exists to stay open - waits for
   // ever instead of finishing.
   const clients: any[] = [];
+  let passwordAttempts = 0;
 
   const server = new Server({ hostKeys: [keys.private] }, (client: any) => {
     clients.push(client);
@@ -97,7 +100,16 @@ export async function startSftpServer(
         clients.splice(at, 1);
       }
     });
-    client.on('authentication', (ctx: any) => ctx.accept());
+    client.on('authentication', (ctx: any) => {
+      if (ctx.method === 'password') {
+        passwordAttempts += 1;
+      }
+      // A server whose password has been changed: every login is refused.
+      if (option.refuseLogins) {
+        return ctx.reject(['password']);
+      }
+      ctx.accept();
+    });
     client.on('ready', () => {
       client.on('session', (acceptSession: any) => {
         const session = acceptSession();
@@ -308,6 +320,7 @@ export async function startSftpServer(
   );
 
   return {
+    passwordAttempts: () => passwordAttempts,
     port,
     root,
     publicKey: keys.public,

@@ -24,6 +24,63 @@ import SFTPFileSystem from './fs/sftpFileSystem';
 import FTPFileSystem from './fs/ftpFileSystem';
 import localFs from './localFs';
 import { identityOf } from './connectionIdentity';
+import { LoginGuard, fingerprintOf, isRefusedLogin, loginKey } from './loginGuard';
+import { markExplained } from './explainedError';
+import { showWarningMessage } from '../host';
+
+/** One guard for the window: a server counts failures by login, not by project. */
+export const loginGuard = new LoginGuard();
+
+const SILENT_STORES = [undefined, true, 'keychain', 'vscode'];
+
+function isSilentStore(option: any): boolean {
+  return (
+    !option.passwordCommand &&
+    !option.passphraseCommand &&
+    SILENT_STORES.indexOf(option.passwordManager) !== -1
+  );
+}
+
+function stringOrUndefined(value: any): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function clock(ms: number): string {
+  const when = new Date(ms);
+  return `${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}`;
+}
+
+/** Said instead of trying: nothing reaches the server. */
+function paused(host: string, retryIn: number): Error {
+  return markExplained(
+    Object.assign(
+      new Error(
+        `[${host}]: not logging in - the server refused the password a moment ago, ` +
+          'and trying again is how a host locks this address out. Expand or refresh ' +
+          'the connection in the SFTP explorer to try now, or it tries on its own at ' +
+          `${clock(Date.now() + retryIn)}.`
+      ),
+      { code: 'LOGIN_PAUSED' }
+    )
+  );
+}
+
+/** The server refused the credentials: pause the login, and say so once. */
+function noteRefused(key: string, fingerprint: string, host: string): void {
+  const already = loginGuard.isPaused(key);
+  loginGuard.refused(key, fingerprint);
+  logger.warn(
+    `[login] ${host} refused the password; automatic attempts are paused for 15 ` +
+      'minutes so the host does not lock this address out.'
+  );
+  if (!already) {
+    showWarningMessage(
+      `${host} refused the password. Nothing will try to log in on its own for 15 ` +
+        'minutes - repeated failures are what get an address locked out. Expand or ' +
+        'refresh the connection in the SFTP explorer to try again, or change the password.'
+    );
+  }
+}
 
 class KeepAliveRemoteFs {
   private isValid: boolean = false;
@@ -183,7 +240,36 @@ class KeepAliveRemoteFs {
     credentials: CredentialResolver,
     connectOption: any
   ): Promise<void> {
+    const key = loginKey(connectOption);
+    // A store read without asking anybody anything can be read again to see
+    // whether the password changed; one that prompts - 1Password, a command -
+    // is left alone until someone asks or the quarter hour is up.
+    const silent = isSilentStore(this._option || connectOption);
+
+    // A password written in sftp.json costs nothing to compare: changed there,
+    // it is tried at the next request rather than a minute later.
+    const inConfig = typeof connectOption.password === 'string';
+
+    if (loginGuard.isPaused(key) && !inConfig && !(silent && loginGuard.worthLooking(key))) {
+      const verdict = loginGuard.mayTry(key);
+      if (!verdict.allowed) {
+        throw paused(connectOption.host, verdict.retryIn);
+      }
+    }
+
     const resolved = await credentials.resolve();
+    const fingerprint = fingerprintOf(
+      resolved.password !== undefined ? resolved.password : stringOrUndefined(connectOption.password),
+      resolved.passphrase !== undefined ? resolved.passphrase : stringOrUndefined(connectOption.passphrase),
+      connectOption.privateKeyPath
+    );
+
+    if (loginGuard.isPaused(key)) {
+      const verdict = loginGuard.mayTry(key, { fingerprint });
+      if (!verdict.allowed) {
+        throw paused(connectOption.host, verdict.retryIn);
+      }
+    }
 
     if (resolved.password !== undefined) {
       connectOption.password = resolved.password;
@@ -219,9 +305,18 @@ class KeepAliveRemoteFs {
         });
         noteUpgradeWorked(connectOption);
         this._secureByUpgrade = true;
+        loginGuard.succeeded(key);
         await credentials.commit();
         return;
       } catch (error) {
+        // The server refused the password, which says nothing about TLS - and
+        // trying again without it would be a second refused login in a row.
+        if (isRefusedLogin(error)) {
+          this.fs.end();
+          await credentials.discard(error);
+          noteRefused(key, fingerprint, connectOption.host);
+          throw error;
+        }
         noteUpgradeFailed(connectOption, error.message);
         // A fresh client: the one that failed the handshake is not reusable.
         this.fs.end();
@@ -241,9 +336,13 @@ class KeepAliveRemoteFs {
       });
     } catch (error) {
       await credentials.discard(error);
+      if (isRefusedLogin(error)) {
+        noteRefused(key, fingerprint, connectOption.host);
+      }
       throw error;
     }
 
+    loginGuard.succeeded(key);
     await credentials.commit();
   }
 

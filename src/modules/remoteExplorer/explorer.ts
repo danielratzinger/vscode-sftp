@@ -10,6 +10,8 @@ import { toRemotePath } from '../../helper';
 import { REMOTE_SCHEME } from '../../constants';
 import { getFileService } from '../serviceManager';
 import RemoteTreeDataProvider, { ExplorerItem } from './treeDataProvider';
+import { loginGuard } from '../../core/remoteFs';
+import { loginKey } from '../../core/loginGuard';
 
 export default class RemoteExplorer {
   private _explorerView: vscode.TreeView<ExplorerItem>;
@@ -26,6 +28,18 @@ export default class RemoteExplorer {
       treeDataProvider: this._treeDataProvider,
       canSelectMany: true,
     });
+
+    // Opening a connection is asking for it: if its login was paused after
+    // the server refused the password, this is the explicit attempt the pause
+    // waits for. The tree may already have asked and been told no, so it is
+    // asked again once the permission is there.
+    context.subscriptions.push(
+      this._explorerView.onDidExpandElement(event => {
+        if (this._askToLogIn(event.element)) {
+          this.refresh(event.element);
+        }
+      })
+    );
 
     registerCommand(context, COMMAND_REMOTEEXPLORER_REFRESH, () => this._refreshSelection());
     registerCommand(context, COMMAND_REMOTEEXPLORER_REFRESH_ACTIVE_FILE, () => this._refreshActiveRemoteFile());
@@ -71,10 +85,35 @@ export default class RemoteExplorer {
 
   private _refreshSelection() {
     if (this._explorerView.selection.length) {
-      this._explorerView.selection.forEach(item => this.refresh(item));
+      this._explorerView.selection.forEach(item => {
+        this._askToLogIn(item);
+        this.refresh(item);
+      });
     } else {
-      this.refresh();
+      this._treeDataProvider
+        .getChildren()
+        .then(roots => roots.forEach(root => this._askToLogIn(root)))
+        .catch(() => undefined)
+        .then(() => this.refresh());
     }
+  }
+
+  /**
+   * Counts as someone asking to log in to the item's connection - which is
+   * what the pause after a refused password waits for. True when the login
+   * was paused, so whoever called knows a fresh look is worth taking.
+   */
+  private _askToLogIn(item: ExplorerItem | undefined): boolean {
+    if (!item) {
+      return false;
+    }
+    const root = this._treeDataProvider.findRoot(item.resource.uri);
+    if (!root) {
+      return false;
+    }
+    const key = loginKey(root.explorerContext.config as any);
+    loginGuard.askFor(key);
+    return loginGuard.isPaused(key);
   }
 
   private _refreshActiveRemoteFile() {

@@ -10,6 +10,7 @@ import {
   storeFor,
   whichFiles,
 } from './passwordSweep';
+import { loginGuard } from '../core/remoteFs';
 import { noteCredentialKey } from './credentials';
 
 /**
@@ -152,6 +153,12 @@ async function write(entries: Movable[], value: string): Promise<void> {
       refused += keys.length;
       logger.error(error, `could not change the passwords in ${file}`);
     }
+  }
+
+  // A login paused after the old password was refused may try the new one at
+  // its next request, rather than a minute or a quarter of an hour later.
+  if (changed > 0) {
+    loginGuard.lookAgain();
   }
 
   vscode.window.showInformationMessage(

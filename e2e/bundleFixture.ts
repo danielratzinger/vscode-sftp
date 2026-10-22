@@ -98,6 +98,41 @@ async function readAFile(): Promise<string> {
   }
 }
 
+/**
+ * A server that refuses the password, asked twice in a row - as autosync and a
+ * retry would. The second must not reach it: refused logins in quick
+ * succession are what hosts lock an address out for.
+ */
+async function refusedLogin(): Promise<any> {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bundle-refused-'));
+  const server = await startSftpServer(root, { refuseLogins: true });
+  const option = {
+    protocol: 'sftp',
+    host: '127.0.0.1',
+    port: server.port,
+    username: 'tester',
+    password: 'the old one',
+    remotePath: '/',
+    connectTimeout: 10000,
+    debug: () => undefined,
+  };
+  const attempt = () =>
+    createRemoteIfNoneExist(option as any).then(
+      () => 'connected',
+      (error: any) => (error && error.message) || String(error)
+    );
+
+  try {
+    const first = await attempt();
+    const afterFirst = server.passwordAttempts();
+    const second = await attempt();
+    return { first, second, afterFirst, afterSecond: server.passwordAttempts() };
+  } finally {
+    removeRemoteFs(option);
+    await server.close();
+  }
+}
+
 async function main() {
   result.connect.sftp = await tryConnect('sftp', 1);
   // FTPS, so the cleartext check has nothing to say and the attempt reaches
@@ -111,6 +146,7 @@ async function main() {
   result.connect.cleartextFtp = await tryConnect('ftp', 3, { host: '127.0.0.2' });
 
   result.read = await readAFile();
+  result.refused = await refusedLogin();
 
   // tslint:disable-next-line:no-console
   console.log(`__RESULT__${JSON.stringify(result)}`);

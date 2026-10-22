@@ -85,6 +85,13 @@ describe('the packaged bundle', () => {
     // anything activates. It shipped once as "every listing works and no file
     // can be read".
     expect(report.read).toBe('<?php echo "read through the bundle";');
+
+    // A refused password is offered once; the next attempt, straight after,
+    // is answered here without reaching the server.
+    expect(report.refused.first).toMatch(/authentication methods failed/i);
+    expect(report.refused.afterFirst).toBe(1);
+    expect(report.refused.second).toContain('not logging in');
+    expect(report.refused.afterSecond).toBe(1);
   });
 
   it('stops a cleartext password before the socket', () => {
