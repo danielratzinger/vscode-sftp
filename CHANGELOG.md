@@ -6,6 +6,20 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.7.5 - 2026-10-22
+
+### Changed
+
+- FTP knows a path is not there from the listings above it. On an empty
+  server each file in a folder never uploaded cost a listing of that folder;
+  a folder above listed without it, or one known missing, now answers it
+  without asking.
+
+### Fixed
+
+- `sftp.mcp.addToAgents` and `sftp.download.scripts` were registered twice,
+  which failed at startup with "command already exists".
+
 ## 2.7.4 - 2026-10-22
 
 ### Added
