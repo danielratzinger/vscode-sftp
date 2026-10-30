@@ -14,7 +14,7 @@ import { clearToOverwrite } from './autosyncBackup';
  * one way of taking it off: a list with a box beside each, and nothing
  * removed that was not ticked.
  *
- * `Remove all ignored files from remote` looks for what the project's ignore
+ * `Remove ignored files from Remote` looks for what the project's ignore
  * files, and the connection's own `ignore`, say should never have been sent.
  * Those start ticked: they were named as not belonging there.
  *
@@ -48,8 +48,27 @@ function remoteOf(context: FileHandlerContext, local: string): string {
 }
 
 function labelOf(context: FileHandlerContext, local: string, dir: boolean): string {
-  const relative = path.relative(context.target.localFsPath, local).split(path.sep).join('/');
+  const relative =
+    path.relative(context.target.localFsPath, local).split(path.sep).join('/') ||
+    // The folder looked in, found as a whole.
+    path.basename(local);
   return `${relative}${dir ? '/' : ''}`;
+}
+
+/** The folder looked in, as the one thing found. */
+function theFolderItself(context: FileHandlerContext): Found[] {
+  return [
+    {
+      remotePath: context.target.remoteFsPath,
+      label: labelOf(context, context.target.localFsPath, true),
+      dir: true,
+    },
+  ];
+}
+
+/** Whether the folder looked in is the top of what the connection maps. */
+function isTop(context: FileHandlerContext): boolean {
+  return path.resolve(context.target.localFsPath) === path.resolve(context.fileService.baseDir);
 }
 
 /** What is in a folder on the server, named by where it would be here. */
@@ -110,6 +129,16 @@ export async function ignoredOnRemote(
   walk: Walk,
   rules: IgnoreRules
 ): Promise<Found[]> {
+  // Started on a folder that is itself left out - `vendor`, say: that is the
+  // one thing to offer, not each thing inside it.
+  const start = walk.context.target.localFsPath;
+  if (!isTop(walk.context)) {
+    const itself = await rules.ignoredAmong([{ path: start, dir: true }]);
+    if (itself.has(start)) {
+      return theFolderItself(walk.context);
+    }
+  }
+
   const found = await findIgnored(rules, walk.context.target.localFsPath, local =>
     listRemote(walk, local)
   );
@@ -122,6 +151,11 @@ export async function ignoredOnRemote(
 }
 
 export async function missingLocally(walk: Walk): Promise<Found[]> {
+  // Started from the server on a folder this machine does not have at all.
+  if (!isTop(walk.context) && !(await fse.pathExists(walk.context.target.localFsPath))) {
+    return theFolderItself(walk.context);
+  }
+
   const found: Found[] = [];
   let level = [walk.context.target.localFsPath];
 

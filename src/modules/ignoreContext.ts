@@ -7,8 +7,8 @@ import { getAllFileService } from './serviceManager';
 /**
  * `sftp.hasIgnoreRules`: whether any connection here has something that says
  * what not to deploy - a `.gitignore`, a `.git-ftp-ignore`, or an `ignore` in
- * its `sftp.json`. `Upload Folder in Full` and `Remove all ignored files from
- * remote` are offered only then; without any, they would mean nothing.
+ * its `sftp.json`. `Upload Folder in Full` and `Remove ignored files from
+ * Remote` are offered only then; without any, they would mean nothing.
  *
  * Asked again when one of those files comes or goes, and when a `sftp.json`
  * is saved, since that is when connections are built again.

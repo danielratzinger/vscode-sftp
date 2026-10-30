@@ -127,4 +127,13 @@ describe('the packaged bundle', () => {
   it('finds on the server what is not here', () => {
     expect(report.ignoring.normal.onlyThere).toEqual(['only-on-server.txt', 'uploads/']);
   });
+
+  it('looks only below the folder it was started on', () => {
+    expect(report.ignoring.inFull.ignoredInSrc).toEqual(['debug.log']);
+  });
+
+  it('offers a folder that is itself ignored, or only on the server, as one thing', () => {
+    expect(report.ignoring.inFull.ignoredInVendor).toEqual(['vendor/']);
+    expect(report.ignoring.inFull.onlyThereInUploads).toEqual(['uploads/']);
+  });
 });

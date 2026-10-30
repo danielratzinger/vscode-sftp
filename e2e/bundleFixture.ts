@@ -201,16 +201,17 @@ async function uploadIgnoring(): Promise<any> {
       local
     );
     const config = service.getConfig();
-    const context: any = {
+    const contextAt = (folder: string): any => ({
       fileService: service,
       config,
-      target: UResource.from(Uri.file(local), {
+      target: UResource.from(Uri.file(folder), {
         localBasePath: local,
         remoteBasePath: '/',
         remoteId: service.id,
         remote: { host: config.host, port: config.port },
       }),
-    };
+    });
+    const context = contextAt(local);
 
     try {
       await uploadFolder(context, inFull ? { projectIgnore: false } : {});
@@ -221,16 +222,29 @@ async function uploadIgnoring(): Promise<any> {
       fs.mkdirSync(path.join(remoteRoot, 'uploads'));
       fs.writeFileSync(path.join(remoteRoot, 'uploads', 'photo.jpg'), 'x');
 
-      const walk = {
-        context,
-        progress: { report: () => undefined },
-        token: { isCancellationRequested: false },
-      } as any;
+      const walkIn = (at: any) =>
+        ({
+          context: at,
+          progress: { report: () => undefined },
+          token: { isCancellationRequested: false },
+        } as any);
       const rules = await rulesOf(context);
-      const ignored = (await ignoredOnRemote(walk, rules!)).map(one => one.label).sort();
-      const onlyThere = (await missingLocally(walk)).map(one => one.label).sort();
+      const labels = (found: any[]) => found.map(one => one.label).sort();
+      const ignoredFrom = async (folder: string) =>
+        labels(await ignoredOnRemote(walkIn(contextAt(folder)), rules!));
+      const onlyThereFrom = async (folder: string) =>
+        labels(await missingLocally(walkIn(contextAt(folder))));
 
-      return { uploaded, ignored, onlyThere };
+      return {
+        uploaded,
+        ignored: await ignoredFrom(local),
+        onlyThere: await onlyThereFrom(local),
+        // Started on a folder below the top: from there, not from the top.
+        ignoredInSrc: await ignoredFrom(path.join(local, 'src')),
+        // Started on a folder that is itself ignored, or only on the server.
+        ignoredInVendor: await ignoredFrom(path.join(local, 'vendor')),
+        onlyThereInUploads: await onlyThereFrom(path.join(local, 'uploads')),
+      };
     } catch (error) {
       return { failed: error && error.stack };
     } finally {

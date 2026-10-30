@@ -569,7 +569,7 @@
       },
       {
         "command": "sftp.removeIgnored",
-        "title": "Remove all ignored files from remote",
+        "title": "Remove ignored files from Remote",
         "category": "SFTP"
       },
       {
@@ -1146,6 +1146,16 @@
           "command": "sftp.upload.folderInFull",
           "group": "3_trans@5",
           "when": "sftp.enabled && sftp.hasIgnoreRules && view == remoteExplorer && !(viewItem =~ /^file/)"
+        },
+        {
+          "command": "sftp.removeIgnored",
+          "group": "7_modification@1",
+          "when": "sftp.enabled && sftp.hasIgnoreRules && view == remoteExplorer && !(viewItem =~ /^file/)"
+        },
+        {
+          "command": "sftp.tidyRemote",
+          "group": "7_modification@1",
+          "when": "sftp.enabled && view == remoteExplorer && !(viewItem =~ /^file/)"
         },
         {
           "command": "sftp.upload.file",
