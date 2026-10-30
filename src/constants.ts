@@ -28,6 +28,7 @@ export const COMMAND_UPLOAD_FILE = 'sftp.upload.file';
 export const COMMAND_UPLOAD_CHANGEDFILES = 'sftp.upload.changedFiles';
 export const COMMAND_UPLOAD_ACTIVEFILE = 'sftp.upload.activeFile';
 export const COMMAND_UPLOAD_FOLDER = 'sftp.upload.folder';
+export const COMMAND_UPLOAD_FOLDER_IN_FULL = 'sftp.upload.folderInFull';
 export const COMMAND_UPLOAD_ACTIVEFOLDER = 'sftp.upload.activeFolder';
 export const COMMAND_UPLOAD_PROJECT = 'sftp.upload.project';
 
@@ -70,6 +71,8 @@ export const COMMAND_AUTOSYNC_WORKTREE = 'sftp.autosyncWorktree';
 export const COMMAND_STOP_AUTOSYNC_WORKTREE = 'sftp.stopAutosyncWorktree';
 export const COMMAND_SWITCH_AUTOSYNC_WORKTREE = 'sftp.switchAutosyncWorktree';
 export const COMMAND_REMOVE_DELETED = 'sftp.removeDeleted';
+export const COMMAND_REMOVE_IGNORED = 'sftp.removeIgnored';
+export const COMMAND_TIDY_REMOTE = 'sftp.tidyRemote';
 export const COMMAND_MIGRATE_PASSWORDS = 'sftp.migratePasswords';
 export const COMMAND_ROTATE_PASSWORD = 'sftp.rotatePassword';
 export const COMMAND_RESTORE_REMOTE = 'sftp.restoreRemote';

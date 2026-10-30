@@ -8,6 +8,28 @@ const Module = require('module');
 const nothing = () => undefined;
 const disposable = { dispose: nothing };
 
+// A class, as the editor's is: code asks `instanceof Uri`.
+class Uri {
+  constructor(scheme, fsPath, query, text) {
+    this.scheme = scheme;
+    this.fsPath = fsPath;
+    this.path = fsPath;
+    this.query = query;
+    this._text = text;
+  }
+  static file(p) {
+    return new Uri('file', p, '', `file://${p}`);
+  }
+  // Query decoded, as the editor's `Uri.parse` decodes it.
+  static parse(text) {
+    const url = new URL(text);
+    return new Uri(url.protocol.replace(/:$/, ''), decodeURIComponent(url.pathname), decodeURIComponent(url.search.replace(/^\?/, '')), text);
+  }
+  toString() {
+    return this._text;
+  }
+}
+
 const stub = new Proxy(
   {},
   {
@@ -29,6 +51,8 @@ const stub = new Proxy(
           return {
             getConfiguration: () => ({ get: (key, fallback) => fallback }),
             workspaceFolders: [],
+            textDocuments: [],
+            asRelativePath: p => String(p),
             onDidChangeConfiguration: () => disposable,
             onDidSaveTextDocument: () => disposable,
             onWillSaveTextDocument: () => disposable,
@@ -55,10 +79,7 @@ const stub = new Proxy(
         case 'extensions':
           return { getExtension: () => undefined };
         case 'Uri':
-          return {
-            file: p => ({ fsPath: p, scheme: 'file', toString: () => `file://${p}` }),
-            parse: s => ({ toString: () => s, fsPath: s, scheme: 'sftp' }),
-          };
+          return Uri;
         case 'EventEmitter':
           return class {
             constructor() {

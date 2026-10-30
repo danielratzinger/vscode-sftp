@@ -8,10 +8,18 @@
 import '../src/extension';
 import initCommands from '../src/initCommands';
 import * as fs from 'fs';
+import * as fse from 'fs-extra';
 import * as os from 'os';
 import * as path from 'path';
 import { createRemoteIfNoneExist, removeRemoteFs } from '../src/core/remoteFs';
 import { startSftpServer } from './sftpServer';
+import { execFileSync } from 'child_process';
+import { Uri } from 'vscode';
+import { createFileService, disposeFileService } from '../src/modules/serviceManager';
+import { uploadFolder } from '../src/fileHandlers';
+import UResource from '../src/core/uResource';
+import app from '../src/app';
+import { ignoredOnRemote, missingLocally, rulesOf } from '../src/modules/remoteCleanup';
 import {
   FileSystem,
   LocalFileSystem,
@@ -134,6 +142,106 @@ async function refusedLogin(): Promise<any> {
   }
 }
 
+/** Every file below a folder, relative to it, sorted. */
+function filesBelow(root: string, at = ''): string[] {
+  return fs
+    .readdirSync(path.join(root, at))
+    .reduce((all: string[], name) => {
+      const relative = at ? `${at}/${name}` : name;
+      return fs.statSync(path.join(root, relative)).isDirectory()
+        ? all.concat(filesBelow(root, relative))
+        : all.concat(relative);
+    }, [])
+    .sort();
+}
+
+/**
+ * `Upload Folder` through the real handler, the real connection and a real
+ * repository: once as it is now, leaving out what `.gitignore` and
+ * `.git-ftp-ignore` exclude, and once in full. Then the two questions the
+ * clean-up commands ask of the server.
+ */
+async function uploadIgnoring(): Promise<any> {
+  // No tree outside the editor; a finished upload asks it to refresh.
+  (app as any).remoteExplorer = { refresh: () => undefined };
+  const local = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'bundle-ignore-local-')));
+  const files: { [name: string]: string } = {
+    '.gitignore': 'vendor/\n*.log\n.env\n',
+    '.git-ftp-ignore': 'tests/\n',
+    'index.php': '<?php',
+    'src/a.php': '<?php',
+    'src/debug.log': 'x',
+    'vendor/psr/log.php': '<?php',
+    'tests/aTest.php': '<?php',
+    '.env': 'SECRET=1',
+  };
+  Object.keys(files).forEach(name => {
+    fse.ensureDirSync(path.dirname(path.join(local, name)));
+    fs.writeFileSync(path.join(local, name), files[name]);
+  });
+  execFileSync('git', ['init', '-q'], { cwd: local });
+
+  const run = async (inFull: boolean) => {
+    const remoteRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bundle-ignore-remote-'));
+    const server = await startSftpServer(remoteRoot);
+    const service = createFileService(
+      {
+        protocol: 'sftp',
+        host: '127.0.0.1',
+        port: server.port,
+        username: 'tester',
+        password: 'anything',
+        remotePath: '/',
+        concurrency: 1,
+        connectTimeout: 10000,
+        verifyTransfer: true,
+        useArchiveTransfer: true,
+        ignore: [],
+      },
+      local
+    );
+    const config = service.getConfig();
+    const context: any = {
+      fileService: service,
+      config,
+      target: UResource.from(Uri.file(local), {
+        localBasePath: local,
+        remoteBasePath: '/',
+        remoteId: service.id,
+        remote: { host: config.host, port: config.port },
+      }),
+    };
+
+    try {
+      await uploadFolder(context, inFull ? { projectIgnore: false } : {});
+      const uploaded = filesBelow(remoteRoot);
+
+      // What is now on the server and only there, for the two finders.
+      fs.writeFileSync(path.join(remoteRoot, 'only-on-server.txt'), 'x');
+      fs.mkdirSync(path.join(remoteRoot, 'uploads'));
+      fs.writeFileSync(path.join(remoteRoot, 'uploads', 'photo.jpg'), 'x');
+
+      const walk = {
+        context,
+        progress: { report: () => undefined },
+        token: { isCancellationRequested: false },
+      } as any;
+      const rules = await rulesOf(context);
+      const ignored = (await ignoredOnRemote(walk, rules!)).map(one => one.label).sort();
+      const onlyThere = (await missingLocally(walk)).map(one => one.label).sort();
+
+      return { uploaded, ignored, onlyThere };
+    } catch (error) {
+      return { failed: error && error.stack };
+    } finally {
+      disposeFileService(service);
+      await server.close();
+    }
+  };
+
+  return { normal: await run(false), inFull: await run(true) };
+}
+
 /** Every command registered, as activation registers them, once each. */
 function registerCommands() {
   initCommands({ subscriptions: [] } as any);
@@ -159,6 +267,7 @@ async function main() {
 
   result.read = await readAFile();
   result.refused = await refusedLogin();
+  result.ignoring = await uploadIgnoring();
 
   // tslint:disable-next-line:no-console
   console.log(`__RESULT__${JSON.stringify(result)}`);

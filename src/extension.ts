@@ -32,6 +32,7 @@ import { tryLoadConfigs } from './modules/config';
 import { getAllFileService, createFileService, disposeFileService } from './modules/serviceManager';
 import { getWorkspaceFolders, setContextValue } from './host';
 import RemoteExplorer from './modules/remoteExplorer';
+import { initIgnoreContext } from './modules/ignoreContext';
 
 async function setupWorkspaceFolder(dir) {
   const configs = await tryLoadConfigs(dir);
@@ -131,6 +132,7 @@ export async function activate(context: vscode.ExtensionContext) {
   try {
     await setup(workspaceFolders);
     app.remoteExplorer = new RemoteExplorer(context);
+    initIgnoreContext(context);
 
     // Only now do the connections exist. Anything that was syncing when this
     // window last closed picks up here - including whatever changed in its

@@ -105,4 +105,26 @@ describe('the packaged bundle', () => {
     expect(report.connect.cleartextFtp).toContain('cleartext');
     expect(report.connect.cleartextFtp).not.toContain('ECONNREFUSED');
   });
+
+  // Upload Folder leaves out what the project's ignore files exclude, folder
+  // and all; Upload Folder in Full sends it, as Upload Folder used to.
+  it('uploads a folder without what .gitignore and .git-ftp-ignore exclude', () => {
+    expect(report.ignoring.normal.failed).toBeUndefined();
+    expect(report.ignoring.normal.uploaded).toEqual(['.git-ftp-ignore', '.gitignore', 'index.php', 'src/a.php']);
+  });
+
+  it('uploads all of it in full', () => {
+    expect(report.ignoring.inFull.uploaded).toEqual(
+      expect.arrayContaining(['.env', 'src/debug.log', 'tests/aTest.php', 'vendor/psr/log.php'])
+    );
+  });
+
+  it('finds on the server what the ignore files exclude, a folder once', () => {
+    expect(report.ignoring.inFull.ignored).toEqual(['.env', '.git/', 'src/debug.log', 'tests/', 'vendor/']);
+    expect(report.ignoring.normal.ignored).toEqual([]);
+  });
+
+  it('finds on the server what is not here', () => {
+    expect(report.ignoring.normal.onlyThere).toEqual(['only-on-server.txt', 'uploads/']);
+  });
 });

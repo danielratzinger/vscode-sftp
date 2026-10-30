@@ -22,6 +22,7 @@ import {
   isScriptFile,
 } from '../../core/scriptFiles';
 import { connectionKeyFor, keepReplacedFor } from '../../modules/replacedFiles';
+import { Candidate, findIgnored, ignoreRulesFor, within } from '../../core/projectIgnore';
 import createFileHandler, { FileHandlerContext } from '../createFileHandler';
 import { transfer, sync, TransferOption, SyncOption, TransferDirection } from './transfer';
 
@@ -36,8 +37,81 @@ function keepReplacedOption(context: FileHandlerContext) {
   return keepReplacedFor(connectionKeyFor(context.config as any));
 }
 
+/**
+ * The connection's own `ignore`, with what the project's ignore files leave
+ * out of this folder added to it.
+ *
+ * Worked out before the transfer starts, because the transfer's question is
+ * asked synchronously, file by file and inside the archive walk alike: one
+ * walk of the folder here, a question to git per level of it, and the answer
+ * is a set to look things up in. Undefined when the project has no such
+ * files, or the target is not a folder, and the upload is what it was.
+ */
+async function leavingOutIgnored(
+  context: FileHandlerContext,
+  ignore: ((fsPath: string) => boolean) | null | undefined
+): Promise<((fsPath: string) => boolean) | undefined> {
+  const folder = context.target.localFsPath;
+  const stat = await fse.stat(folder).catch(() => undefined);
+  if (!stat || !stat.isDirectory()) {
+    return undefined;
+  }
+
+  const rules = await ignoreRulesFor(context.fileService.baseDir);
+  if (!rules) {
+    return undefined;
+  }
+
+  const left = await findIgnored(rules, folder, async dir => {
+    const names = await fse.readdir(dir).catch(() => [] as string[]);
+    const entries: Candidate[] = [];
+    for (const name of names) {
+      const full = path.join(dir, name);
+      // Not into what the connection leaves out anyway: `node_modules` in its
+      // `ignore` is forty thousand files nobody needs asked about.
+      if (ignore && ignore(full)) {
+        continue;
+      }
+      const one = await fse.lstat(full).catch(() => undefined);
+      if (one) {
+        entries.push({ path: full, dir: one.isDirectory() });
+      }
+    }
+    return entries;
+  });
+
+  if (left.length === 0) {
+    return undefined;
+  }
+
+  const shown = left
+    .slice(0, 10)
+    .map(one => `${path.relative(folder, one.path) || '.'}${one.dir ? '/' : ''}`)
+    .join(', ');
+  logger.info(
+    `[upload] leaving out ${left.length} path${left.length === 1 ? '' : 's'} ` +
+      `that ${rules.sources.join(' and ')} exclude${rules.sources.length === 1 ? 's' : ''}: ` +
+      `${shown}${left.length > 10 ? ', …' : ''} (Upload Folder in Full sends them)`
+  );
+
+  const leftOut = new Set(left.map(one => path.resolve(one.path)));
+  return fsPath => Boolean(ignore && ignore(fsPath)) || within(leftOut, fsPath);
+}
+
 function createTransferHandle(direction: TransferDirection) {
   return async function handle(this: FileHandlerContext, option) {
+    if (direction === TransferDirection.LOCAL_TO_REMOTE && option.projectIgnore) {
+      const ignore = await leavingOutIgnored(this, option.ignore);
+      option = { ...option, projectIgnore: undefined };
+      if (ignore) {
+        if (ignore(this.target.localFsPath)) {
+          logger.info(`[upload] ${this.target.localFsPath} is itself excluded; nothing to send`);
+          return;
+        }
+        option.ignore = ignore;
+      }
+    }
+
     const remoteFs = await this.fileService.getRemoteFileSystem(this.config);
     const localFs = this.fileService.getLocalFileSystem();
     const { localFsPath, remoteFsPath } = this.target;
@@ -211,7 +285,7 @@ export const uploadFile = createFileHandler<TransferOption>({
   },
 });
 
-export const uploadFolder = createFileHandler<TransferOption>({
+export const uploadFolder = createFileHandler<TransferOption & { projectIgnore?: boolean }>({
   name: 'upload folder',
   handle: uploadHandle,
   transformOption() {
@@ -224,6 +298,9 @@ export const uploadFolder = createFileHandler<TransferOption>({
       // remoteTimeOffsetInHours: config.remoteTimeOffsetInHours,
       ignore: config.ignore,
       useArchiveTransfer: config.useArchiveTransfer !== false,
+      // What `.gitignore` and `.git-ftp-ignore` leave out stays here too.
+      // `Upload Folder in Full` turns this off.
+      projectIgnore: true,
     };
   },
   afterHandle() {

@@ -340,6 +340,11 @@
         "category": "SFTP"
       },
       {
+        "command": "sftp.upload.folderInFull",
+        "title": "Upload Folder in Full",
+        "category": "SFTP"
+      },
+      {
         "command": "sftp.upload.activeFolder",
         "title": "Upload Active Folder",
         "category": "SFTP"
@@ -563,6 +568,16 @@
         "category": "SFTP"
       },
       {
+        "command": "sftp.removeIgnored",
+        "title": "Remove all ignored files from remote",
+        "category": "SFTP"
+      },
+      {
+        "command": "sftp.tidyRemote",
+        "title": "Tidy Remote",
+        "category": "SFTP"
+      },
+      {
         "command": "sftp.restoreRemote",
         "title": "Restore Server to an Earlier Point",
         "category": "SFTP"
@@ -658,6 +673,14 @@
         {
           "command": "sftp.removeDeleted",
           "when": "sftp.enabled && sftp.anyRepository"
+        },
+        {
+          "command": "sftp.removeIgnored",
+          "when": "sftp.enabled && sftp.hasIgnoreRules"
+        },
+        {
+          "command": "sftp.tidyRemote",
+          "when": "sftp.enabled"
         },
         {
           "command": "sftp.restoreRemote",
@@ -765,6 +788,10 @@
         },
         {
           "command": "sftp.upload.folder",
+          "when": "false"
+        },
+        {
+          "command": "sftp.upload.folderInFull",
           "when": "false"
         },
         {
@@ -920,6 +947,21 @@
           "command": "sftp.upload.folder",
           "group": "sftp.trans@5",
           "alt": "sftp.forceUpload",
+          "when": "sftp.enabled && explorerResourceIsFolder"
+        },
+        {
+          "command": "sftp.upload.folderInFull",
+          "group": "sftp.trans@5",
+          "when": "sftp.enabled && explorerResourceIsFolder && sftp.hasIgnoreRules"
+        },
+        {
+          "command": "sftp.removeIgnored",
+          "group": "sftp.trans@7",
+          "when": "sftp.enabled && explorerResourceIsFolder && sftp.hasIgnoreRules"
+        },
+        {
+          "command": "sftp.tidyRemote",
+          "group": "sftp.trans@7",
           "when": "sftp.enabled && explorerResourceIsFolder"
         },
         {
@@ -1099,6 +1141,11 @@
           "group": "3_trans@5",
           "alt": "sftp.forceUpload",
           "when": "sftp.enabled && !(viewItem =~ /^file/)"
+        },
+        {
+          "command": "sftp.upload.folderInFull",
+          "group": "3_trans@5",
+          "when": "sftp.enabled && sftp.hasIgnoreRules && view == remoteExplorer && !(viewItem =~ /^file/)"
         },
         {
           "command": "sftp.upload.file",

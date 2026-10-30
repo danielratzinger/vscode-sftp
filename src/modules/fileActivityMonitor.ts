@@ -25,6 +25,9 @@ import {
 import { forgetRemoteCopy, remoteCopyAt, RemoteCopy } from './remoteEdits';
 import { downloadFile, uploadFile } from '../fileHandlers';
 import { FileHandlerContext } from '../fileHandlers/createFileHandler';
+import { refreshIgnoreContext } from './ignoreContext';
+import { Candidate, ignoreRulesFor } from '../core/projectIgnore';
+import { FileService } from '../core';
 
 let workspaceWatcher: vscode.Disposable;
 let closeWatcher: vscode.Disposable | undefined;
@@ -53,6 +56,7 @@ async function handleConfigSave(uri: vscode.Uri) {
       logger.debug(`could not rebind autosync: ${error2.message}`)
     );
     app.remoteExplorer.refresh();
+    refreshIgnoreContext().catch(() => undefined);
   }
 }
 
@@ -72,7 +76,7 @@ async function handleFileSave(uri: vscode.Uri) {
   // when it has settled, as before.
   if (state && !state.external) {
     if (config.uploadOnSave && !neverUploaded(fileService, uri.fsPath)) {
-      await uploadOnSave(uri, config, mtime => sentBySave(uri.fsPath, mtime));
+      await uploadOnSave(uri, fileService, mtime => sentBySave(uri.fsPath, mtime));
     }
     return;
   }
@@ -95,7 +99,7 @@ async function handleFileSave(uri: vscode.Uri) {
   }
 
   if (config.uploadOnSave) {
-    await uploadOnSave(uri, config);
+    await uploadOnSave(uri, fileService);
   }
 }
 
@@ -106,11 +110,34 @@ async function handleFileSave(uri: vscode.Uri) {
  */
 async function uploadOnSave(
   uri: vscode.Uri,
-  config: any,
+  fileService: FileService,
   sent?: (mtime: number) => void
 ): Promise<void> {
+  const config: any = fileService.getConfig();
   const fspath = await realpathSync.native(uri.fsPath);
   const target = vscode.Uri.file(fspath);
+
+  // What the project's ignore files leave out is asked about every time,
+  // rather than sent or dropped: saving one is often meant, and as often a
+  // build output or a local `.env` that should never reach the server. What
+  // the connection's own `ignore` names is left out as it always was.
+  const excludedBy = await excludedFromDeploy(fileService, fspath);
+  if (excludedBy) {
+    await offerUpload(
+      fspath,
+      `Upload ${path.basename(fspath)} to ${connectionLabel(config)}?`,
+      `${excludedBy} excludes it from uploads.`,
+      async () => {
+        const { mtimeMs } = await fse.lstat(fspath);
+        await uploadFile(target);
+        if (sent) {
+          sent(mtimeMs);
+        }
+      }
+    );
+    return;
+  }
+
   await withConnection(connectionLabel(config), async () => {
     logger.info(`[file-save] ${fspath}`);
     try {
@@ -124,6 +151,42 @@ async function uploadOnSave(
       app.sftpBarItem.updateStatus(StatusBarItem.Status.error);
     }
   });
+}
+
+/**
+ * Which ignore file leaves a saved file out, if one does - and only when the
+ * connection's own `ignore` does not, since that one is never asked about.
+ */
+async function excludedFromDeploy(
+  fileService: FileService,
+  fspath: string
+): Promise<string | undefined> {
+  const ignore = fileService.getConfig().ignore;
+  if (ignore && ignore(fspath)) {
+    return undefined;
+  }
+
+  try {
+    const rules = await ignoreRulesFor(fileService.baseDir);
+    if (!rules) {
+      return undefined;
+    }
+
+    // The folders above count: a file in an ignored folder is ignored with it.
+    const chain: Candidate[] = [];
+    let at = path.dirname(fspath);
+    while (at.length > fileService.baseDir.length && at.indexOf(fileService.baseDir) === 0) {
+      chain.unshift({ path: at, dir: true });
+      at = path.dirname(at);
+    }
+    chain.push({ path: fspath, dir: false });
+
+    const ignored = await rules.ignoredAmong(chain);
+    return ignored.size > 0 ? rules.sources.join(' or ') : undefined;
+  } catch (error) {
+    logger.debug(`could not ask the ignore files about ${fspath}: ${error.message}`);
+    return undefined;
+  }
 }
 
 /**
