@@ -6,6 +6,15 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.7.7 - 2026-10-30
+
+### Changed
+
+- `Remove all ignored files from remote` is called `Remove ignored files
+  from Remote`. It and `Tidy Remote` are offered in the Remote Explorer too.
+  Started on a folder below the top, they look only below it; a folder that
+  is itself ignored, or not on this machine at all, is offered as one entry.
+
 ## 2.7.6 - 2026-10-30
 
 ### Added
