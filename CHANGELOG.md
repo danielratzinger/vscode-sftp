@@ -6,6 +6,24 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.7.6 - 2026-10-30
+
+### Added
+
+- `Upload Folder` leaves out what `.gitignore` and `.git-ftp-ignore`
+  exclude, and `.git` - file by file and as an archive alike. `.gitignore`
+  is asked of git, so a tracked file is never left out; a folder without a
+  repository has its `.gitignore` files read directly. `Upload Folder in
+  Full` sends everything but the connection's own `ignore`, as `Upload
+  Folder` did.
+- Upload on save asks, every time, before sending a file those files
+  exclude.
+- `Remove all ignored files from remote`: what the ignore rules say should
+  not be on the server, in a list with a box beside each, all ticked.
+- `Tidy Remote`: what only the server has, in the same list, none ticked.
+  What is left ticked is deleted; each file is copied off first and left
+  there if it cannot be, a folder is listed once and removed without a copy.
+
 ## 2.7.5 - 2026-10-22
 
 ### Changed
