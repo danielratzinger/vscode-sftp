@@ -6,6 +6,17 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.7.8 - 2026-10-30
+
+### Fixed
+
+- A save that the ignore files leave out asks again. The editor tucks an
+  unanswered question away after some seconds, and every later save of that
+  file went nowhere without a word until the window was reloaded. Each such
+  question is written to the output as well.
+- In a window that autosyncs, saving a file in `.vscode` or `.claude` asks
+  whether to upload it instead of dropping it.
+
 ## 2.7.7 - 2026-10-30
 
 ### Changed
