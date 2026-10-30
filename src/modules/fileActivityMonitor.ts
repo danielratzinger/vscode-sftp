@@ -27,6 +27,7 @@ import { downloadFile, uploadFile } from '../fileHandlers';
 import { FileHandlerContext } from '../fileHandlers/createFileHandler';
 import { refreshIgnoreContext } from './ignoreContext';
 import { Candidate, ignoreRulesFor } from '../core/projectIgnore';
+import { SaveQuestions } from './saveQuestions';
 import { FileService } from '../core';
 
 let workspaceWatcher: vscode.Disposable;
@@ -70,14 +71,26 @@ async function handleFileSave(uri: vscode.Uri) {
   const state = autosyncState(fileService);
 
   // A connection has one writer. While it is this folder, a save goes up at
-  // once, as upload-on-save always sent it - gitignored files included, since
-  // saving one is asking for it - and the watcher, seeing the same write, does
+  // once, as upload-on-save always sent it - what the ignore files leave out
+  // only on a yes - and the watcher, seeing the same write, does
   // not send it again. Without upload-on-save the watcher sends what git keeps
   // when it has settled, as before.
   if (state && !state.external) {
-    if (config.uploadOnSave && !neverUploaded(fileService, uri.fsPath)) {
-      await uploadOnSave(uri, fileService, mtime => sentBySave(uri.fsPath, mtime));
+    if (!config.uploadOnSave) {
+      return;
     }
+    // Autosync never sends `.git`, `.vscode` or `.claude`; a save of one is
+    // asked about, as a save the ignore files leave out is.
+    if (neverUploaded(fileService, uri.fsPath)) {
+      await offerUpload(
+        uri.fsPath,
+        `Upload ${path.basename(uri.fsPath)} to ${connectionLabel(config)}?`,
+        `Autosync never sends ${path.relative(state.root, uri.fsPath).split(path.sep)[0]}.`,
+        () => uploadFile(uri)
+      );
+      return;
+    }
+    await uploadOnSave(uri, fileService, mtime => sentBySave(uri.fsPath, mtime));
     return;
   }
 
@@ -227,7 +240,7 @@ function remoteCopyContext(file: string, copy: RemoteCopy): FileHandlerContext {
 }
 
 /** Files with a question already on screen, so saving again does not stack another. */
-const asking = new Set<string>();
+const asking = new SaveQuestions();
 
 /**
  * Asks whether to send a save, and sends it on a yes.
@@ -243,16 +256,19 @@ async function offerUpload(
   detail: string,
   send: () => Promise<void>
 ): Promise<void> {
-  if (asking.has(file)) {
+  const token = asking.begin(file);
+  if (token === undefined) {
     return;
   }
 
-  asking.add(file);
+  // Said in the output too: a question tucked away unanswered is otherwise a
+  // save that left no trace.
+  logger.info(`[file-save] not sent unasked: ${file} - ${detail}`);
   let answer: string | undefined;
   try {
     answer = await vscode.window.showWarningMessage(`${message} ${detail}`, UPLOAD, NOT_NOW);
   } finally {
-    asking.delete(file);
+    asking.end(file, token);
   }
 
   if (answer !== UPLOAD) {
