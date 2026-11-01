@@ -6,6 +6,17 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.7.9 - 2026-11-01
+
+### Added
+
+- MCP: a file over `sftp.mcp.maxFileBytes` can be read in part instead of
+  not at all. `read` with `tail` returns its last lines and fetches only the
+  end; `start_line`/`end_line` read a range from the top; `search` reads it
+  through once without keeping it and gives line numbers. None of them
+  returns more than the limit, and credentials are redacted as before. Over
+  SFTP and FTP.
+
 ## 2.7.8 - 2026-10-30
 
 ### Fixed
