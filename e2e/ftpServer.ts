@@ -105,6 +105,7 @@ export async function startFtpServer(
   const server = net.createServer(rawControl => {
     opened += 1;
     live.push(rawControl);
+    rawControl.on('error', () => undefined);
     let control: net.Socket | tls.TLSSocket = rawControl;
     let protectData = false;
     rawControl.on('close', () => {
@@ -115,6 +116,8 @@ export async function startFtpServer(
     });
 
     let cwd = '/';
+    // Where the next RETR begins, set by REST and used once.
+    let restartAt = 0;
     let pending: net.Server | null = null;
     // The client opens the data connection as soon as it has the PASV reply,
     // which is before it sends the command that uses it. Either can arrive
@@ -134,7 +137,13 @@ export async function startFtpServer(
       work(socket);
     };
 
-    const say = (line: string) => control.write(`${line}\r\n`);
+    // A client that let go of a transfer may have closed the connection the
+    // reply to it was going to.
+    const say = (line: string) => {
+      if (!control.destroyed && control.writable) {
+        control.write(`${line}\r\n`);
+      }
+    };
     const within = (given: string) => {
       const target = given && given.charAt(0) === '/' ? given : path.posix.join(cwd, given || '.');
       return path.join(root, path.normalize('/' + target));
@@ -151,6 +160,9 @@ export async function startFtpServer(
         // closes is a handle nobody closes.
         data.close();
         live.push(socket);
+        // A client that has what it wanted closes the data connection with
+        // the file still coming. A server shrugs; so does this one.
+        socket.on('error', () => undefined);
         socket.on('close', () => {
           const at = live.indexOf(socket);
           if (at !== -1) {
@@ -357,17 +369,35 @@ export async function startFtpServer(
           return;
         }
 
+        case 'REST': {
+          restartAt = Number(argument) || 0;
+          return say(`350 Restarting at ${restartAt}`);
+        }
+
         case 'RETR': {
           const file = within(argument);
+          const start = restartAt;
+          restartAt = 0;
           job = socket => {
             say('150 Opening data connection');
-            const stream = fs.createReadStream(file);
+            const stream = fs.createReadStream(file, { start });
             stream.on('error', () => {
               socket.end();
               say('550 Not found');
             });
+            // 226 once the whole file went out; 426 when the client closed
+            // the data connection first, as a real server reports an abort.
+            let sent = false;
+            stream.on('end', () => (sent = true));
             stream.pipe(socket);
-            socket.on('close', () => say('226 Transfer complete'));
+            socket.on('close', () => {
+              if (sent) {
+                say('226 Transfer complete');
+              } else {
+                stream.destroy();
+                say('426 Connection closed; transfer aborted');
+              }
+            });
           };
           runWhenPaired();
           return;

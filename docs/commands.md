@@ -511,9 +511,13 @@ where an agent otherwise waits forever.
 
 Every path is resolved against the connection's `remotePath` and refused if it
 lands outside it, so `../..` cannot walk into another site on the same server or
-write a file outside your project folder. Files over 2 MB are refused before
-they are fetched and skipped during a search — raise `sftp.mcp.maxFileBytes` if
-you work with larger source files. Binary files are reported as such rather than
+write a file outside your project folder. A file over 2 MB is never fetched
+whole, but it can be read in part: `read` with `tail` returns its last lines
+and fetches only its end, `start_line`/`end_line` read a range from the top,
+and a search reads it through once without keeping it — a 67 MB download log
+is as searchable as a PHP file. None of these returns more than 2 MB at a time,
+and nothing of the file is kept on this machine. Raise `sftp.mcp.maxFileBytes`
+if you work with larger source files you need whole. Binary files are reported as such rather than
 returned as text, and a listing of more than a thousand entries says how many it
 left out.
 

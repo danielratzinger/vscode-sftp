@@ -683,3 +683,32 @@ describe('reading a file that is entirely a credential', () => {
     expect(vol.existsSync('/work/site/id_rsa')).toBe(false);
   });
 });
+
+describe('read with tail', () => {
+  it('numbers the last lines of a file small enough to read whole', async () => {
+    place({});
+    const result = await tool(createContext(), 'read').run({
+      server: 'Staging',
+      path: '/srv/app/index.php',
+      tail: 2,
+    });
+
+    expect((result.structured as any).content).toBe('2\tline two\n3\tline three');
+  });
+
+  it('says plainly when the connection cannot read part of a large file', async () => {
+    place({});
+    const context = createContext({
+      maxFileBytes: () => 10,
+    } as any);
+
+    const result = await tool(context, 'read').run({
+      server: 'Staging',
+      path: '/srv/app/index.php',
+      tail: 2,
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.text).toMatch(/cannot read part of one/);
+  });
+});

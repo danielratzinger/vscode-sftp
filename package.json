@@ -255,7 +255,7 @@
         "sftp.mcp.maxFileBytes": {
           "type": "number",
           "default": 2097152,
-          "markdownDescription": "The largest file an MCP client may read, in bytes. Two megabytes by default. Bigger files are refused before they are fetched, and skipped during a search: they are almost always logs, dumps or media rather than code."
+          "markdownDescription": "The largest file an MCP client may read whole, in bytes, and the most one read returns. Two megabytes by default. A bigger file is never fetched whole, but can still be read in part: `tail` fetches only its end, a line range is read from the top, and a search reads it through once without keeping it."
         },
         "sftp.mcp.maxFiles": {
           "type": "number",

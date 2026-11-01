@@ -22,6 +22,8 @@ export interface FileOption {
   mode?: number;
   autoClose?: boolean;
   fd?: FileHandle;
+  /** For reading: the byte to begin at, rather than the first. */
+  start?: number;
 }
 
 export interface FileStats {

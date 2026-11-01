@@ -175,15 +175,8 @@ export interface ContentSearchOption {
   context: number;
 }
 
-export function searchText(
-  path: string,
-  content: string,
-  option: ContentSearchOption
-): Match[] {
-  const lines = content.split('\n');
-  const matches: Match[] = [];
-
-  let test: (line: string) => boolean;
+/** Whether a line matches the query; throws on a pattern that is not one. */
+export function lineTest(option: { query: string; regex?: boolean }): (line: string) => boolean {
   if (option.regex) {
     let expression: RegExp;
     try {
@@ -194,11 +187,21 @@ export function searchText(
           'only, with no delimiters and no trailing flags.'
       );
     }
-    test = line => expression.test(line);
-  } else {
-    const needle = option.query.toLowerCase();
-    test = line => line.toLowerCase().indexOf(needle) !== -1;
+    return line => expression.test(line);
   }
+
+  const needle = option.query.toLowerCase();
+  return line => line.toLowerCase().indexOf(needle) !== -1;
+}
+
+export function searchText(
+  path: string,
+  content: string,
+  option: ContentSearchOption
+): Match[] {
+  const lines = content.split('\n');
+  const matches: Match[] = [];
+  const test = lineTest(option);
 
   for (let i = 0; i < lines.length; i += 1) {
     if (matches.length >= option.maxPerFile) {

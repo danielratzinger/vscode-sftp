@@ -4,6 +4,7 @@ import upath from '../core/upath';
 import { FileEntry, FileType } from '../core/fs';
 import { describeSize } from '../helper';
 import * as fse from 'fs-extra';
+import { Readable } from 'stream';
 import { ToolDefinition, ToolResult } from './protocol';
 import {
   cachePathFor,
@@ -22,6 +23,7 @@ import {
 } from './redaction';
 import {
   DEFAULT_WALK,
+  lineTest,
   Match,
   rank,
   searchPaths,
@@ -32,6 +34,7 @@ import {
   WalkResult,
 } from './search';
 import { Budget, createBudget, UNLIMITED, withoutHeadroom } from './budget';
+import { LineRedactor, OpenAt, rangeOf, scanFor, tailOf } from './largeFile';
 import { localTime } from './localTime';
 import { describeOutline, outlineOf } from './outline';
 import { diff as diffOf } from './diff';
@@ -89,6 +92,18 @@ const MAX_LIST_ENTRIES = 1000;
 
 /** A page of a tree. The whole of a large one is more than anyone reads at once. */
 const MAX_TREE_ENTRIES = 1000;
+
+/** As many lines as anybody reads off the end of a log at once. */
+const MAX_TAIL_LINES = 5000;
+
+/** A file a search read through rather than fetched. */
+interface StreamedFile {
+  path: string;
+  size: number;
+  lines: number;
+  complete: boolean;
+  stoppedByTime: boolean;
+}
 
 const MAX_STALE_AGE = 90 * 24 * 60 * 60 * 1000;
 const MAX_NOTES = 5000;
@@ -155,6 +170,8 @@ export interface RemoteLike {
   openListing?(dir: string): Promise<ListingLike>;
   lstat(fsPath: string): Promise<{ type: FileType; size: number; mtime: number }>;
   readFile(fsPath: string): Promise<string | Buffer>;
+  /** A stream from a byte offset, for a file too large to read whole. */
+  get?(fsPath: string, option?: { start?: number }): Promise<Readable>;
 }
 
 /** Lines are 1-based and inclusive, as every editor and stack trace has them. */
@@ -171,6 +188,13 @@ function sliceLines(text: string, from?: number, to?: number): string {
     .slice(start - 1, end)
     .map((line, index) => `${start + index}\t${line}`)
     .join('\n');
+}
+
+/** The line `count` lines from the end begins at, for `sliceLines`. */
+function lastLines(text: string, count: number): number {
+  const lines = text.split('\n');
+  const total = lines[lines.length - 1] === '' ? lines.length - 1 : lines.length;
+  return Math.max(1, total - count + 1);
 }
 
 const DIVERGENCE: { [key: string]: string } = {
@@ -574,6 +598,99 @@ export function createTools(
     }
   }
 
+  /**
+   * A file over the limit, read in part: its end, or a range of lines. Never
+   * more than the limit comes back, and nothing is kept on this machine - a
+   * piece of a file is not a copy of it.
+   */
+  async function readInPieces(
+    remote: RemoteLike,
+    target: string,
+    size: number,
+    limit: number,
+    tail: number | undefined,
+    args: any
+  ): Promise<ToolResult> {
+    const tooLarge =
+      `${target} is ${describeSize(size)}, over the ${describeSize(limit)} ` +
+      'limit for reading a file whole';
+    if (!remote.get) {
+      return errorResult(
+        `${tooLarge}, and this connection cannot read part of one. If it is ` +
+          'source you need, raise sftp.mcp.maxFileBytes.'
+      );
+    }
+    if (tail === undefined && args.start_line === undefined && args.end_line === undefined) {
+      return errorResult(
+        `${tooLarge}. Read part of it instead, none of which fetches it whole: ` +
+          'tail: 200 for its last lines, start_line and end_line for a range, ' +
+          'or `search` with dir set to it for the lines that mention something. ' +
+          'If it is source you need whole, raise sftp.mcp.maxFileBytes.'
+      );
+    }
+
+    const get = remote.get.bind(remote);
+    const open: OpenAt = start => get(target, start > 0 ? { start } : undefined);
+    const redactor = new LineRedactor(redaction());
+    const budget = budgetFor();
+    const about = `${target} (${describeSize(size)})`;
+
+    let text: string;
+    let header: string;
+    try {
+      if (tail !== undefined) {
+        const got = await tailOf(open, size, tail, limit);
+        text = redactor.lines(got.lines, !got.fromStart).join('\n');
+        header =
+          `The last ${got.lines.length} lines of ${about}, fetched from its end. ` +
+          'Without reading the whole file their line numbers are not known; ' +
+          '`search` gives line numbers.' +
+          (got.cutShort ? ` Fewer than ${tail}: more would be over the limit.` : '');
+      } else {
+        const from = Math.max(1, args.start_line || 1);
+        const to = args.end_line === undefined ? Infinity : args.end_line;
+        const got = await rangeOf(open, from, to, limit, () => budget.spent());
+        if (got.lines.length === 0) {
+          return errorResult(
+            got.endOfFile
+              ? `${target} has ${got.seen} lines; nothing from line ${from}.`
+              : `Time ran out at line ${got.seen} of ${target}, before line ${from}. ` +
+                  'A range deep in a large file is read from the top; tail ' +
+                  'reaches the end at once.'
+          );
+        }
+        const clean = redactor.lines(got.lines.map(line => line.text), from > 1);
+        const first = got.lines[0].number;
+        const last = got.lines[got.lines.length - 1].number;
+        text = clean.map((line, at) => `${first + at}\t${line}`).join('\n');
+        header =
+          `Lines ${first}-${last} of ${about}, read from the top without keeping the rest.` +
+          (got.cutShort ? ` Stopped at the limit; continue with start_line: ${last + 1}.` : '') +
+          (got.outOfTime ? ` Time ran out; continue with start_line: ${last + 1}.` : '') +
+          (got.endOfFile && last < to && to !== Infinity ? ` The file ends at line ${last}.` : '');
+      }
+    } catch (error) {
+      return errorResult(`Could not read ${target}: ${error.message}`);
+    }
+
+    if (looksBinary(text)) {
+      return errorResult(`${target} is not a text file.`);
+    }
+
+    const found = Array.from(redactor.found);
+    const notes = [header, redactionNote(found)].filter(Boolean).join('\n');
+    return {
+      text: `${notes}\n\n${text}`,
+      structured: {
+        path: target,
+        content: text,
+        state: 'partial',
+        source: 'server-range',
+        redacted: found,
+      },
+    };
+  }
+
   const sizeLimit = (): number => {
     const configured = context.maxFileBytes ? context.maxFileBytes() : 0;
     return configured > 0 ? configured : MAX_FILE_BYTES;
@@ -973,7 +1090,8 @@ export function createTools(
       'The contents of one file as it is on the server. Always the server\u2019s ' +
       'version, even when a local copy exists \u2014 you asked what is deployed. ' +
       'Give start_line and end_line to read part of a large file rather than all ' +
-      'of it. If a local copy differs, the reply says so and `local-copy` ' +
+      'of it, or tail for its last lines - the way into a log of any size. ' +
+      'If a local copy differs, the reply says so and `local-copy` ' +
       'returns that instead.',
     inputSchema: {
       type: 'object',
@@ -982,6 +1100,12 @@ export function createTools(
         path: { type: 'string', description: 'Absolute remote path.' },
         start_line: { type: 'integer', description: 'First line, 1-based.' },
         end_line: { type: 'integer', description: 'Last line, inclusive.' },
+        tail: {
+          type: 'integer',
+          description:
+            'The last this many lines, up to 5000. Works on a file of any size: ' +
+            'only its end is fetched.',
+        },
       },
       required: ['server', 'path'],
     },
@@ -1083,13 +1207,11 @@ export function createTools(
         };
       }
 
+      const tail =
+        args.tail === undefined ? undefined : Math.max(1, clamp(args.tail, 100, MAX_TAIL_LINES));
+
       if (remoteStat.size > limit) {
-        return errorResult(
-          `${target} is ${describeSize(remoteStat.size)}, over the ` +
-            `${describeSize(limit)} limit, so it was not fetched. If it is ` +
-            'source you need, raise sftp.mcp.maxFileBytes; if it is a log or ' +
-            'a dump, `search` finds lines in it without reading it whole.'
-        );
+        return readInPieces(remote, target, remoteStat.size, limit, tail, args);
       }
 
       const toLocal = context.localPathFor || localPathFor;
@@ -1122,7 +1244,8 @@ export function createTools(
 
       const scrubbed = redact(raw, redaction());
 
-      const wholeFile = args.start_line === undefined && args.end_line === undefined;
+      const wholeFile =
+        args.start_line === undefined && args.end_line === undefined && tail === undefined;
       if (wholeFile && !canReturnWhole(scrubbed.text)) {
         // Half a file is bad; a file with placeholders where credentials were
         // is worse, because saving it would overwrite the live values.
@@ -1134,7 +1257,10 @@ export function createTools(
         );
       }
 
-      const body = sliceLines(scrubbed.text, args.start_line, args.end_line);
+      const body =
+        tail === undefined
+          ? sliceLines(scrubbed.text, args.start_line, args.end_line)
+          : sliceLines(scrubbed.text, lastLines(scrubbed.text, tail));
       // The server's bytes, not the redacted view of them: the note describes
       // the file, and a marker in place of a credential is ours, not its.
       const version = {
@@ -1357,6 +1483,7 @@ export function createTools(
       let skipped = 0;
       let failed = 0;
       let firstFailure = '';
+      const streamed: StreamedFile[] = [];
       // Where the next search picks up: the file after the last one this call
       // looked at, whatever it was that stopped it.
       let reached = Math.min(from, found.files.length);
@@ -1373,10 +1500,48 @@ export function createTools(
         }
 
         reached += 1;
-        // Skipped before the fetch: a search should not pull a database dump
-        // across the wire to find nothing in it.
+        // Not fetched whole: a search should not pull a database dump across
+        // the wire to keep it. Where the protocol can stream it, it is read
+        // through once and let go of a line at a time; where it cannot, it is
+        // skipped and the reply says so.
         if (file.size > limit) {
-          skipped += 1;
+          if (!remote.get) {
+            skipped += 1;
+            continue;
+          }
+
+          let scan;
+          try {
+            scan = await scanFor(
+              await remote.get(file.path),
+              file.path,
+              searchOption,
+              lineTest(searchOption),
+              new LineRedactor(redaction()),
+              () => budget.spent()
+            );
+          } catch (error) {
+            if (/not a valid pattern/.test(error.message)) {
+              return errorResult(error.message);
+            }
+            failed += 1;
+            firstFailure = firstFailure || error.message || 'unknown';
+            continue;
+          }
+
+          scanned += 1;
+          streamed.push({
+            path: file.path,
+            size: file.size,
+            lines: scan.lines,
+            complete: scan.complete,
+            stoppedByTime: scan.outOfTime,
+          });
+          matches.push(...scan.matches);
+          if (scan.outOfTime) {
+            outOfTime = true;
+            break;
+          }
           continue;
         }
 
@@ -1457,6 +1622,7 @@ export function createTools(
           walk: found,
           depth: option.maxDepth,
           more: matches.length > ordered.length,
+          streamed,
         }),
         structured: {
           matches: ordered,
@@ -2616,6 +2782,7 @@ function describeSearch(
     walk: WalkResult;
     depth: number;
     more: boolean;
+    streamed?: StreamedFile[];
   }
 ): string {
   const lines: string[] = [];
@@ -2639,6 +2806,18 @@ function describeSearch(
         'as too large or not text.'
     );
   }
+  (about.streamed || []).forEach(file => {
+    // A large file is read from the top; where a search stopped in one is
+    // where the next question about it should start thinking.
+    lines.push(
+      `${file.path} (${describeSize(file.size)}) was read through without being ` +
+        (file.complete
+          ? `kept: all ${file.lines} lines.`
+          : file.stoppedByTime
+          ? `kept, but only to line ${file.lines} before time ran out.`
+          : `kept, to line ${file.lines}, where max_per_file was reached.`)
+    );
+  });
   if (about.outOfTime) {
     lines.push('The search ran out of time before every file was read.');
   }

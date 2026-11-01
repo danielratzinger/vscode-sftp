@@ -494,8 +494,8 @@ export default class FTPFileSystem extends RemoteFileSystem {
       });
   }
 
-  async get(path, _option?: FileOption): Promise<Readable> {
-    const stream = await this.atomicGet(path);
+  async get(path, option?: FileOption): Promise<Readable> {
+    const stream = await this.atomicGet(path, option && option.start ? option.start : 0);
 
     if (!stream) {
       throw new Error('create ReadStream failed');
@@ -922,20 +922,31 @@ export default class FTPFileSystem extends RemoteFileSystem {
    * connection stays busy until the last byte. Releasing it there would let a
    * second transfer queue up behind this one on the same connection.
    */
-  private async atomicGet(path: string): Promise<Readable> {
+  private async atomicGet(path: string, start = 0): Promise<Readable> {
     const lease = await this._pool.acquire();
 
     let stream: Readable;
     try {
       stream = await withDeadline(
         new Promise<Readable>((resolve, reject) => {
-          lease.client.getFsClient().get(path, (err, result) => {
-            if (err) {
-              return reject(err);
-            }
+          const client = lease.client.getFsClient();
+          const retrieve = () =>
+            client.get(path, (err, result) => {
+              if (err) {
+                return reject(err);
+              }
 
-            resolve(result);
-          });
+              resolve(result);
+            });
+
+          if (start <= 0) {
+            retrieve();
+            return;
+          }
+
+          // REST, then RETR begins there: the end of a large log without the
+          // rest of it.
+          client.restart(start, err => (err ? reject(err) : retrieve()));
         }),
         {
           // Opening the data connection is a command like any other. What
@@ -997,6 +1008,9 @@ export default class FTPFileSystem extends RemoteFileSystem {
     };
 
     // 'close' covers a consumer that gives up without reading to the end.
+    // node-ftp holds it back until the server has answered the RETR - 426,
+    // for a transfer let go of early - so the connection goes back to the
+    // pool with no reply still owed on it.
     stream.once('end', () => release());
     stream.once('close', () => release());
     stream.once('error', release);
