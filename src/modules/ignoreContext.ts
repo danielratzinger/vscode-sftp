@@ -15,6 +15,13 @@ import { getAllFileService } from './serviceManager';
  */
 
 export async function refreshIgnoreContext(): Promise<void> {
+  // Asked at the same moments, so kept here: `Open SSH Session` in the file
+  // explorer only where some connection could open one.
+  setContextValue(
+    'anySsh',
+    getAllFileService().some(service => service.getConfig().protocol === 'sftp')
+  );
+
   let any = false;
   for (const service of getAllFileService()) {
     // Built from `ignore` and `ignoreFile` together, and null with neither.

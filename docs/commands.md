@@ -327,8 +327,29 @@ Timestamps are compared to the second, matching the sync algorithm, and a transf
 ### SFTP: Cancel All Transfers
 Stop the current transfers (upload and download).
 
-### SFTP: Open SSH in Terminal
-Open a terminal in VSCode and auto login to a specific server.
+### SFTP: Open SSH Session
+Opens a terminal logged in to an SFTP connection's server, in the folder it was
+opened on. It is in the right-click menu of the connection and its folders in the
+Remote Explorer, and of folders in the file explorer. From the command palette it
+opens in the connection's `remotePath`.
+
+The terminal runs `ssh` itself, not a shell, so the command never reaches a shell
+history, and closing the session closes the terminal. Whatever `ssh` asks is asked
+in the editor instead:
+
+- **A password or key passphrase**: the stored one, as the connection uses it,
+  once. If the server refuses it, you are asked. Nothing is stored from here.
+- **A new host key**: shown in a dialog, and accepted only on *Connect*.
+- **Anything else**, such as a one-time code: asked in an input box.
+
+The password goes from the store to `ssh` through a pipe. It never appears in a
+command line, an environment variable or a file. `ssh` reaches the editor
+through a socket only your user can open, with a token that stops working when
+the terminal is closed or after five minutes.
+
+This needs OpenSSH 8.4 or later. An older `ssh` asks in the terminal, as before.
+On Windows the command is typed into the default shell, and you type the password
+there.
 
 
 ## MCP server

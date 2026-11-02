@@ -139,7 +139,9 @@ Absolute path to your SSH configuration file.
 ```
 
 ### sshCustomParams
-Extra parameters appended to the SSH command used by "Open SSH in Terminal".
+Extra parameters appended to the SSH command used by "Open SSH Session".
+When set, they decide what runs on the server, and `${remotePath}` in them is the
+folder the session was opened on. Without them, the session starts in that folder.
 
 | Key | Value |
 | --- | --- |

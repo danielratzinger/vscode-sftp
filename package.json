@@ -307,7 +307,7 @@
       },
       {
         "command": "sftp.openConnectInTerminal",
-        "title": "Open SSH in Terminal",
+        "title": "Open SSH Session",
         "category": "SFTP"
       },
       {
@@ -997,6 +997,11 @@
           "when": "sftp.enabled && explorerResourceIsFolder"
         },
         {
+          "command": "sftp.openConnectInTerminal",
+          "group": "navigation@22",
+          "when": "sftp.enabled && sftp.anySsh && explorerResourceIsFolder"
+        },
+        {
           "command": "sftp.autosyncWorktree",
           "group": "sftp.trans@1",
           "when": "sftp.enabled && explorerResourceIsFolder && !(resourcePath in sftp.autosyncPaths)"
@@ -1098,8 +1103,8 @@
         },
         {
           "command": "sftp.openConnectInTerminal",
-          "group": "navigation",
-          "when": "view == remoteExplorer && viewItem =~ /^root/"
+          "group": "navigation@4",
+          "when": "view == remoteExplorer && viewItem =~ /-ssh$/"
         },
         {
           "command": "sftp.remoteExplorer.editInLocal",
@@ -1114,22 +1119,22 @@
         {
           "command": "sftp.revealInFinder.mac",
           "group": "2_files@2",
-          "when": "view == remoteExplorer && isMac && viewItem =~ /-local$/"
+          "when": "view == remoteExplorer && isMac && viewItem =~ /-local(-ssh)?$/"
         },
         {
           "command": "sftp.revealInFinder.windows",
           "group": "2_files@2",
-          "when": "view == remoteExplorer && isWindows && viewItem =~ /-local$/"
+          "when": "view == remoteExplorer && isWindows && viewItem =~ /-local(-ssh)?$/"
         },
         {
           "command": "sftp.revealInFinder.linux",
           "group": "2_files@2",
-          "when": "view == remoteExplorer && isLinux && viewItem =~ /-local$/"
+          "when": "view == remoteExplorer && isLinux && viewItem =~ /-local(-ssh)?$/"
         },
         {
           "command": "sftp.revealInTerminal",
           "group": "2_files@3",
-          "when": "view == remoteExplorer && viewItem =~ /^(folder|root)(-autosync(away)?)?(-repo)?-local$/"
+          "when": "view == remoteExplorer && viewItem =~ /^(folder|root)(-autosync(away)?)?(-repo)?-local(-ssh)?$/"
         },
         {
           "command": "sftp.revealInExplorer",
@@ -1242,7 +1247,7 @@
         {
           "command": "sftp.clear.localFolder",
           "group": "3_trans@8",
-          "when": "sftp.enabled && viewItem =~ /^(folder|root)(-autosync(away)?)?-local$/"
+          "when": "sftp.enabled && viewItem =~ /^(folder|root)(-autosync(away)?)?-local(-ssh)?$/"
         },
         {
           "command": "sftp.download.file",

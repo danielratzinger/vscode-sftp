@@ -231,11 +231,15 @@ export default class RemoteTreeData
       kind !== 'file' &&
       localCopyIsInARepository(local, root.explorerContext.fileService.workspace);
 
+    // Last, and only on what a shell can be opened in: an SFTP server's folders.
+    const ssh = kind !== 'file' && root.explorerContext.config.protocol === 'sftp';
+
     return (
       kind +
       autosync +
       (inRepository ? '-repo' : '') +
-      (hasLocalCopy(local) ? '-local' : '')
+      (hasLocalCopy(local) ? '-local' : '') +
+      (ssh ? '-ssh' : '')
     );
   }
 

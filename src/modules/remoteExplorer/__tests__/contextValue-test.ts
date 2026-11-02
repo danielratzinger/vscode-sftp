@@ -207,6 +207,31 @@ describe('the menu patterns against the values the tree produces', () => {
     );
   });
 
+  it('keeps every local-copy command on an SFTP connection, which carries -ssh last', () => {
+    expect(menuShows('sftp.clear.localFolder', 'root-local-ssh')).toBe(true);
+    expect(menuShows('sftp.clear.localFolder', 'folder-autosync-local-ssh')).toBe(true);
+    expect(menuShows('sftp.clear.localFolder', 'root-repo-local-ssh')).toBe(false);
+    expect(menuShows('sftp.revealInTerminal', 'root-repo-local-ssh')).toBe(true);
+    expect(menuShows('sftp.revealInTerminal', 'root-ssh')).toBe(false);
+    expect(menuShows('sftp.revealInFinder.mac', 'folder-local-ssh')).toBe(true);
+    expect(menuShows('sftp.removeDeleted', 'root-repo-local-ssh')).toBe(true);
+    ROOTS.forEach(value => {
+      const syncing = value.indexOf('-autosync') !== -1;
+      expect(menuShows('sftp.autosyncWorktree', `${value}-ssh`)).toBe(!syncing);
+      expect(menuShows('sftp.stopAutosyncWorktree', `${value}-ssh`)).toBe(syncing);
+    });
+  });
+
+  it('offers Open SSH Session on the folders of an SFTP connection only', () => {
+    ROOTS.forEach(value => {
+      expect(menuShows('sftp.openConnectInTerminal', `${value}-ssh`)).toBe(true);
+      // FTP: no shell to open.
+      expect(menuShows('sftp.openConnectInTerminal', value)).toBe(false);
+    });
+    expect(menuShows('sftp.openConnectInTerminal', 'folder-local-ssh')).toBe(true);
+    expect(menuShows('sftp.openConnectInTerminal', 'file-local')).toBe(false);
+  });
+
   it('offers the reveal commands only where the folder is somewhere else', () => {
     expect(menuShows('sftp.autosyncReveal.terminal', 'root-autosyncaway-local')).toBe(true);
     // Syncing this window's own folder: revealing it would open the folder
@@ -286,6 +311,18 @@ describe('the file explorer menu, which has no per-item value of ours', () => {
     expect(there).toContain('sftp.stopAutosyncWorktree');
     expect(there).toContain('sftp.switchAutosyncWorktree');
     expect(there).toContain('sftp.autosyncReveal.terminal');
+  });
+
+  it('offers Open SSH Session on folders, and only with an SFTP connection here', () => {
+    const keys = { 'sftp.enabled': true, explorerResourceIsFolder: true };
+    expect(explorerShows('sftp.openConnectInTerminal', { ...keys, 'sftp.anySsh': true })).toBe(true);
+    expect(explorerShows('sftp.openConnectInTerminal', keys)).toBe(false);
+    expect(
+      explorerShows('sftp.openConnectInTerminal', {
+        'sftp.enabled': true,
+        'sftp.anySsh': true,
+      })
+    ).toBe(false);
   });
 
   it('does not offer it on a file', () => {
