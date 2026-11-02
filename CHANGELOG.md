@@ -6,6 +6,20 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.7.10 - 2026-11-02
+
+### Added
+
+- "Open SSH Session" in the right-click menu of SFTP connections and their
+  folders in the Remote Explorer, and of folders in the file explorer. It
+  opens a terminal logged in to the server, in the folder it was opened on.
+  The terminal runs `ssh` itself, so the command never reaches a shell
+  history. A stored password answers `ssh` once, through an askpass helper,
+  and never appears in a command line, an environment variable or a file.
+  A refused password, a new host key or a one-time code is asked in the
+  editor. Needs OpenSSH 8.4 or later; on Windows the password is typed in
+  the terminal as before.
+
 ## 2.7.9 - 2026-11-01
 
 ### Added
