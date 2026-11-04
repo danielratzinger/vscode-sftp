@@ -13,6 +13,7 @@ import {
   watchForStall,
 } from './operationTimeout';
 import SSHClient, { ExecChannel } from '../remote-client/sshClient';
+import saying from './saying';
 
 type FileHandle = Buffer;
 
@@ -204,7 +205,7 @@ export default class SFTPFileSystem extends RemoteFileSystem
         err => {
           watchdog.stop();
           if (err) {
-            reject(err);
+            reject(saying(err, `download ${remotePath}`));
             return;
           }
 
@@ -237,7 +238,7 @@ export default class SFTPFileSystem extends RemoteFileSystem
         err => {
           watchdog.stop();
           if (err) {
-            reject(err);
+            reject(saying(err, `upload ${remotePath}`));
             return;
           }
 
@@ -285,7 +286,7 @@ export default class SFTPFileSystem extends RemoteFileSystem
     return new Promise((resolve, reject) => {
       this.sftp.lstat(path, (err, stat) => {
         if (err) {
-          reject(err);
+          reject(saying(err, `stat ${path}`));
           return;
         }
 
@@ -302,7 +303,7 @@ export default class SFTPFileSystem extends RemoteFileSystem
     return new Promise((resolve, reject) => {
       this.sftp.open(path, flags, mode, (err, handle) => {
         if (err) {
-          return reject(err);
+          return reject(saying(err, `open ${path}`));
         }
 
         resolve({
@@ -317,7 +318,7 @@ export default class SFTPFileSystem extends RemoteFileSystem
     return new Promise((resolve, reject) => {
       this.sftp.close(fd.handle, err => {
         if (err) {
-          reject(err);
+          reject(saying(err, `close ${fd.path}`));
           return;
         }
 
@@ -335,7 +336,7 @@ export default class SFTPFileSystem extends RemoteFileSystem
           // see WriteStream.prototype.open in ssh2-streams.
           this.sftp.stat(fd.path, (_err, _stat) => {
             if (_err) {
-              reject(err);
+              reject(saying(err, `stat ${fd.path}`));
               return;
             }
 
@@ -357,7 +358,7 @@ export default class SFTPFileSystem extends RemoteFileSystem
         this.toRemoteTimeInSecnonds(mtime),
         err => {
           if (err) {
-            reject(err);
+            reject(saying(err, `set the times on ${fd.path}`));
             return;
           }
 
@@ -375,7 +376,7 @@ export default class SFTPFileSystem extends RemoteFileSystem
         this.toRemoteTimeInSecnonds(mtime),
         err => {
           if (err) {
-            reject(err);
+            reject(saying(err, `set the times on ${path}`));
             return;
           }
 
@@ -394,7 +395,7 @@ export default class SFTPFileSystem extends RemoteFileSystem
           // see WriteStream.prototype.open in ssh2-streams.
           this.sftp.chmod(fd.path, mode, _err => {
             if (_err) {
-              reject(err);
+              reject(saying(err, `chmod ${fd.path}`));
               return;
             }
 
@@ -411,13 +412,13 @@ export default class SFTPFileSystem extends RemoteFileSystem
   async chmod(path: string, mode: number): Promise<void> {
     return new Promise((resolve, reject) => {
       this.sftp.chmod(path, mode, err => {
-        if(err) {
-          reject(err)
-          return
+        if (err) {
+          reject(saying(err, `chmod ${path}`));
+          return;
         }
         resolve();
       });
-    })
+    });
   }
 
   get(path, option?: FileOption): Promise<Readable> {
@@ -426,6 +427,8 @@ export default class SFTPFileSystem extends RemoteFileSystem
       try {
         // const stream = this.sftp.createReadStream(path, opt);
         const stream = this.sftp.createReadStream(path, option);
+        // First, so every listener after it hears which file it was.
+        stream.on('error', error => saying(error, `download ${path}`));
         resolve(stream);
       } catch (err) {
         reject(err);
@@ -437,7 +440,7 @@ export default class SFTPFileSystem extends RemoteFileSystem
     return new Promise((resolve, reject) => {
       this.sftp.rename(srcPath, destPath, err => {
         if (err) {
-          return reject(err);
+          return reject(saying(err, `rename ${srcPath} to ${destPath}`));
         }
 
         resolve();
@@ -450,7 +453,7 @@ export default class SFTPFileSystem extends RemoteFileSystem
     return new Promise((resolve, reject) => {
       this.sftp.ext_openssh_rename(srcPath, destPath, err => {
         if (err) {
-          return reject(err);
+          return reject(saying(err, `rename ${srcPath} to ${destPath}`));
         }
 
         resolve();
@@ -485,7 +488,7 @@ export default class SFTPFileSystem extends RemoteFileSystem
     return new Promise((resolve, reject) => {
       this.sftp.readlink(path, (err, linkString) => {
         if (err) {
-          reject(err);
+          reject(saying(err, `read the link ${path}`));
           return;
         }
 
@@ -498,7 +501,7 @@ export default class SFTPFileSystem extends RemoteFileSystem
     return new Promise<void>((resolve, reject) => {
       this.sftp.symlink(targetPath, path, err => {
         if (err) {
-          reject(err);
+          reject(saying(err, `link ${path}`));
         }
         resolve();
       });
@@ -509,7 +512,7 @@ export default class SFTPFileSystem extends RemoteFileSystem
     return new Promise<void>((resolve, reject) => {
       this.sftp.mkdir(dir, err => {
         if (err) {
-          reject(err);
+          reject(saying(err, `create the folder ${dir}`));
           return;
         }
         resolve();
@@ -562,7 +565,7 @@ export default class SFTPFileSystem extends RemoteFileSystem
     return new Promise((resolve, reject) => {
       this.sftp.readdir(dir, (err, result) => {
         if (err) {
-          reject(err);
+          reject(saying(err, `list ${dir}`));
           return;
         }
 
@@ -594,7 +597,7 @@ export default class SFTPFileSystem extends RemoteFileSystem
     return new Promise((resolve, reject) => {
       this.sftp.opendir(dir, (err, handle) => {
         if (err) {
-          reject(err);
+          reject(saying(err, `list ${dir}`));
           return;
         }
 
@@ -623,7 +626,7 @@ export default class SFTPFileSystem extends RemoteFileSystem
                   return;
                 }
                 if (readErr) {
-                  fail(readErr);
+                  fail(saying(readErr, `list ${dir}`));
                   return;
                 }
                 answer(
@@ -643,7 +646,7 @@ export default class SFTPFileSystem extends RemoteFileSystem
     return new Promise<void>((resolve, reject) => {
       this.sftp.unlink(path, err => {
         if (err) {
-          reject(err);
+          reject(saying(err, `delete ${path}`));
           return;
         }
 
@@ -657,7 +660,7 @@ export default class SFTPFileSystem extends RemoteFileSystem
       if (!recursive) {
         this.sftp.rmdir(path, err => {
           if (err) {
-            reject(err);
+            reject(saying(err, `delete the folder ${path}`));
             return;
           }
           resolve();
@@ -714,7 +717,7 @@ export default class SFTPFileSystem extends RemoteFileSystem
       // like that - creating an empty file is one - waiting for ever, after
       // the file was already there.
       writer
-        .once('error', reject)
+        .once('error', error => reject(saying(error, `upload ${path}`)))
         .once('finish', resolve)
         .once('close', resolve);
 
