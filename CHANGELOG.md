@@ -6,6 +6,19 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.7.11 - 2026-11-04
+
+### Fixed
+
+- An SFTP error says which file it was about and what was being done to it.
+  A folder transfer that failed used to log only the server's word for it,
+  "Failure", with no path at all; a bare "Failure" now also says the server
+  gave no reason, and what that usually is. A failed command names itself
+  and the folder or file it ran on.
+- An SSH session left idle is no longer dropped by a router or firewall on
+  the way: `ssh` sends a keepalive every 30 seconds, and gives up after two
+  minutes without an answer instead of hanging.
+
 ## 2.7.10 - 2026-11-02
 
 ### Added
