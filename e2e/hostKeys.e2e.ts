@@ -5,7 +5,8 @@ import upath from '../src/core/upath';
 import SFTPFileSystem from '../src/core/fs/sftpFileSystem';
 import { setHostKeyChecker } from '../src/core/remote-client/hostKeys';
 import { fingerprintOf, judge, keysFor } from '../src/core/knownHosts';
-import { startSftpServer, RunningServer } from './sftpServer';
+import { startSftpServer, RunningServer, usableHostKey } from './sftpServer';
+import { utils } from 'ssh2';
 
 /**
  * Host key checking, against a server that really presents one.
@@ -210,5 +211,29 @@ describe('a server whose key changed', () => {
 
     const onRecord = keysFor(lineFor('127.0.0.1', port, publicKey), '127.0.0.1', port);
     expect(judge(onRecord, offered!)).toBe('trusted');
+  });
+});
+
+describe('the host keys the test servers use', () => {
+  it('are never one ssh2 generated and cannot read back', () => {
+    // What ssh2 hands out about one time in a few hundred: a key a byte short.
+    const unreadable = { private: '-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----\n', public: '' };
+    const made: string[] = [];
+    const keys = usableHostKey(() => {
+      const next = made.length === 0 ? unreadable : utils.generateKeyPairSync('ed25519');
+      made.push(next.private);
+      return next;
+    });
+
+    expect(made).toHaveLength(2);
+    expect(keys.private).toBe(made[1]);
+    expect((utils as any).parseKey(keys.private)).not.toBeInstanceOf(Error);
+  });
+
+  it('come out readable however many are made', () => {
+    // Enough that the bad case comes up: about 1 in 256 without the check.
+    for (let i = 0; i < 2000; i += 1) {
+      expect((utils as any).parseKey(usableHostKey().private)).not.toBeInstanceOf(Error);
+    }
   });
 });

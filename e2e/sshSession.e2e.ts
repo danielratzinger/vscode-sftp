@@ -2,9 +2,10 @@ import { spawn, execFile } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { Server, utils } from 'ssh2';
+import { Server } from 'ssh2';
 import { AskpassAnswers, sshCommandLine } from '../src/core/sshSession';
 import { startAskpass, askpassHelperPath, askpassWrapperPath } from '../src/modules/sshAskpass';
+import { usableHostKey } from './sftpServer';
 
 /**
  * `Open SSH Session` end to end: the system's own `ssh`, run the way the
@@ -26,7 +27,7 @@ beforeAll(async () => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'ssh-session-e2e-'));
   process.env.VSCODE_SFTP_HOME = home;
 
-  const keys = utils.generateKeyPairSync('ed25519');
+  const keys = usableHostKey();
   server = new Server({ hostKeys: [keys.private] }, (client: any) => {
     client.on('error', () => undefined);
     client.on('authentication', (ctx: any) => {

@@ -16,6 +16,29 @@ import { Server, utils } from 'ssh2';
 
 const { STATUS_CODE, flagsToString } = (utils as any).sftp;
 
+/**
+ * A new ed25519 host key that ssh2 can read back.
+ *
+ * ssh2 (1.13 to 1.17 at least) converts a generated key by stripping the
+ * leading zero bytes of the public key, meaning to drop the padding byte in
+ * front of it - and when the key's own first byte is also zero, that goes
+ * too - for one key in 256. The key is then a byte short, `new Server`
+ * refuses it as malformed, and whichever test drew it failed in a millisecond,
+ * depending on nothing but the dice. Such a key is simply thrown away.
+ */
+export function usableHostKey(
+  generate: () => { private: string; public: string } = () =>
+    utils.generateKeyPairSync('ed25519')
+): { private: string; public: string } {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const keys = generate();
+    if (!((utils as any).parseKey(keys.private) instanceof Error)) {
+      return keys;
+    }
+  }
+  throw new Error('could not generate a host key ssh2 can read');
+}
+
 /** The public half of a private key, as ssh2 parses it. */
 function publicFrom(privateKey: string): string {
   const parsed = (utils as any).parseKey(privateKey);
@@ -78,7 +101,7 @@ export async function startSftpServer(
   // same server" or stand up one pretending to be it with a different key.
   const keys = option.privateKey
     ? { private: option.privateKey, public: publicFrom(option.privateKey) }
-    : utils.generateKeyPairSync('ed25519');
+    : usableHostKey();
   let misbehaviour: Misbehaviour = {};
 
   // Held so `close` can end them. `Server.close` stops listening and then
