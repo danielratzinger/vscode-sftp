@@ -38,7 +38,12 @@ export function sshCommandLine(
   remoteDir?: string,
   extraArgs: string[] = []
 ): string {
-  const args = ['ssh', '-t'];
+  // A session left alone sends nothing, and a router or firewall on the way
+  // forgets a connection that has been quiet for some minutes - the next key
+  // pressed then finds it gone. A small message every 30 seconds keeps it
+  // known, and a server that stops answering them is given up on after two
+  // minutes instead of leaving the terminal hanging.
+  const args = ['ssh', '-t', '-o', 'ServerAliveInterval=30', '-o', 'ServerAliveCountMax=4'];
   if (target.port) {
     args.push('-p', String(target.port));
   }

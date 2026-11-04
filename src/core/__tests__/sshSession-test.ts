@@ -17,6 +17,10 @@ describe('the ssh command line', () => {
     expect(argvOf(line)).toEqual([
       'ssh',
       '-t',
+      '-o',
+      'ServerAliveInterval=30',
+      '-o',
+      'ServerAliveCountMax=4',
       '-p',
       '2222',
       '-i',
@@ -27,7 +31,7 @@ describe('the ssh command line', () => {
   });
 
   it('leaves the user out when none is configured', () => {
-    expect(argvOf(sshCommandLine({ host: 'h' }))).toEqual(['ssh', '-t', 'h']);
+    expect(argvOf(sshCommandLine({ host: 'h' }))).toEqual(['ssh', '-t', '-o', 'ServerAliveInterval=30', '-o', 'ServerAliveCountMax=4', 'h']);
   });
 
   it('lets custom parameters decide what runs, with the folder for ${remotePath}', () => {
@@ -36,7 +40,10 @@ describe('the ssh command line', () => {
       '/srv/app'
     );
 
-    expect(argvOf(line)).toEqual(['ssh', '-t', 'u@h', 'cd /srv/app && bash']);
+    expect(argvOf(line)).toEqual([
+      'ssh', '-t', '-o', 'ServerAliveInterval=30', '-o', 'ServerAliveCountMax=4',
+      'u@h', 'cd /srv/app && bash',
+    ]);
   });
 
   it('quotes nothing that needs no quoting', () => {
