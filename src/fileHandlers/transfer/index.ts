@@ -2,7 +2,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fse from 'fs-extra';
 import { Uri } from 'vscode';
-import { refreshRemoteExplorer } from '../shared';
+import { refreshAfterDownload, refreshRemoteExplorer } from '../shared';
 import { getUserSetting, showModalWarning, showTextDocument } from '../../host';
 import { fileOperations } from '../../core';
 import { autosyncState, AutosyncState } from '../../modules/worktreeSync';
@@ -244,6 +244,9 @@ export const sync2Local = createFileHandler<SyncOption>({
       useArchiveTransfer: config.useArchiveTransfer !== false,
     };
   },
+  afterHandle() {
+    refreshAfterDownload(this.target, this.fileService);
+  },
 });
 
 export const upload = createFileHandler<TransferOption>({
@@ -321,6 +324,9 @@ export const download = createFileHandler<TransferOption>({
       keepReplaced: keepReplacedOption(this),
       useArchiveTransfer: config.useArchiveTransfer !== false,
     };
+  },
+  afterHandle() {
+    refreshAfterDownload(this.target, this.fileService);
   },
 });
 
@@ -476,6 +482,9 @@ export const downloadFile = createFileHandler<TransferOption>({
     await downloadHandle.call(this, option);
   },
   transformOption: downloadFileOption,
+  afterHandle() {
+    refreshAfterDownload(this.target, this.fileService);
+  },
 });
 
 /**
@@ -501,6 +510,9 @@ export const editInLocal = createFileHandler<TransferOption>({
     await showTextDocument(this.target.localUri, { preview: true });
   },
   transformOption: downloadFileOption,
+  afterHandle() {
+    refreshAfterDownload(this.target, this.fileService);
+  },
 });
 
 export const downloadFolder = createFileHandler<TransferOption>({
@@ -516,6 +528,9 @@ export const downloadFolder = createFileHandler<TransferOption>({
       keepReplaced: keepReplacedOption(this),
       useArchiveTransfer: config.useArchiveTransfer !== false,
     };
+  },
+  afterHandle() {
+    refreshAfterDownload(this.target, this.fileService);
   },
 });
 
@@ -561,5 +576,8 @@ export const downloadScripts = createFileHandler<TransferOption>({
       // lost quietly, which is worse than a picture carried needlessly.
       useArchiveTransfer: config.useArchiveTransfer !== false,
     };
+  },
+  afterHandle() {
+    refreshAfterDownload(this.target, this.fileService);
   },
 });
