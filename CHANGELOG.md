@@ -6,6 +6,16 @@ and maintained by [Natizyskunk](https://github.com/Natizyskunk/vscode-sftp).
 Everything from 2.0.0 onwards is this fork; everything under 1.16.3 and
 earlier is theirs.
 
+## 2.7.12 - 2026-11-17
+
+### Fixed
+
+- After a download, the Remote Explorer offers Reveal in Finder (and Reveal
+  in Terminal) on what came down. What a row offers was decided only when it
+  was drawn, and nothing drew it again after a download, so a folder brought
+  down kept looking as if it existed only on the server until the tree was
+  refreshed by hand.
+
 ## 2.7.11 - 2026-11-04
 
 ### Fixed
